@@ -76,18 +76,18 @@ Machine profiles are plain data in [`src/profiles/index.js`](src/profiles/index.
 Copy the closest entry, change what differs, open a pull request. No other
 code needs to know.
 
-How to measure yours:
-
-| Field | How to find it |
-|---|---|
-| `cpi` | Type ten characters, measure the line. 25.4 mm → `10` (pica), 21.2 mm → `12` (elite) |
-| `lpi` | Type ten lines, measure. 42.3 mm → `6` |
-| `scale` | Read the numbers on the carriage scale; push each margin stop as far as it goes |
-| `rows` / `shiftRows` | Type every key in order, unshifted then shifted |
+Full instructions, including how to measure a machine you know nothing about:
+**[docs/adding-a-machine.md](docs/adding-a-machine.md)**.
 
 If you would rather not think about layouts at all, the **characters** dialog
 has *learn from typing*: press every key your machine has and it records what
 they produce.
+
+## Things the machine can do that a printer cannot
+
+Half spacing sideways and downwards, typing outside the margin stops, the
+invisible ribbon setting for rehearsing a line, and why the underscore prints
+black when you have selected red: **[docs/machine-tricks.md](docs/machine-tricks.md)**.
 
 ## Fonts
 
