@@ -79,6 +79,14 @@ code needs to know.
 Full instructions, including how to measure a machine you know nothing about:
 **[docs/adding-a-machine.md](docs/adding-a-machine.md)**.
 
+The pitch — how far the carriage steps for each character — is worth
+measuring even on a machine already listed, because the same model was often
+built in both. **Your machine → measure your machine** walks you through it:
+type forty capital M, measure first letter to last, and the page resizes
+itself around the answer. It refuses to guess when the reading falls between
+the two standard pitches, rather than rounding a mistake into every sheet you
+ever type.
+
 If you would rather not think about layouts at all, the **characters** dialog
 has *learn from typing*: press every key your machine has and it records what
 they produce.

@@ -83,7 +83,7 @@ export const LINE_PITCHES = [
  * @param {number} mm     measured distance
  * @param {{perInch:number,name:string}[]} [table]
  * @returns {null | { perInch: number, nearest: object, offPercent: number,
- *                    confident: boolean }}
+ *                    confident: boolean, offByOne: boolean }}
  */
 export function pitchFrom(steps, mm, table = PITCHES) {
   if (!(steps > 0) || !(mm > 0)) return null;
@@ -98,10 +98,30 @@ export function pitchFrom(steps, mm, table = PITCHES) {
   }
   const offPercent = Math.abs(perInch - nearest.perInch) / nearest.perInch * 100;
 
-  // Two per cent is about a millimetre out over forty characters — sloppier
-  // than that and we should not be telling anybody they own a pica machine.
-  // Pica and elite are twenty per cent apart, so this leaves plenty of room.
-  return { perInch, nearest, offPercent, confident: offPercent <= 2 };
+  // How much slop to allow, and why that number.
+  //
+  // Not a feel for how careful people are with rulers — that would be a
+  // guess. It comes from the question being asked. Pica and elite are twenty
+  // per cent apart, so a reading exactly between them is ten per cent from
+  // either. Half of that is the widest band that still lands unambiguously
+  // in one camp, and that is the number used here.
+  //
+  // An earlier, tighter band was tempting because it also caught people
+  // measuring the block of ink instead of edge to edge. That was the wrong
+  // instinct: the mistake is worth about one character in forty, and it
+  // never changes which pitch you land on. Refusing a perfectly good
+  // measurement to police a harmless error helps nobody. It is reported
+  // instead, as a hint for next time.
+  const confident = offPercent <= 5;
+
+  // A reading roughly one step too long is the block-of-ink mistake. The
+  // sign matters: too long means the distance covered more steps than the
+  // caller thinks, which is exactly what measuring past the last letter does.
+  const oneStep = 100 / steps;
+  const offByOne = perInch < nearest.perInch
+    && Math.abs(offPercent - oneStep) < oneStep * 0.6;
+
+  return { perInch, nearest, offPercent, confident, offByOne };
 }
 
 /** What that measurement should have read, had the machine been standard. */

@@ -116,11 +116,32 @@ check('a millimetre of ruler slip does not change the answer', () => {
   }
 });
 
-check('measuring the ink block instead of edge to edge is caught', () => {
-  // The classic mistake: measuring the printed block is short by roughly a
-  // whole character, which must not silently pass as a valid pitch.
+check('measuring the ink block is still accepted, but flagged', () => {
+  // The classic mistake: measuring the whole block of ink is long by about
+  // one character. It never changes which pitch you land on, so refusing the
+  // measurement over it would be pedantry — it is reported instead.
   const r = pitchFrom(39, expectedMm(40, 10));
-  assert.ok(!r.confident, 'an off-by-one measurement was accepted');
+  assert.strictEqual(r.nearest.perInch, 10);
+  assert.ok(r.confident, 'a usable measurement was refused');
+  assert.ok(r.offByOne, 'the off-by-one was not noticed');
+});
+
+check('a clean measurement is not flagged as off by one', () => {
+  for (const p of PITCHES) {
+    const r = pitchFrom(39, expectedMm(39, p.perInch));
+    assert.ok(!r.offByOne, `${p.name} wrongly flagged`);
+  }
+});
+
+check("Lorenz's own measurement reads as pica", () => {
+  // 40 capital M spanning 104 mm on the SM7. Deliberately kept as a test:
+  // this is the number the shipped profile rests on, and an earlier, tighter
+  // tolerance rejected it.
+  for (const steps of [39, 40]) {
+    const r = pitchFrom(steps, 104);
+    assert.strictEqual(r.nearest.perInch, 10, `${steps} steps`);
+    assert.ok(r.confident, `${steps} steps was refused`);
+  }
 });
 
 check('a reading between the two pitches is refused, not rounded', () => {

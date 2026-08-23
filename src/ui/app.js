@@ -564,24 +564,40 @@ function applyMeasurement() {
   const parts = [];
   const patch = {};
 
-  if (found.confident) {
-    patch.cpi = found.nearest.perInch;
-    parts.push(
-      `${found.perInch.toFixed(2)} characters per inch — that is ` +
-      `${found.nearest.name}, ${found.nearest.perInch} to the inch.`);
-  } else {
+  if (!found.confident) {
     // Refusing to guess is the point. Between pica and elite there is a
-    // twenty per cent gap; landing in the middle of it means the ruler
-    // slipped, or the count is out by one, and snapping to the nearer one
-    // would bake that mistake into every sheet from now on.
+    // twenty per cent gap; landing in the middle of it means something is
+    // genuinely wrong, and snapping to the nearer one would bake that
+    // mistake into every sheet from now on.
     $('mResult').textContent =
       `That works out at ${found.perInch.toFixed(2)} characters per inch, ` +
       `which is ${found.offPercent.toFixed(0)} per cent away from ` +
-      `${found.nearest.name}. Something is off — most likely the count. ` +
-      `${steps + 1} letters typed means ${steps} steps of travel, so measure ` +
-      `the same edge on the first and the last letter, not the width of the ` +
-      `ink. Nothing has been changed.`;
+      `${found.nearest.name} and too far off to call. ` +
+      `${steps + 1} letters typed means ${steps} steps of travel; for ` +
+      `${found.nearest.name} that distance should read about ` +
+      `${expectedMm(steps, found.nearest.perInch).toFixed(0)} mm. ` +
+      `Nothing has been changed.`;
     return;
+  }
+
+  patch.cpi = found.nearest.perInch;
+  const other = PITCHES.find((p) => p.perInch !== found.nearest.perInch);
+  parts.push(
+    `${found.perInch.toFixed(1)} characters per inch — that is ` +
+    `${found.nearest.name}, ${found.nearest.perInch} to the inch. ` +
+    (other
+      ? `${other.name[0].toUpperCase()}${other.name.slice(1)} would have ` +
+        `measured ${expectedMm(steps, other.perInch).toFixed(0)} mm, so there ` +
+        `is no doubt about it.`
+      : ''));
+
+  if (found.offByOne) {
+    // Worth saying, not worth refusing over: it shifts the reading by about
+    // one character in forty and never changes which pitch you land on.
+    parts.push(
+      `The reading is long by roughly one character, which usually means the ` +
+      `whole block of ink was measured. Same edge on the first and the last ` +
+      `letter next time — it will not change the answer, only tidy it up.`);
   }
 
   // Line spacing is optional; almost nobody needs it, so a blank field is

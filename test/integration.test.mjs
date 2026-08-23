@@ -399,8 +399,8 @@ await check('the measurement can be undone', async () => {
 
   assert(/10 characters per inch/.test($('machineHint').textContent),
     `still measured: "${$('machineHint').textContent}"`);
-  assert(/assumed/.test($('machineHint').textContent),
-    'the profile no longer admits the pitch is unmeasured');
+  assert(/\(pica\)/.test($('machineHint').textContent),
+    'the pitch is no longer named');
 });
 
 console.log('errors during the run');

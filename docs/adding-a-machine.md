@@ -8,22 +8,46 @@ in the codebase needs to know your machine exists.
 
 You need four things. A ruler and a sheet of paper are enough.
 
+The app will do the arithmetic for you: **Your machine → Measure your
+machine**. What follows is the same thing by hand.
+
 ### Characters per inch
 
-Type ten characters. Measure from the left edge of the first to the left edge
-of the eleventh.
+This is the one that matters. Every other number on the page hangs off it:
+get it wrong and circles come out as eggs and the margin stop settings are
+all wrong. A machine of a given model may have left the factory in either
+pitch, so the only way to know is to measure.
+
+Type **forty capital M** in one line. Measure from the **left edge of the
+first** to the **left edge of the last** — the same edge on both, not the
+width of the block of ink.
 
 | Measured | `cpi` | Name |
 |---|---|---|
-| 25.4 mm | `10` | pica |
-| 21.2 mm | `12` | elite |
+| 99 mm | `10` | pica |
+| 83 mm | `12` | elite |
 
-If it is neither, divide 254 by the measurement in millimetres.
+Two details are worth the paragraph they take up.
+
+**Forty, not ten.** A half-millimetre slip of the ruler is spread across
+thirty-nine steps of carriage travel instead of nine. It also pushes the two
+candidate readings sixteen millimetres apart, which nobody misreads.
+
+**The same edge on both letters.** A printed M is narrower than the cell it
+sits in, so measuring the block of ink includes a side bearing at one end
+that has no partner at the other. Measuring first-edge to last-edge makes
+that bearing cancel out exactly, and what is left is whole steps of carriage
+travel. Forty letters typed is *thirty-nine* steps — that off-by-one is the
+easiest mistake to make here, and it is worth about one character in forty.
+Not enough to change the answer, which is why the app points it out rather
+than refusing the measurement.
+
+If it is neither pitch, divide `39 × 25.4` by the measurement in millimetres.
 
 ### Lines per inch
 
-Type ten lines, measure the same way. 42.3 mm means `6`, which almost every
-machine uses.
+Same trick downwards: wind on forty lines and measure the first baseline to
+the last. 169 mm means `6`, which almost every machine ever built uses.
 
 ### The scale
 

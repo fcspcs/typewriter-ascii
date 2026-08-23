@@ -26,12 +26,14 @@ export const PROFILES = [
     maker: 'Olympia Werke AG, Wilhelmshaven',
     years: '1962–1964',
     layout: 'QWERTZ (German)',
-    // Unmeasured. Olympia built the SM7 in both pitches, and the manual does
-    // not say which one any particular machine left the factory with. Pica
-    // is the assumption until somebody measures their own; the app offers to.
+    // Measured, not assumed. Olympia built the SM7 in both pitches and the
+    // manual does not say which one any given machine left the factory with,
+    // so this was settled with a ruler: forty capital M spanned 104 mm, which
+    // is 9.8 characters per inch. Elite would have measured about 85 mm — two
+    // centimetres away, far outside anything a ruler could confuse.
     cpi: 10,
     lpi: 6,
-    pitchMeasured: false,
+    pitchMeasured: true,
     // Read off the keyboard itself. Note there is no zero and no 'at' sign:
     // digits stop at 9, and a capital O stands in for zero. Getting this
     // wrong is the fastest way to produce art that cannot be typed.
