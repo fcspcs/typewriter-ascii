@@ -128,10 +128,25 @@ Then open `http://localhost:8000`.
 over plain `http` on a network address — that is a browser rule, not a bug
 here.
 
+## From the command line
+
+Same modules, no browser:
+
+```sh
+node tools/cli.mjs machines
+node tools/cli.mjs text "HELLO" --style outline
+node tools/cli.mjs file rose.txt --paper a4 --red 0-15 --pdf out.pdf
+```
+
+Picture conversion is web-only: measuring glyph shapes needs a canvas, and
+faking one on the command line would mean maintaining a second version of
+the part that matters most.
+
 Tests:
 
 ```sh
-npm test
+npm test          # core, sheet, pdf, strike detection
+npm run test:browser   # loads the real page in jsdom and drives it
 ```
 
 ## Licence
