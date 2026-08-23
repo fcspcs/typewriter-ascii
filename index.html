@@ -73,6 +73,40 @@
             actually read your picture.
           </p>
         </div>
+
+        <!--
+          Contrast and detail live here, with the picture, and not behind a
+          disclosure.
+
+          They were moved into a shut <details>Fine tuning</details> over in
+          the paper block. That left the picture tab showing three controls
+          out of five on arrival - and the two that were missing are the two
+          that decide whether the result reads as a drawing or as mud. Nobody
+          opens a panel called "fine tuning" to find the main controls.
+
+          Being inside the picture panel also means the tab strip hides them
+          for lettering and pasted art, where nothing reads them. In the
+          paper block they stayed on screen once opened, which is the width
+          slider's old fault in a second place.
+        -->
+        <div class="field">
+          <label for="contrast">Contrast <output id="contrastOut"></output></label>
+          <input type="range" id="contrast" min="50" max="300" value="130">
+          <p class="hint">
+            Higher separates the drawing from the background. A typewriter
+            has no greys to fall back on, so a flat picture turns to mush.
+          </p>
+        </div>
+
+        <div class="field">
+          <label for="detail">Detail <output id="detailOut"></output></label>
+          <input type="range" id="detail" min="0" max="100" value="45">
+          <p class="hint">
+            Lower smooths the picture down before it is turned into
+            characters. Texture cannot survive a cell this size, and leaving
+            it in reads as dirt.
+          </p>
+        </div>
       </div>
 
       <div class="panel" data-panel="text">
@@ -229,32 +263,13 @@
         </p>
       </div>
 
-      <details>
-        <summary>Fine tuning</summary>
-
-        <div class="field">
-          <label for="contrast">Contrast <output id="contrastOut"></output></label>
-          <input type="range" id="contrast" min="50" max="300" value="130">
-        </div>
-
-        <div class="field">
-          <label for="detail">Detail <output id="detailOut"></output></label>
-          <input type="range" id="detail" min="0" max="100" value="45">
-          <p class="hint">
-            Lower smooths the picture down before it is turned into
-            characters. Texture cannot survive a cell this size, and leaving
-            it in reads as dirt.
-          </p>
-        </div>
-
-      </details>
     </fieldset>
 
     <!--
-      The ribbon gets its own block rather than sitting under "fine tuning"
-      beside contrast and detail. Those two are about turning a photograph
-      into characters; this is about how the finished thing gets typed, and
-      it applies just as much to a word as to a picture.
+      The ribbon gets its own block rather than sitting beside contrast and
+      detail. Those two are about turning a photograph into characters and
+      live with the picture; this is about how the finished thing gets typed,
+      and it applies just as much to a word as to a picture.
 
       It starts with a switch, because using the red half at all is a yes/no
       decision — it means a second pass at the machine — and burying that in

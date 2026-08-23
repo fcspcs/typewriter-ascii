@@ -218,7 +218,80 @@ width first would crop a picture to 66 columns before anything asked whether
 **Done:** with landscape allowed the slider runs to whichever orientation
 holds more, and `orient()` decides afterwards which one is used.
 
-### 12. Imports that nothing calls
+### 12. The two controls that decide picture quality were hidden behind a shut panel
+
+`index.html:232` (before)
+
+Reported from outside this pass: *"there used to be more sliders"*. Checked
+against the history — **nothing was ever deleted**. `9394dfd` had width,
+contrast and detail sitting one under another, all visible. `05f58aa` moved
+contrast and detail into
+
+```html
+<details>
+  <summary>Fine tuning</summary>
+```
+
+with no `open` attribute, over in the *paper* block rather than with the
+picture. So the picture tab arrived showing three controls out of five, and
+the two that were gone are the two that decide whether the result reads as a
+drawing or as mud. Nobody opens a panel labelled "fine tuning" to look for
+the main controls. **Real fault.**
+
+Measured before the fix, walking up from each control looking for a shut
+`<details>`, a `hidden` ancestor or an inactive tab panel:
+
+```
+--- image tab ---
+  mode      VISIBLE
+  invert    VISIBLE
+  width     VISIBLE
+  contrast  inside a shut <Fine tuning>
+  detail    inside a shut <Fine tuning>
+```
+
+**A second fault in the same place, not in the report.** Because they sat in
+the paper block rather than in the picture panel, nothing ever hid them for
+lettering or pasted art. Once the disclosure had been opened they stayed on
+screen in every tab — two sliders nothing reads, which is precisely the fault
+the width slider was fixed for at `app.js:249`. Measured:
+
+```
+image tab, Fine tuning opened by hand: contrast visible? true
+switched to the lettering tab:
+  Fine tuning still open?    true
+  contrast slider on screen? true   <-- two sliders nothing reads
+  width slider on screen?    false  (correctly hidden)
+```
+
+**Done:** both moved out of the disclosure and into the picture panel, beside
+the style and light/dark settings they belong with. Adding `open` would have
+fixed the first fault and left the second, and would have left a disclosure
+that is never shut — a control that does nothing. In the panel the tab strip
+hides them for free, by the same mechanism as `mode` and `invert`, with no
+JavaScript needed.
+
+The disclosure held nothing else, so it is gone rather than left as a summary
+that opens onto nothing. Contrast gained the hint it never had; detail kept
+its.
+
+After:
+
+```
+--- image ---  mode/invert/width/contrast/detail  all VISIBLE
+--- text  ---  all five: inactive panel image, or hidden #widthRow
+--- paste ---  the same
+```
+
+Tests: *the picture controls are on screen* in `test/integration.test.mjs`,
+four checks. Verified they bite by restoring the old markup: the first fails
+with `contrast needs a click before it can be seen: inside a shut <Fine
+tuning>`. The helper reports *why* something is invisible rather than
+asserting a boolean, because jsdom does no layout — a bounding box would
+answer nothing, so the three real hiding mechanisms on this page are walked
+explicitly.
+
+### 13. Imports that nothing calls
 
 `src/ui/app.js:16` — `edges` and `keystrokes` imported from `convert.js`,
 never called. `keystrokes` appears in the file only inside strings and
@@ -255,7 +328,17 @@ Cosmetic at worst.
 
 They are reached through a template literal, `$(\`${id}Out\`)` at
 `src/ui/app.js:933`, along with `widthOut` and `inkAmountOut`. Not a fault;
-noted because grep says otherwise and the next person will grep.
+noted because grep says otherwise and the next person will grep. Both were
+re-checked after fault 12 moved the sliders: the readouts still follow.
+
+### Anything else hidden behind a shut disclosure
+
+After fault 12, the three remaining `<details>` on the page were checked:
+*Measure your machine*, *Before you start* and *Keeping your hands on the
+machine*. All three are genuinely secondary — read once, or not at all — and
+none contains a control that changes the motif. Shut by default is right for
+them. *Before you start* opens itself and folds away after the first line,
+which is the behaviour it wants.
 
 ### The `depth` slider on a single-colour motif
 

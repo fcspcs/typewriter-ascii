@@ -877,6 +877,99 @@ await check('clicking a character in the open line moves the count there', async
     `the count reads "${$('strikes').textContent}"`);
 });
 
+console.log('the picture controls are on screen');
+
+/**
+ * Why a control cannot be seen, or 'VISIBLE'.
+ *
+ * Walks up from the control looking for the three ways this page hides
+ * something: a shut <details>, a `hidden` ancestor, and a tab panel that is
+ * not the active one. jsdom does no layout, so asking for a bounding box
+ * would answer nothing; these three are the actual mechanisms in use.
+ */
+function whyHidden(id) {
+  let el = $(id);
+  const reasons = [];
+  while (el && el !== window.document.body) {
+    if (el.tagName === 'DETAILS' && !el.open) {
+      reasons.push(`inside a shut <${el.querySelector('summary')?.textContent.trim()}>`);
+    }
+    if (el.hidden) reasons.push(`hidden ancestor #${el.id || el.className}`);
+    if (el.classList?.contains('panel') && !el.classList.contains('on')) {
+      reasons.push(`inactive panel ${el.dataset.panel}`);
+    }
+    el = el.parentElement;
+  }
+  return reasons.length ? reasons.join(' + ') : 'VISIBLE';
+}
+
+await check('every picture control is on screen without a click', async () => {
+  /*
+   * Contrast and detail were moved into a <details>Fine tuning</details>
+   * with no `open` attribute, so the picture tab arrived showing three
+   * controls out of five - and the two missing were the two that decide
+   * whether the result reads as a drawing or as mud.
+   *
+   * Measured before the fix: mode, invert and width VISIBLE; contrast and
+   * detail both "inside a shut <Fine tuning>". Nobody opens a panel called
+   * fine tuning to look for the main controls.
+   */
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'image').click();
+  await wait(350);
+
+  for (const id of ['mode', 'invert', 'width', 'contrast', 'detail']) {
+    assert(whyHidden(id) === 'VISIBLE',
+      `${id} needs a click before it can be seen: ${whyHidden(id)}`);
+  }
+});
+
+await check('and they get out of the way where nothing reads them', async () => {
+  // The same rule the width slider already followed. In the paper block
+  // contrast and detail stayed on screen for lettering and pasted art once
+  // the disclosure had been opened - two sliders nothing consults, which is
+  // the exact fault the width slider was fixed for.
+  for (const tab of ['text', 'paste']) {
+    [...window.document.querySelectorAll('.tab')]
+      .find((t) => t.dataset.tab === tab).click();
+    await wait(350);
+    for (const id of ['contrast', 'detail', 'mode', 'invert']) {
+      assert(whyHidden(id) !== 'VISIBLE',
+        `${id} is still offered in the ${tab} tab, where it does nothing`);
+    }
+  }
+
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'image').click();
+  await wait(350);
+});
+
+await check('the picture controls still drive the conversion', async () => {
+  // Moving them must not have left the readouts or the handlers behind.
+  for (const [id, want] of [['contrast', '250'], ['detail', '90']]) {
+    $(id).value = want;
+    $(id).dispatchEvent(new window.Event('input'));
+    assert($(`${id}Out`).textContent === `${want}%`,
+      `${id} readout says "${$(`${id}Out`).textContent}", not ${want}%`);
+  }
+});
+
+await check('no disclosure is left standing with nothing behind it', () => {
+  // The block contrast and detail came out of held nothing else. A <summary>
+  // people have learned to open, with nothing behind it, is worse than no
+  // panel at all.
+  //
+  // Asked of the DOM rather than of the source text, because the source
+  // still says "Fine tuning" - in the comment explaining why the panel is
+  // gone, which is exactly where that phrase should survive.
+  for (const d of window.document.querySelectorAll('.controls-col details')) {
+    const summary = d.querySelector('summary');
+    const body = [...d.children].filter((c) => c !== summary);
+    assert(body.some((c) => c.textContent.trim() || c.querySelector('input, select, button')),
+      `"${summary?.textContent.trim()}" opens onto nothing`);
+  }
+});
+
 console.log('the app disagreeing with itself');
 
 await check('every panel numbers the lines the same way', async () => {
