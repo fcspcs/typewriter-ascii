@@ -359,6 +359,23 @@ await check('native controls follow the dark theme', () => {
   assert(meta, 'color-scheme meta tag missing');
 });
 
+await check('the paper preview stays white in the dark theme', () => {
+  // Paper has no night mode. Everywhere else the theme is a matter of
+  // comfort; inside this box the colours are a prediction of what comes out
+  // of the machine, and pale characters on a dark ground predict the
+  // negative of the truth.
+  const css = fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8');
+  const block = css.match(/\.paper-view\s*\{[^}]*\}/)?.[0] ?? '';
+
+  assert(!/var\(--raised\)|var\(--paper\)/.test(block),
+    'the sheet still takes its background from the theme');
+  assert(/#fff/i.test(block), `no white ground: "${block}"`);
+
+  const pre = css.match(/\.paper-view pre\s*\{[^}]*\}/)?.[0] ?? '';
+  assert(!/var\(--ink\)/.test(pre),
+    'the characters still take their colour from the theme');
+});
+
 await check('the live preview sits with the settings, not below the fold', () => {
   const compose = window.document.querySelector('.compose');
   assert(compose, 'no compose grid');

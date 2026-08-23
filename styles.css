@@ -257,21 +257,41 @@ input[type=range]::-moz-range-thumb {
 
 /* ── the live paper ──────────────────────────────────────────── */
 
+/*
+ * The preview is a sheet of paper, and paper does not have a night mode.
+ *
+ * It used to follow the theme like every other panel, so in the dark it
+ * showed pale characters on a dark ground — the photographic negative of
+ * what comes out of the machine. That is the one place on the page where
+ * the colours are not decoration: they are a prediction of the result.
+ *
+ * So this block is pinned to real ink on real paper in both themes. The red
+ * is the light-theme red too: the dark-theme red is lightened to stay legible
+ * against a dark ground, and on white it looks washed out and nothing like a
+ * ribbon.
+ */
 .paper-stick { position: sticky; top: 1rem; }
 .paper-view {
-  background: var(--raised);
+  --sheet-paper: #ffffff;
+  --sheet-ink:   #171614;
+  --sheet-red:   #a8322a;
+
+  background: var(--sheet-paper);
   border: 1px solid var(--hair);
   padding: 1.4rem 1rem;
   overflow: auto;
   max-height: 68vh;
+  /* Native scrollbars inside this box would otherwise be drawn dark. */
+  color-scheme: light;
 }
 .paper-view pre {
   margin: 0;
   font: 400 var(--mini-size, 10px)/1.16 var(--mono);
   white-space: pre;
-  color: var(--ink);
+  color: var(--sheet-ink);
 }
-.paper-view .r { color: var(--red); font-style: normal; }
+.paper-view .r { color: var(--sheet-red); font-style: normal; }
+.paper-view .blank { color: #8a8880; }
 
 .facts { display: flex; flex-wrap: wrap; gap: 0 2rem; margin: 0 0 0.9rem;
          font-size: 11.5px; }
