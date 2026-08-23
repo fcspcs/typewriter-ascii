@@ -110,6 +110,18 @@ a { color: inherit; text-underline-offset: 3px; }
   align-items: start;
   padding-top: 2rem;
 }
+
+/*
+ * A sticky element can only travel inside its own parent. With
+ * `align-items: start` above, the paper column shrinks to exactly the height
+ * of the paper — so there is nowhere to travel to, and it scrolls away with
+ * everything else even though it is declared sticky.
+ *
+ * Stretching just this column to the full height of the row gives it the
+ * room. The settings column stays start-aligned, which is what that rule was
+ * there for in the first place.
+ */
+.paper-col { align-self: stretch; }
 @media (max-width: 900px) {
   .compose { grid-template-columns: 1fr; gap: 1.8rem; }
   .paper-col { order: -1; }         /* see it before you tune it */

@@ -264,6 +264,20 @@ await check('the preview fills in as soon as there is something to type', () => 
   assert($('mini').innerHTML.trim().length > 0, 'preview is empty');
 });
 
+await check('the preview can actually stay put while the settings scroll', () => {
+  // `position: sticky` is not enough on its own. A sticky element only
+  // travels inside its own parent, and the compose grid is `align-items:
+  // start`, which shrinks the paper column to the height of the paper. With
+  // no room to travel it scrolls away like anything else — declared sticky,
+  // behaving fixed to the page. jsdom does no layout, so this checks the
+  // rule that gives it the room.
+  const css = fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8');
+  assert(/\.paper-stick\s*\{[^}]*position:\s*sticky/.test(css),
+    'the preview is not declared sticky');
+  assert(/\.paper-col\s*\{[^}]*align-self:\s*stretch/.test(css),
+    'the paper column does not stretch, so sticky has nowhere to travel');
+});
+
 await check('the preview follows a change of settings', () => {
   const before = $('mini').innerHTML;
   $('redRows').value = '1';
