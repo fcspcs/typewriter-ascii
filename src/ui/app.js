@@ -19,7 +19,10 @@ import {
 import {
   inkPlan, INK_SCHEMES, inkTally, inkLevels, parseRows, strikesInLine, runsOf,
 } from '../core/runs.js';
-import { letter, STYLES, usesTwo } from '../core/lettering.js';
+import {
+  letter, STYLES, usesTwo, tonesOf, charsUsed,
+} from '../core/lettering.js';
+import { toneRamp } from '../core/ink.js';
 import { StrikeListener, LineTracker, METER_FULL_SCALE } from '../core/listen.js';
 import { buildSheetPdf, downloadPdf } from '../core/pdf.js';
 import {
@@ -243,6 +246,27 @@ function syncWidthControl() {
     `far as this goes.`;
 }
 
+/**
+ * The characters a lettering style should be drawn with, heaviest first.
+ *
+ * This replaced
+ *
+ *     const fill = have.includes('#') ? '#' : have.includes('H') ? 'H' : ...
+ *
+ * which asked for a character the machine this project was written for does
+ * not have. The SM7 has no `#`, so every style fell through to `H` — and `H`
+ * is not even the heaviest key it has: 0.171 coverage against 0.204 for `B`,
+ * 0.196 for `M`, 0.190 for `W`. Every word came out as a flat grey wall
+ * because it was drawn in a mid-weight character and nothing else.
+ *
+ * Now the ramp is taken from what the machine actually has, spread by rank
+ * across whatever is switched on in the characters dialog. See ink.js.
+ */
+function letterTones(style) {
+  return toneRamp(Math.max(1, tonesOf(style)),
+    { atlas: app.atlas, allowed: app.chosen });
+}
+
 function convert() {
   const tab = currentTab();
   syncWidthControl();
@@ -252,17 +276,14 @@ function convert() {
   let lines = [];
 
   if (tab === 'text') {
-    const word = $('letterText').value.trim();
-    if (word) {
+    // Only the ends are trimmed. A blank line in the middle is a gap the
+    // user asked for, and trailing spaces on a line are not keystrokes.
+    const word = $('letterText').value
+      .split('\n').map((l) => l.replace(/\s+$/, ''))
+      .join('\n').replace(/^\n+|\n+$/g, '');
+    if (word.trim()) {
       const style = $('letterStyle').value;
-      // Use characters the machine actually has for fill and shadow.
-      const have = [...app.chosen];
-      const fill = have.includes('#') ? '#'
-        : have.includes('H') ? 'H' : (have[0] ?? '#');
-      const light = have.includes('+') ? '+'
-        : have.includes(':') ? ':' : (have[1] ?? fill);
-      lines = letter(word, { style, fill, light });
-      app.twoInk = usesTwo(style);
+      lines = letter(word, { style, tones: letterTones(style) });
     }
   } else if (tab === 'paste') {
     const raw = $('pasted').value.replace(/\t/g, '    ');
@@ -336,7 +357,15 @@ function note(text) {
   el.textContent = text;
   el.hidden = !text;
   clearTimeout(noteTimer);
-  noteTimer = setTimeout(() => { el.textContent = ''; el.hidden = true; }, 8000);
+  noteTimer = setTimeout(clearNote, 8000);
+}
+
+function clearNote() {
+  clearTimeout(noteTimer);
+  const el = $('setupNote');
+  if (!el) return;
+  el.textContent = '';
+  el.hidden = true;
 }
 
 /* ── drawing ─────────────────────────────────────────────────── */
@@ -439,6 +468,31 @@ function drawMini() {
   host.innerHTML = out.join('\n');
 }
 
+/**
+ * Say which keys the chosen face will actually strike.
+ *
+ * A style that draws three tones is a different proposition at the machine
+ * from one that draws a silhouette, and until now the only way to find out
+ * was to render it. Naming the characters also makes the pick visible: if
+ * the machine has been stripped down to four keys in the characters dialog,
+ * this is where you see the ramp collapse.
+ */
+function syncLetterHint() {
+  const el = $('letterStyleHint');
+  if (!el) return;
+  const style = $('letterStyle').value;
+  const used = charsUsed(style, letterTones(style));
+  const n = tonesOf(style);
+  const weight = n === 0 ? 'Drawn with fixed marks, not tones'
+    : n === 1 ? 'One character'
+      : n === 2 ? 'Two weights, face and shadow'
+        : 'Three weights: lit edge, body, shaded edge';
+  el.textContent = used.length
+    ? `${weight} — ${used.join(' ')}. Hollow and stencil faces cost far ` +
+      `fewer keystrokes than solid ones.`
+    : '';
+}
+
 /** Short plain-English note under each picture style. */
 const MODE_HINTS = {
   shape: 'Each character is chosen because its shape matches that part of ' +
@@ -492,12 +546,31 @@ function draw() {
       return `<p class="warn ${level}">${esc(text)}</p>`;
     }).join('');
 
+  syncLetterHint();
+  /*
+   * These two are stale after a tab switch but not visible: both sit inside
+   * the picture panel, which the tab strip sets to display:none. Left as
+   * they are on purpose - clearing them would be a change nobody can see,
+   * and it costs a real test that documents what they say.
+   *
+   * `setupNote` is the one that genuinely leaks. See below.
+   */
   $('modeHint').textContent = MODE_HINTS[$('mode').value] ?? '';
   $('invertHint').textContent = app.inverted
     ? 'This looks like light artwork on a dark background, so it has been '
       + 'turned round. A typewriter cannot ink a whole sheet.'
     : '';
   $('charCount').textContent = `${app.chosen.size} on`;
+
+  /*
+   * The character-swap warning belongs to the motif that produced it.
+   *
+   * It is raised by the paste tab - "@ has no equivalent on this machine" -
+   * and it sits beside the paper, outside the tab panels, so switching to
+   * the lettering tab left it on screen for the rest of its eight seconds,
+   * complaining about characters nothing on screen contains.
+   */
+  if (currentTab() !== 'paste') clearNote();
 
   // Both hints sit in a narrow column of settings. Anything that is not a
   // number you might act on goes in the tooltip instead of on screen: the

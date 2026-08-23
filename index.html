@@ -77,16 +77,23 @@
 
       <div class="panel" data-panel="text">
         <div class="field">
-          <label for="letterText">The word</label>
-          <input type="text" id="letterText" placeholder="HELLO" maxlength="40">
+          <label for="letterText">The words</label>
+          <!--
+            A textarea, not a single-line input. Lettering is not a caption:
+            two short words stacked fit a sheet that one long one does not,
+            and there was no way to ask for that. It wraps, so a long word
+            no longer runs off the side of a box you cannot scroll.
+          -->
+          <textarea id="letterText" rows="2" spellcheck="false"
+            placeholder="HELLO"></textarea>
+          <p class="hint" id="letterHint">
+            One line of letters per line you type. A blank line leaves a gap.
+          </p>
         </div>
         <div class="field">
           <label for="letterStyle">Letters</label>
           <select id="letterStyle"></select>
-          <p class="hint">
-            Hollow and stencil faces take far fewer keystrokes than solid
-            ones. Shadowed and raised faces use a second, lighter character.
-          </p>
+          <p class="hint" id="letterStyleHint"></p>
         </div>
       </div>
 

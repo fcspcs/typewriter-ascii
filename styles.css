@@ -191,6 +191,15 @@ select { padding-right: 1.8rem; }
 @media (max-width: 30em) { .measure-row { display: block; } }
 textarea { resize: vertical; line-height: 1.4; }
 
+/* The lettering box holds the words that get drawn, so it wraps rather than
+   scrolling sideways: a long word running off the right of a box you cannot
+   see the end of is how you type something you did not mean to. */
+#letterText {
+  font-family: var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 button { cursor: pointer; padding: 0.45rem 1rem;
          -webkit-tap-highlight-color: transparent; }
 button:hover { border-color: var(--ink); }
