@@ -589,6 +589,140 @@ await check('it gets out of the way where it does nothing', async () => {
   assert(!$('widthRow').hidden, 'gone missing where it does apply');
 });
 
+console.log('turning the sheet sideways');
+
+const typeWord = async (text, style = 'block') => {
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'text').click();
+  $('letterStyle').value = style;
+  $('letterStyle').dispatchEvent(new window.Event('change'));
+  $('letterText').value = text;
+  $('letterText').dispatchEvent(new window.Event('input'));
+  await wait(420);
+};
+
+const setLandscape = async (on) => {
+  $('landscape').checked = on;
+  $('landscape').dispatchEvent(new window.Event('change'));
+  await wait(420);
+};
+
+await check('a word too wide for A4 is refused while the sheet stays upright',
+  async () => {
+    await setLandscape(false);
+    // 'LORENZ' raised is 95 columns; A4 at pica holds 82.
+    await typeWord('LORENZ', 'relief');
+    assert(/warn stop/.test($('warnings').innerHTML),
+      `no refusal: ${$('warnings').textContent}`);
+  });
+
+await check('turning the sheet makes the same word fit', async () => {
+  await setLandscape(true);
+  assert(!/warn stop/.test($('warnings').innerHTML),
+    `still refused sideways: ${$('warnings').textContent}`);
+});
+
+await check('the preview turns with it', async () => {
+  // If the preview stayed upright while the instructions said to feed the
+  // paper sideways, one of the two would be lying and there is no way to
+  // tell which from the machine.
+  const r = paperRatio(window.document.querySelector('.paper-view'));
+  assert(Math.abs(r - 297 / 210) < 0.01,
+    `the sheet is still ${r.toFixed(3)}, not A4 landscape`);
+});
+
+await check('the instructions say to feed it in sideways', () => {
+  const t = $('instructions').textContent;
+  assert(/sideways/i.test(t), `no such step: "${t.slice(0, 120)}"`);
+  // And it comes first: it is the only step that has to happen before the
+  // paper goes in, and the only one that cannot be corrected afterwards.
+  assert(/sideways/i.test($('instructions').children[0].textContent),
+    'the paper is fed in before being told which way round');
+});
+
+await check('the facts and the paper hint agree that it is turned', () => {
+  assert(/sideways/i.test($('facts').textContent),
+    `the facts still call it upright A4: ${$('facts').textContent}`);
+  assert(/sideways/i.test($('paperHint').textContent),
+    `the paper hint disagrees: ${$('paperHint').textContent}`);
+});
+
+await check('a word that fits upright is left upright', async () => {
+  // The switch says "if it helps". Turning a sheet that already holds the
+  // motif buys nothing and loses the shape people expect.
+  await typeWord('HI', 'block');
+  const r = paperRatio(window.document.querySelector('.paper-view'));
+  assert(Math.abs(r - 210 / 297) < 0.01,
+    `turned the sheet for a motif that fits: ${r.toFixed(3)}`);
+  assert(!/sideways/i.test($('instructions').textContent),
+    'told to feed it sideways for a motif that fits upright');
+});
+
+await check('the switch explains itself in either state', async () => {
+  assert($('landscapeHint').textContent.trim().length > 20,
+    `nothing said while on: "${$('landscapeHint').textContent}"`);
+  await setLandscape(false);
+  assert($('landscapeHint').textContent.trim().length > 20,
+    `nothing said while off: "${$('landscapeHint').textContent}"`);
+});
+
+await check('turning the sheet survives a reload', async () => {
+  await setLandscape(true);
+  const saved = JSON.parse(window.localStorage.getItem('typewriter-ascii'));
+  assert(saved.landscape === true,
+    `not saved: ${JSON.stringify(saved.landscape)}`);
+  await setLandscape(false);
+});
+
+console.log('several lines of lettering');
+
+await check('a newline gives a second line of letters', async () => {
+  await typeWord('HI', 'block');
+  const one = window.document.querySelectorAll('.sheet .ln').length;
+  await typeWord('HI\nHO', 'block');
+  const two = window.document.querySelectorAll('.sheet .ln').length;
+  assert(two > one * 2, `${two} lines for two words against ${one} for one`);
+});
+
+await check('the word box is one you can actually type two lines into', () => {
+  const el = $('letterText');
+  assert(el.tagName === 'TEXTAREA',
+    `it is still a ${el.tagName}, which cannot hold a newline`);
+  assert(!el.getAttribute('maxlength'),
+    'still capped at a fixed length');
+});
+
+await check('the letters are drawn with keys the machine has', async () => {
+  // The fault this replaced: app.js asked for '#', the SM7 has none, and
+  // every style fell through to a wall of 'H'.
+  await typeWord('HI', 'block');
+  const art = [...window.document.querySelectorAll('.sheet .ln')]
+    .map((e) => e.textContent).join('');
+  const have = new Set([...$('charsetText').value || '']);
+  assert(!/[#@*]/.test(art), `used a key the SM7 has not got: ${art}`);
+  assert(art.replace(/\s/g, '').length > 0, 'nothing was drawn');
+});
+
+await check('the style hint names the keys it will strike', async () => {
+  await typeWord('HI', 'relief');
+  const t = $('letterStyleHint').textContent;
+  assert(/three weights/i.test(t), `raised is not described: "${t}"`);
+
+  await typeWord('HI', 'block');
+  const plain = $('letterStyleHint').textContent;
+  assert(/one character/i.test(plain), `block is not described: "${plain}"`);
+  assert(plain !== t, 'the hint did not follow the style');
+});
+
+await check('a raised word really uses three different characters', async () => {
+  await typeWord('OO', 'relief');
+  const art = [...window.document.querySelectorAll('.sheet .ln')]
+    .map((e) => e.textContent).join('');
+  const used = new Set(art.replace(/\s/g, ''));
+  assert(used.size >= 3,
+    `only ${used.size} character(s): ${[...used].join('')}`);
+});
+
 console.log('setting up sits with the typing');
 
 await check('the setup panel lives inside the typing step', () => {

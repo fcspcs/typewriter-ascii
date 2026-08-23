@@ -227,8 +227,7 @@ export function untypeable(text, m) {
 /* ------------------------------------------------------------------ */
 
 /**
- * Portrait only. A typewriter feeds paper on its short edge; landscape art
- * means typing the motif rotated and turning the finished sheet.
+ * The sizes, portrait. Landscape is the same sheet turned, see landscape().
  */
 export const PAPERS = [
   { id: 'a4',        name: 'A4',        w: 210, h: 297, margin: 20 },
@@ -240,6 +239,63 @@ export const PAPERS = [
 
 export function paperById(id) {
   return PAPERS.find((p) => p.id === id) ?? PAPERS[0];
+}
+
+/**
+ * The same sheet, fed in on its long edge.
+ *
+ * This is not a rotation of the artwork, and the difference matters. A
+ * printer would have to turn every glyph ninety degrees, which a typewriter
+ * cannot do: the type bars strike one way only. What a typewriter *can* do
+ * is take the sheet and put it in sideways, which costs nothing and takes a
+ * second. So the motif is typed exactly as it reads and the paper is what
+ * turns — width and height swap, everything downstream follows.
+ *
+ * The margin is left alone. It is a distance from the edge of the paper, and
+ * the paper has not changed size, only orientation.
+ *
+ * Worth knowing at the machine: A4 landscape is 297 mm across, which at pica
+ * is 116 columns — well past the 80 the SM7's right margin stop reaches. The
+ * setup instructions already handle that; it is not a reason to refuse.
+ */
+export function landscape(paper) {
+  return { ...paper, w: paper.h, h: paper.w, landscape: true };
+}
+
+/**
+ * Is the sheet worth turning for this motif?
+ *
+ * Only when it changes the answer. Turning a sheet that already holds the
+ * motif buys nothing and loses the shape people expect, so this asks the
+ * narrow question: does the motif fail to fit portrait, and fit landscape?
+ *
+ * The proportions alone are not enough to decide it. A motif wider than it
+ * is tall can still sit happily on a portrait sheet, and one that is only
+ * slightly too wide may be too tall the other way round — A4 landscape holds
+ * 116 columns but only 49 lines, against 82 by 70. So both sizes are
+ * measured rather than guessed at from the aspect ratio.
+ *
+ * @param {number} motifW  motif width in characters
+ * @param {number} motifH  motif height in lines
+ */
+export function wantsLandscape(motifW, motifH, paper, m) {
+  if (!(motifW > 0) || !(motifH > 0)) return false;
+  const up = sheetGrid(paper, m);
+  const across = sheetGrid(landscape(paper), m);
+  const fitsUp = motifW <= up.cols && motifH <= up.rows;
+  const fitsAcross = motifW <= across.cols && motifH <= across.rows;
+  return !fitsUp && fitsAcross;
+}
+
+/**
+ * The sheet to actually use: turned when it is allowed and it helps.
+ *
+ * One place decides it, so the preview, the setup instructions and the PDF
+ * cannot disagree about which way round the paper is.
+ */
+export function orient(paper, m, motifW, motifH, allow = false) {
+  return allow && wantsLandscape(motifW, motifH, paper, m)
+    ? landscape(paper) : paper;
 }
 
 /** How many cells fit on the whole sheet. */

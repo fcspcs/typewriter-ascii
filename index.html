@@ -204,6 +204,20 @@
           </select>
         </div>
       </div>
+      <!--
+        Turning the sheet is not a rotation of the artwork. A typewriter's
+        type bars strike one way only, so the letters cannot turn - but the
+        paper can go in the other way round, which costs a second and buys
+        116 columns on A4 instead of 82.
+      -->
+      <div class="field">
+        <label class="check">
+          <input type="checkbox" id="landscape">
+          <span>Turn the sheet sideways if it helps</span>
+        </label>
+        <p class="hint" id="landscapeHint"></p>
+      </div>
+
       <p class="hint" id="paperHint"></p>
 
       <div class="field" id="widthRow">

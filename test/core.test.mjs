@@ -9,6 +9,7 @@ import {
   charset, makeTypeable, untypeable, PAPERS, paperById,
   textArea, sheetGrid, setUp, cellWidthMm, cellHeightMm,
   pitchFrom, expectedMm, PITCHES, LINE_PITCHES,
+  landscape, wantsLandscape, orient,
 } from '../src/core/machine.js';
 import { PROFILES, profileById } from '../src/profiles/index.js';
 import {
@@ -567,6 +568,82 @@ check('a sentence still reads across line breaks', () => {
 
 check('a scrambled sentence is caught', () => {
   assert.ok(!sentenceReads(['xyz'], 'she loved him'));
+});
+
+console.log('turning the sheet sideways');
+
+check('landscape swaps the paper, and only the paper', () => {
+  const a4 = paperById('a4');
+  const across = landscape(a4);
+  assert.strictEqual(across.w, a4.h);
+  assert.strictEqual(across.h, a4.w);
+  // The margin is a distance from the edge; the sheet has not changed size.
+  assert.strictEqual(across.margin, a4.margin);
+  assert.strictEqual(across.name, a4.name);
+  assert.ok(across.landscape);
+  assert.ok(!a4.landscape, 'the original was mutated');
+});
+
+check('turning it round is what the grid and the margins follow', () => {
+  // A4 at pica: 82 x 70 upright, 116 x 49 turned. If any of these did not
+  // move, something downstream would be laying out on the wrong sheet.
+  const a4 = paperById('a4');
+  const up = sheetGrid(a4, sm7);
+  const across = sheetGrid(landscape(a4), sm7);
+  assert.deepStrictEqual(up, { cols: 82, rows: 70 });
+  assert.deepStrictEqual(across, { cols: 116, rows: 49 });
+
+  const upArea = textArea(a4, sm7);
+  const acrossArea = textArea(landscape(a4), sm7);
+  assert.ok(acrossArea.cols > upArea.cols, 'no extra width from turning');
+  assert.ok(acrossArea.rows < upArea.rows, 'gained width for free');
+});
+
+check('the sheet turns only when it changes the answer', () => {
+  // Turning a sheet that already holds the motif buys nothing and loses the
+  // shape people expect.
+  const a4 = paperById('a4');
+  const cases = [
+    [95, 15, true,  'too wide upright, fits sideways'],
+    [60, 40, false, 'fits upright already'],
+    [82, 70, false, 'exactly fills the upright sheet'],
+    [100, 60, false, 'too tall sideways as well'],
+    [200, 10, false, 'too wide for either'],
+    [0, 0, false, 'nothing to type'],
+  ];
+  for (const [w, h, want, why] of cases) {
+    assert.strictEqual(wantsLandscape(w, h, a4, sm7), want,
+      `${w}x${h}: ${why}`);
+  }
+});
+
+check('the aspect ratio alone does not decide it', () => {
+  // A motif wider than it is tall can still sit happily upright, and one
+  // only slightly too wide may be too tall the other way round.
+  const a4 = paperById('a4');
+  assert.ok(!wantsLandscape(70, 40, a4, sm7), 'turned a sheet that fitted');
+  assert.ok(!wantsLandscape(90, 55, a4, sm7),
+    'turned for a motif too tall to go sideways');
+});
+
+check('orient obeys the switch', () => {
+  const a4 = paperById('a4');
+  assert.ok(!orient(a4, sm7, 95, 15, false).landscape,
+    'turned the sheet with the switch off');
+  assert.ok(orient(a4, sm7, 95, 15, true).landscape,
+    'left the sheet upright with the switch on and a motif that needs it');
+  assert.ok(!orient(a4, sm7, 40, 20, true).landscape,
+    'turned the sheet for a motif that fits');
+});
+
+check('a motif that would not fit upright fits once the sheet is turned', () => {
+  // The point of the whole feature, stated as the thing the user sees.
+  const a4 = paperById('a4');
+  const stop = (paper) => setUp(95, 15, paper, sm7).warnings
+    .some((w) => w.level === 'stop');
+  assert.ok(stop(a4), 'a 95-column motif was said to fit on upright A4');
+  assert.ok(!stop(orient(a4, sm7, 95, 15, true)),
+    'still refused after turning the sheet');
 });
 
 console.log('choosing characters for a tone');

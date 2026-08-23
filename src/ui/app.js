@@ -9,7 +9,7 @@
 import { PROFILES, profileById } from '../profiles/index.js';
 import {
   charset, makeTypeable, PAPERS, paperById, textArea, setUp, sheetGrid,
-  pitchFrom, expectedMm, PITCHES, LINE_PITCHES,
+  pitchFrom, expectedMm, PITCHES, LINE_PITCHES, landscape, orient,
 } from '../core/machine.js';
 import { buildAtlas } from '../core/glyphs.js';
 import {
@@ -39,7 +39,9 @@ const app = {
   // always be undone.
   measured: {},
   inverted: false,
-  paper: PAPERS[0],
+  paper: PAPERS[0],   // the size chosen in the picker, always portrait
+  sheet: PAPERS[0],   // the same size the way it is actually going in
+                      // the machine; equal to `paper` unless turned
   chosen: new Set(),
   atlas: null,
   image: null,        // ImageData of the source
@@ -75,6 +77,7 @@ const save = () => {
       inkAmount: $('inkAmount').value,
       invert: $('invert').value,
       sentence: $('sentence').value,
+      landscape: $('landscape').checked,
     }));
   } catch { /* private mode */ }
 };
@@ -115,6 +118,7 @@ function fillSelects(saved) {
   if (saved.inkAmount) $('inkAmount').value = saved.inkAmount;
   if (saved.invert) $('invert').value = saved.invert;
   if (saved.sentence) $('sentence').value = saved.sentence;
+  if (saved.landscape) $('landscape').checked = true;
 }
 
 /**
@@ -234,16 +238,45 @@ function syncWidthControl() {
   $('widthRow').hidden = !applies;
   if (!applies) return;
 
-  const area = textArea(app.paper, app.machine);
+  /*
+   * The ceiling comes from the sheet the picture may end up on, not the one
+   * it is on now.
+   *
+   * Capping at the portrait width first would make turning the sheet
+   * pointless: the picture would already have been cropped to 66 columns
+   * before anything got to ask whether 100 might fit sideways. So with
+   * landscape allowed the slider runs to whichever orientation holds more,
+   * and orient() then decides which one is actually used.
+   */
+  const allow = $('landscape').checked;
+  const up = textArea(app.paper, app.machine).cols;
+  const across = textArea(landscape(app.paper), app.machine).cols;
+  const cap = allow ? Math.max(up, across) : up;
+
   const el = $('width');
-  el.max = String(area.cols);
-  if (+el.value > area.cols) el.value = String(area.cols);
+  el.max = String(cap);
+  if (+el.value > cap) el.value = String(cap);
 
   $('widthOut').textContent = `${el.value} cols`;
   $('widthHint').textContent =
     `Wider means more detail and a great many more keystrokes. ` +
-    `${app.paper.name} holds ${area.cols} inside the margins, which is as ` +
-    `far as this goes.`;
+    `${app.paper.name} holds ${up} inside the margins` +
+    (allow && across > up ? `, or ${across} turned sideways` : '') +
+    `, which is as far as this goes.`;
+}
+
+/**
+ * Which way round the paper goes, and how much of it there is to type on.
+ *
+ * Every caller asks this rather than reading `app.paper` directly, so the
+ * preview, the setup instructions and the PDF cannot end up disagreeing
+ * about the shape of the sheet — which would be the worst possible fault
+ * here, because the person is looking at the paper and not at the screen.
+ */
+function useSheet(motifW, motifH) {
+  app.sheet = orient(app.paper, app.machine, motifW, motifH,
+                     $('landscape').checked);
+  return app.sheet;
 }
 
 /**
@@ -270,8 +303,24 @@ function letterTones(style) {
 function convert() {
   const tab = currentTab();
   syncWidthControl();
-  const area = textArea(app.paper, app.machine);
-  const maxCols = Math.min(+$('width').value, area.cols);
+
+  /*
+   * Sizing a picture is circular: the grid needs to know which way the sheet
+   * goes, and which way the sheet goes depends on how big the motif is.
+   *
+   * Broken by measuring against the larger of the two orientations. If the
+   * result fits portrait, orient() leaves the sheet alone and nothing has
+   * been lost; if it does not, the sheet turns and the room was there all
+   * along. One pass, no guessing, and the same rule for both.
+   */
+  const allow = $('landscape').checked;
+  const upright = textArea(app.paper, app.machine);
+  const across = textArea(landscape(app.paper), app.machine);
+  const room = allow
+    ? { cols: Math.max(upright.cols, across.cols),
+        rows: Math.max(upright.rows, across.rows) }
+    : upright;
+  const maxCols = Math.min(+$('width').value, room.cols);
 
   let lines = [];
 
@@ -316,7 +365,7 @@ function convert() {
     if (mode === 'outline') field = outline(field, 0.45);
     field = cropToContent(field);
 
-    const grid = fitGrid(maxCols, area.rows, field.w, field.h,
+    const grid = fitGrid(maxCols, room.rows, field.w, field.h,
                          cellAspect(app.machine));
 
     if (mode === 'sentence') {
@@ -341,8 +390,8 @@ function convert() {
   });
   syncInkControls();
 
-  app.setup = setUp(width, app.lines.length, app.paper, app.machine,
-                    $('align').value);
+  app.setup = setUp(width, app.lines.length, useSheet(width, app.lines.length),
+                    app.machine, $('align').value);
 
   app.at = Math.min(app.at, Math.max(0, app.lines.length - 1));
   app.strike = 0;
@@ -425,13 +474,16 @@ function drawMini() {
   const paperEl = host.parentElement;
   if (!lines.length) { host.textContent = ''; paperEl.style.aspectRatio = ''; return; }
 
-  const sheet = sheetGrid(app.paper, app.machine);
+  const sheet = sheetGrid(app.sheet, app.machine);
   const col0 = Math.max(0, (app.setup?.left ?? 0) - (app.setup?.paperGuide ?? 0));
   const row0 = Math.max(0, app.setup?.advance ?? 0);
 
   // The sheet keeps the paper's proportions, so the shape of the box is
-  // itself information: a postcard looks like a postcard.
-  paperEl.style.aspectRatio = `${app.paper.w} / ${app.paper.h}`;
+  // itself information: a postcard looks like a postcard, and a sheet that
+  // has been turned looks turned. If the preview stayed upright while the
+  // instructions said to feed the paper sideways, one of the two would be
+  // lying and there is no way to tell which from the machine.
+  paperEl.style.aspectRatio = `${app.sheet.w} / ${app.sheet.h}`;
 
   // Fit the sheet's columns across the box; the cell height then follows
   // from the machine, not from a line-height that happens to look nice.
@@ -493,6 +545,33 @@ function syncLetterHint() {
     : '';
 }
 
+/**
+ * Say what turning the sheet is currently doing — including nothing.
+ *
+ * A switch that is on but has no effect is exactly the fault this pass is
+ * clearing out elsewhere, and here it is unavoidable: turning the sheet is
+ * only worth doing for a motif that needs it. So it says which case it is in
+ * rather than leaving the switch looking broken.
+ */
+function syncLandscapeHint() {
+  const el = $('landscapeHint');
+  if (!el) return;
+  const across = textArea(landscape(app.paper), app.machine);
+  const up = textArea(app.paper, app.machine);
+
+  if (!$('landscape').checked) {
+    el.textContent =
+      `Upright, ${up.cols} columns. Turned it would hold ${across.cols}, ` +
+      `over ${across.rows} lines instead of ${up.rows}.`;
+    return;
+  }
+  el.textContent = app.sheet.landscape
+    ? `Turned: ${across.cols} columns across ${across.rows} lines. Feed the ` +
+      `sheet in on its long edge.`
+    : `Upright — this fits as it is. The sheet turns only when the motif ` +
+      `will not go on it otherwise.`;
+}
+
 /** Short plain-English note under each picture style. */
 const MODE_HINTS = {
   shape: 'Each character is chosen because its shape matches that part of ' +
@@ -532,7 +611,8 @@ function draw() {
     ['size', `${width} × ${lines.length}`],
     ['keystrokes', String(tally.total)],
     tally.red ? ['red', String(tally.red)] : null,
-    ['paper', app.paper.name],
+    ['paper', app.sheet.landscape
+      ? `${app.paper.name} sideways` : app.paper.name],
   ].filter(Boolean)
    .map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
 
@@ -561,6 +641,7 @@ function draw() {
       + 'turned round. A typewriter cannot ink a whole sheet.'
     : '';
   $('charCount').textContent = `${app.chosen.size} on`;
+  syncLandscapeHint();
 
   /*
    * The character-swap warning belongs to the motif that produced it.
@@ -585,10 +666,14 @@ function draw() {
   $('machineHint').title =
     [measured && `Pitch ${measured}.`, m.notes].filter(Boolean).join(' ');
 
-  const area = textArea(app.paper, app.machine);
-  $('paperHint').textContent = `${area.cols} x ${area.rows} inside the margins`;
+  // What fits on the sheet as it will actually be fed in, not on the size as
+  // it sits in the picker.
+  const area = textArea(app.sheet, app.machine);
+  $('paperHint').textContent = `${area.cols} x ${area.rows} inside the margins`
+    + (app.sheet.landscape ? ', sideways' : '');
   $('paperHint').title =
-    `${app.paper.name} holds ${area.cols} characters across and ` +
+    `${app.paper.name}${app.sheet.landscape ? ', fed in on its long edge,' : ''}` +
+    ` holds ${area.cols} characters across and ` +
     `${area.rows} lines between the margins at ${m.cpi} characters per inch.`;
 
   drawMini();
@@ -647,6 +732,22 @@ function instructions() {
   if (!s) return [];
   const out = [];
   const m = app.machine;
+
+  /*
+   * First, because it is the one step that has to happen before the paper
+   * goes in and the only one that cannot be corrected afterwards.
+   *
+   * Nothing is rotated to achieve this. The type bars strike one way only,
+   * so a printer's trick of turning the glyphs is not available - but the
+   * sheet itself can simply go in the other way round, which costs nothing.
+   */
+  if (app.sheet.landscape) {
+    out.push([`Feed the ${app.paper.name} in sideways`,
+      `Long edge first, landscape. The motif is ${
+        Math.max(0, ...app.lines.map((l) => l.length))} columns wide, which ` +
+      `does not fit upright. Type it exactly as it reads; it is the paper ` +
+      `that is turned, not the letters.`]);
+  }
 
   if (s.paperGuide) {
     out.push([`Paper guide to ${s.paperGuide}`,
@@ -814,7 +915,7 @@ function wire() {
 
   // settings that only need a redraw
   ['mode', 'align', 'paper', 'machine', 'letterStyle', 'invert',
-   'ink', 'useRed'].forEach((id) => {
+   'ink', 'useRed', 'landscape'].forEach((id) => {
     $(id).onchange = () => {
       if (id === 'machine') {
         useProfile($('machine').value);
@@ -983,8 +1084,9 @@ function applyMeasurement() {
   app.measured[app.machine.id] = patch;
   useProfile(app.machine.id);
 
-  const area = textArea(app.paper, app.machine);
-  parts.push(`${app.paper.name} now holds ${area.cols} characters across.`);
+  const area = textArea(app.sheet, app.machine);
+  parts.push(`${app.paper.name}${app.sheet.landscape ? ' sideways' : ''}` +
+    ` now holds ${area.cols} characters across.`);
 
   $('mResult').textContent = parts.join(' ');
   convert();
@@ -1045,7 +1147,9 @@ function savePdf() {
   const text = buildSheetPdf({
     lines: app.lines,
     colours: app.colours,
-    paper: app.paper,
+    // The sheet as it goes in the machine. The PDF draws page 1 at true
+    // size, so a portrait page here would put the motif off the paper.
+    paper: app.sheet,
     machine: app.machine,
     setup: app.setup,
     instructions: instructions(),
