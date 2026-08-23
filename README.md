@@ -91,10 +91,23 @@ black when you have selected red: **[docs/machine-tricks.md](docs/machine-tricks
 
 ## Lettering
 
-Fifteen styles, built from two hand-drawn faces and a set of transforms:
-hollowing, shearing, stencil bridges, doubling, shadows, relief. Solid,
-hollow, slanted, stencil, wide, nameplate, and combinations — each in a
-compact and a large size where it makes sense.
+Twenty-one styles, built from two hand-drawn faces and a set of transforms:
+hollowing, shearing, stencil bridges, doubling, shadows, relief, oblique
+projection, draughted and rounded outlines — each in a compact and a large
+size where it makes sense.
+
+**Every style is checked against the machine.** The classic isometric and
+relief FIGlet faces all need a backslash, and a great many typewriters —
+the Olympia SM7 among them — have no backslash key, nor a pipe, nor a tilde.
+So the three-dimensional face here uses *oblique* projection rather than
+isometric: every depth line runs at the same 45-degree angle, so one `/`
+does the work of `/` and `\`. Draughtsmen used oblique for the same reason,
+because it is easier to draw. The rounded face draws its edges with
+brackets, and the draughted face uses `!` for verticals — an old typewriter-
+art habit that exists precisely because there is no pipe.
+
+A test renders every style in every letter and digit and fails if a single
+character is not on the machine.
 
 Keystrokes vary a lot between them. On the same word, hollow faces cost
 roughly a third of what solid ones do, which matters when you are the printer.

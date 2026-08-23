@@ -292,6 +292,45 @@ check('styles have no blank rows top or bottom', () => {
   }
 });
 
+
+check('every lettering style is typeable on the SM7', () => {
+  // The whole point. The classic isometric and relief FIGlet faces all
+  // need a backslash, and the Olympia SM7 has no backslash key - nor a
+  // pipe, nor a tilde. A style that cannot be typed is not a style.
+  const have = new Set(charset(sm7));
+  for (const key of Object.keys(STYLES)) {
+    const art = letter('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+      { style: key, fill: '#', light: '+' });
+    const used = new Set(art.join('').replace(/ /g, ''));
+    for (const ch of used) {
+      if (ch === '#' || ch === '+') continue;      // the two ink slots
+      assert.ok(have.has(ch),
+        `${key} needs ${JSON.stringify(ch)}, which the SM7 lacks`);
+    }
+  }
+});
+
+check('drawn faces declare the characters they use', () => {
+  for (const [key, spec] of Object.entries(STYLES)) {
+    if (!spec.uses) continue;
+    const art = letter('ABO', { style: key, fill: '#', light: '+' });
+    const used = new Set(art.join('').replace(/ /g, ''));
+    for (const ch of spec.uses) {
+      assert.ok(used.has(ch), `${key} declares ${ch} but never emits it`);
+    }
+  }
+});
+
+check('the three dimensional face keeps its counters open', () => {
+  // Casting depth from every up-facing edge fills the inside of an O with
+  // diagonals and the letter stops reading. Only the outer silhouette may
+  // cast. An O must still have a hole in it.
+  const art = letter('O', { style: 'oblique' });
+  const middle = art[Math.floor(art.length / 2)];
+  assert.ok(/\s{3,}/.test(middle),
+    `the counter filled in: ${JSON.stringify(middle)}`);
+});
+
 console.log('grid fitting');
 
 check('a wide picture is limited by width', () => {

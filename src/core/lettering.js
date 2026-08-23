@@ -272,6 +272,147 @@ function relief(rows) {
     }).join(''));
 }
 
+
+/**
+ * Oblique projection — depth without a backslash.
+ *
+ * Isometric faces need both diagonals, `/` and `\\`. Most typewriters have
+ * no backslash at all (the Olympia SM7 certainly does not), which makes the
+ * classic isometric look literally untypeable.
+ *
+ * Oblique projection solves it honestly rather than by substitution: it is a
+ * real drafting projection in which every depth line runs at the *same*
+ * angle. One diagonal, no mirror needed. Draughtsmen used it for exactly the
+ * same reason — it is easier to draw.
+ *
+ * Each cell on the upper-right silhouette gets a trail of `/` running up and
+ * to the right, capped with `_` to close the top face.
+ */
+function extrude(rows, depth = 2) {
+  const g = pad(scaleBy(rows, 2));
+  const h = g.length;
+  const w = g[0].length;
+  const H = h + depth;
+  const W = w + depth;
+  const out = Array.from({ length: H }, () => Array(W).fill('.'));
+  const ink = (y, x) => y >= 0 && x >= 0 && y < h && x < w && g[y][x] === '#';
+
+  /*
+   * Only the OUTER silhouette casts depth.
+   *
+   * Casting from every up- or right-facing edge fills the counter of an O
+   * with diagonals, because the inside of the bowl faces up and right too,
+   * and the letter stops reading. So flood the background inwards from the
+   * border to find what is genuinely outside.
+   */
+  const outside = Array.from({ length: h }, () => Array(w).fill(false));
+  const queue = [];
+  for (let x = 0; x < w; x++) queue.push([0, x], [h - 1, x]);
+  for (let y = 0; y < h; y++) queue.push([y, 0], [y, w - 1]);
+  while (queue.length) {
+    const [y, x] = queue.pop();
+    if (y < 0 || x < 0 || y >= h || x >= w) continue;
+    if (outside[y][x] || ink(y, x)) continue;
+    outside[y][x] = true;
+    queue.push([y - 1, x], [y + 1, x], [y, x - 1], [y, x + 1]);
+  }
+  const open = (y, x) => y < 0 || x < 0 || y >= h || x >= w || outside[y][x];
+
+  /*
+   * The solid is drawn as three surfaces, in the order a draughtsman would:
+   *
+   *   top    a rule along every upward-facing edge, offset by the depth
+   *   side   a diagonal along every right-facing edge
+   *   front  the letter itself, drawn last so it always wins
+   *
+   * Depth runs up and to the right at 45 degrees, which is why one `/`
+   * suffices. Isometric faces need `\\` as well, and most typewriters -
+   * the Olympia SM7 included - simply do not have it.
+   */
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!ink(y, x) || !open(y - 1, x)) continue;
+      for (let k = 1; k <= depth; k++) {
+        const ty = y + depth - k;
+        const tx = x + k;
+        if (ty >= 0 && ty < H && tx < W && out[ty][tx] === '.') {
+          out[ty][tx] = k === depth ? '_' : '/';
+        }
+      }
+    }
+  }
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!ink(y, x) || !open(y, x + 1)) continue;
+      for (let k = 1; k <= depth; k++) {
+        const ty = y + depth - k;
+        const tx = x + k;
+        if (ty >= 0 && ty < H && tx < W && out[ty][tx] === '.') out[ty][tx] = '/';
+      }
+    }
+  }
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) if (ink(y, x)) out[y + depth][x] = '#';
+  }
+  return out.map((r) => r.join(''));
+}
+
+/**
+ * Draughted outline: each edge picks a character that matches its direction.
+ *
+ * Horizontal edges become `_`, vertical edges `!`, and corners `/`. The
+ * exclamation mark as a vertical stroke is an old typewriter-art habit and
+ * the reason this face works on machines with no pipe character.
+ */
+function drafted(rows) {
+  const g = pad(scaleBy(rows, 2));
+  const h = g.length;
+  const w = g[0].length;
+  const ink = (y, x) => y >= 0 && x >= 0 && y < h && x < w && g[y][x] === '#';
+
+  return g.map((row, y) =>
+    [...row].map((c, x) => {
+      if (c !== '#') return '.';
+      const up = !ink(y - 1, x);
+      const down = !ink(y + 1, x);
+      const left = !ink(y, x - 1);
+      const right = !ink(y, x + 1);
+      if (!up && !down && !left && !right) return '.';   // interior
+      if ((up || down) && (left || right)) return '/';   // corner
+      if (up || down) return '_';
+      return '!';
+    }).join(''));
+}
+
+/**
+ * Rounded, bulb-like face: the outline drawn with brackets and underscores.
+ *
+ * Left edges take `(`, right edges `)`, horizontals `_`. Every one of those
+ * exists on essentially any typewriter, which is the point.
+ */
+function bulb(rows) {
+  const g = pad(scaleBy(rows, 2));
+  const h = g.length;
+  const w = g[0].length;
+  const ink = (y, x) => y >= 0 && x >= 0 && y < h && x < w && g[y][x] === '#';
+
+  return g.map((row, y) =>
+    [...row].map((c, x) => {
+      if (c !== '#') return '.';
+      const up = !ink(y - 1, x);
+      const down = !ink(y + 1, x);
+      const left = !ink(y, x - 1);
+      const right = !ink(y, x + 1);
+      if (!up && !down && !left && !right) return '.';
+      if (left && !right) return '(';
+      if (right && !left) return ')';
+      if (up || down) return '_';
+      return '(';
+    }).join(''));
+}
+
 /* ------------------------------------------------------------------ */
 /* Styles                                                              */
 /* ------------------------------------------------------------------ */
@@ -295,6 +436,18 @@ export const STYLES = {
   slab:     { name: 'Nameplate',      face: 'block', fns: [slab] },
   slantHollow: { name: 'Slanted hollow', face: 'block', fns: [outlineOf, slant] },
   reliefBig:{ name: 'Raised, big',    face: 'big',   fns: [relief], two: true },
+  oblique:  { name: 'Three dimensional', face: 'block', fns: [extrude],
+              uses: '/_' },
+  obliqueBig:{ name: 'Three dimensional, big', face: 'big', fns: [extrude],
+              uses: '/_' },
+  drafted:  { name: 'Drafted',        face: 'block', fns: [drafted],
+              uses: '/_!' },
+  draftedBig:{ name: 'Drafted, big',  face: 'big',   fns: [drafted],
+              uses: '/_!' },
+  bulb:     { name: 'Rounded',        face: 'block', fns: [bulb],
+              uses: '()_' },
+  bulbBig:  { name: 'Rounded, big',   face: 'big',   fns: [bulb],
+              uses: '()_' },
   wideBig:  { name: 'Wide, big',      face: 'big',   fns: [widen] },
 };
 
@@ -336,8 +489,13 @@ export function letter(word, opt = {}) {
     let line = '';
     glyphs.forEach((g, i) => {
       const row = g[y] ?? '.'.repeat(g[0].length);
+      // '#' and '+' are placeholders for the two inks. Anything else a
+      // transform emitted is a literal character it chose deliberately -
+      // the diagonals and brackets that make the drawn faces work - and
+      // must pass through untouched. Mapping them to blanks silently
+      // erased three whole styles.
       line += [...row]
-        .map((c) => (c === '#' ? fill : c === '+' ? light : ' '))
+        .map((c) => (c === '#' ? fill : c === '+' ? light : c === '.' ? ' ' : c))
         .join('');
       if (i < glyphs.length - 1) line += ' '.repeat(gap);
     });
