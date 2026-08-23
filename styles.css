@@ -167,8 +167,16 @@ button, select, input, textarea, output {
   border-radius: 0;
   padding: 0.45rem 0.6rem;
 }
-select, input[type=text], textarea { width: 100%; background: var(--raised); }
+select, input[type=text], input[type=number], textarea {
+  width: 100%; background: var(--raised);
+}
 select { padding-right: 1.8rem; }
+
+/* Two measurements side by side: the count and the ruler reading belong
+   together, and on a phone they still need the full width each. */
+.measure-row { display: flex; gap: 0.9rem; }
+.measure-row .field { flex: 1; min-width: 0; }
+@media (max-width: 30em) { .measure-row { display: block; } }
 textarea { resize: vertical; line-height: 1.4; }
 
 button { cursor: pointer; padding: 0.45rem 1rem;

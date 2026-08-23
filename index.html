@@ -119,6 +119,65 @@
           not use. Fewer characters means a calmer picture.
         </p>
       </div>
+
+      <!--
+        Measuring the pitch.
+
+        Machines of the same model were built in both pitches, so a profile
+        can only ever guess. Everything on the page hangs off this number:
+        get it wrong and circles come out as eggs and the margin stop numbers
+        are all wrong.
+      -->
+      <details id="measure">
+        <summary>Measure your machine</summary>
+
+        <p class="hint">
+          Type <b>40 capital M</b> in one line. Then measure with a ruler from
+          the <b>left edge of the first M</b> to the <b>left edge of the
+          last</b> one — the same edge on both, not the width of the block of
+          ink. That way the letter’s own side spacing cancels out and what you
+          measure is pure carriage travel.
+        </p>
+
+        <div class="measure-row">
+          <div class="field">
+            <label for="mCount">Letters typed</label>
+            <input type="number" id="mCount" value="40" min="2" max="200"
+                   step="1" inputmode="numeric">
+          </div>
+          <div class="field">
+            <label for="mMm">First to last, in mm</label>
+            <input type="number" id="mMm" min="1" step="0.5"
+                   inputmode="decimal" placeholder="99">
+          </div>
+        </div>
+        <p class="hint" id="mExpect"></p>
+
+        <p class="hint">
+          The same trick downwards, if you like: wind on 40 lines and measure
+          from the first baseline to the last. Optional — line spacing is six
+          to the inch on very nearly every machine ever built.
+        </p>
+
+        <div class="measure-row">
+          <div class="field">
+            <label for="lCount">Lines wound on</label>
+            <input type="number" id="lCount" value="40" min="2" max="200"
+                   step="1" inputmode="numeric">
+          </div>
+          <div class="field">
+            <label for="lMm">First to last, in mm</label>
+            <input type="number" id="lMm" min="1" step="0.5"
+                   inputmode="decimal" placeholder="169">
+          </div>
+        </div>
+
+        <div class="row">
+          <button type="button" id="mApply">Work it out</button>
+          <button type="button" id="mClear" class="link">back to the profile</button>
+        </div>
+        <p class="hint" id="mResult"></p>
+      </details>
     </fieldset>
 
     <!-- ── the paper ─────────────────────────────────────── -->
@@ -186,6 +245,7 @@
         <pre id="mini"></pre>
       </div>
       <div id="warnings"></div>
+      <p class="warn" id="setupNote" hidden></p>
     </div>
   </div>
 </section>

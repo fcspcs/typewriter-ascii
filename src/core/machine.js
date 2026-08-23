@@ -40,6 +40,75 @@ export function cellWidthMm(m) {
   return MM_PER_INCH / m.cpi;
 }
 
+/* ------------------------------------------------------------------ */
+/* Measuring a real machine                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The pitches machines were actually built in.
+ *
+ * Pica and elite are the two that matter. Anything else is a curiosity, and
+ * a measurement that lands somewhere else is far more likely to be a
+ * mis-measurement than a rare machine — so the caller is told the distance
+ * to the nearest standard rather than being quietly snapped onto it.
+ */
+export const PITCHES = [
+  { perInch: 10, name: 'pica' },
+  { perInch: 12, name: 'elite' },
+];
+
+/** Line spacings. Six to the inch is very nearly universal. */
+export const LINE_PITCHES = [
+  { perInch: 6, name: 'six lines to the inch' },
+];
+
+/**
+ * Turn a ruler reading into a pitch.
+ *
+ * `steps` is how many times the carriage moved between the two points you
+ * measured — not how many characters you typed. Type forty M and the ink
+ * runs from the first to the fortieth, which is thirty-nine steps of travel.
+ *
+ * That off-by-one is the whole reason this function exists. Measuring the
+ * width of the block of ink instead would be wrong by most of a character,
+ * because a printed M is narrower than the cell it sits in. Measuring the
+ * *same edge* on the first and the last letter makes that side bearing
+ * cancel out exactly, and what is left is whole steps of the carriage.
+ *
+ * Forty characters rather than ten for the same reason a long baseline beats
+ * a short one anywhere else: a half-millimetre slip of the ruler is spread
+ * across thirty-nine steps instead of nine.
+ *
+ * @param {number} steps  carriage or paper movements between the two marks
+ * @param {number} mm     measured distance
+ * @param {{perInch:number,name:string}[]} [table]
+ * @returns {null | { perInch: number, nearest: object, offPercent: number,
+ *                    confident: boolean }}
+ */
+export function pitchFrom(steps, mm, table = PITCHES) {
+  if (!(steps > 0) || !(mm > 0)) return null;
+
+  const perInch = (steps * MM_PER_INCH) / mm;
+
+  let nearest = table[0];
+  for (const p of table) {
+    if (Math.abs(p.perInch - perInch) < Math.abs(nearest.perInch - perInch)) {
+      nearest = p;
+    }
+  }
+  const offPercent = Math.abs(perInch - nearest.perInch) / nearest.perInch * 100;
+
+  // Two per cent is about a millimetre out over forty characters — sloppier
+  // than that and we should not be telling anybody they own a pica machine.
+  // Pica and elite are twenty per cent apart, so this leaves plenty of room.
+  return { perInch, nearest, offPercent, confident: offPercent <= 2 };
+}
+
+/** What that measurement should have read, had the machine been standard. */
+export function expectedMm(steps, perInch) {
+  return (steps * MM_PER_INCH) / perInch;
+}
+
 /** Millimetres per line. */
 export function cellHeightMm(m) {
   return MM_PER_INCH / m.lpi;

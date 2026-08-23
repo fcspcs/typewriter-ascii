@@ -6,9 +6,13 @@
  *
  * How to measure your own machine:
  *
- *   cpi   Type ten characters, measure the line. 25.4 mm → 10 (pica),
- *         21.2 mm → 12 (elite).
- *   lpi   Type ten lines, measure. 42.3 mm → 6 lines per inch.
+ *   cpi   Use the measuring panel in the app — it walks you through it and
+ *         works the number out. By hand: type forty capital M, measure from
+ *         the left edge of the first to the left edge of the fortieth, and
+ *         divide 39 × 25.4 by what you read. 99.1 mm → 10 (pica),
+ *         82.6 mm → 12 (elite).
+ *   lpi   Same idea downwards: forty lines, first baseline to last.
+ *         169.3 mm → 6 lines per inch.
  *   scale Read the numbers printed on the carriage scale. Push each margin
  *         stop as far as it will go and note where it stops.
  *   rows  Type every key in order, unshifted, then shifted.
@@ -22,8 +26,12 @@ export const PROFILES = [
     maker: 'Olympia Werke AG, Wilhelmshaven',
     years: '1962–1964',
     layout: 'QWERTZ (German)',
+    // Unmeasured. Olympia built the SM7 in both pitches, and the manual does
+    // not say which one any particular machine left the factory with. Pica
+    // is the assumption until somebody measures their own; the app offers to.
     cpi: 10,
     lpi: 6,
+    pitchMeasured: false,
     // Read off the keyboard itself. Note there is no zero and no 'at' sign:
     // digits stop at 9, and a capital O stands in for zero. Getting this
     // wrong is the fastest way to produce art that cannot be typed.

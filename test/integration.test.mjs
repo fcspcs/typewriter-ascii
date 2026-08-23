@@ -340,6 +340,69 @@ await check('the instructions come back once there is something to type', async 
   assert(/keystrokes/.test($('facts').textContent), 'no facts');
 });
 
+console.log('measuring the machine');
+
+await check('the expected readings are offered before anything is measured', () => {
+  const t = $('mExpect').textContent;
+  // 39 steps: 99.1 mm for pica, 82.5 mm for elite. Seeing both first is what
+  // makes the reading a decision rather than a guess — and 16 mm apart is a
+  // difference nobody misreads.
+  assert(/99\.1 mm/.test(t) && /82\.5 mm/.test(t), `got "${t}"`);
+});
+
+await check('a pica reading is recognised and reported', async () => {
+  $('mCount').value = '40';
+  $('mMm').value = String((39 * 25.4 / 10).toFixed(1));
+  $('mApply').click();
+  await new Promise((r) => setTimeout(r, 60));
+
+  assert(/pica/.test($('mResult').textContent),
+    `got "${$('mResult').textContent}"`);
+  // What fits inside the margins, which is the number that is any use.
+  assert(/66 characters across/.test($('mResult').textContent),
+    'did not report what fits on the sheet');
+});
+
+await check('an elite reading changes what fits on the sheet', async () => {
+  $('mMm').value = String((39 * 25.4 / 12).toFixed(1));
+  $('mApply').click();
+  await new Promise((r) => setTimeout(r, 60));
+
+  assert(/elite/.test($('mResult').textContent),
+    `got "${$('mResult').textContent}"`);
+  assert(/81 characters across/.test($('mResult').textContent),
+    'sheet width did not follow the measurement');
+  assert(/12 characters per inch/.test($('machineHint').textContent),
+    'the machine still describes itself as pica');
+});
+
+await check('the measurement survives being written to storage', () => {
+  const saved = JSON.parse(window.localStorage.getItem('typewriter-ascii'));
+  assert(saved.measured?.['olympia-sm7']?.cpi === 12,
+    'measurement was not saved: ' + JSON.stringify(saved.measured));
+});
+
+await check('a reading between the pitches is refused and nothing changes', async () => {
+  $('mMm').value = '90';
+  $('mApply').click();
+  await new Promise((r) => setTimeout(r, 60));
+
+  assert(/Nothing has been changed/.test($('mResult').textContent),
+    `got "${$('mResult').textContent}"`);
+  assert(/12 characters per inch/.test($('machineHint').textContent),
+    'a bad reading was allowed through');
+});
+
+await check('the measurement can be undone', async () => {
+  $('mClear').click();
+  await new Promise((r) => setTimeout(r, 60));
+
+  assert(/10 characters per inch/.test($('machineHint').textContent),
+    `still measured: "${$('machineHint').textContent}"`);
+  assert(/assumed/.test($('machineHint').textContent),
+    'the profile no longer admits the pitch is unmeasured');
+});
+
 console.log('errors during the run');
 
 await check('nothing threw along the way', () => {

@@ -9,6 +9,7 @@
 import { PROFILES, profileById } from '../profiles/index.js';
 import {
   charset, makeTypeable, PAPERS, paperById, textArea, setUp,
+  pitchFrom, expectedMm, PITCHES, LINE_PITCHES,
 } from '../core/machine.js';
 import { buildAtlas } from '../core/glyphs.js';
 import {
@@ -30,6 +31,10 @@ const $ = (id) => document.getElementById(id);
 
 const app = {
   machine: PROFILES[0],
+  // Measured pitches, keyed by profile id. Kept apart from the profile
+  // itself so the shipped data stays the shipped data and a measurement can
+  // always be undone.
+  measured: {},
   inverted: false,
   paper: PAPERS[0],
   chosen: new Set(),
@@ -52,6 +57,7 @@ const save = () => {
   try {
     localStorage.setItem(KEY, JSON.stringify({
       machine: app.machine.id,
+      measured: app.measured,
       paper: app.paper.id,
       chosen: [...app.chosen].join(''),
       at: app.at,
@@ -82,7 +88,10 @@ function fillSelects(saved) {
   $('paper').innerHTML = PAPERS
     .map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
 
-  app.machine = profileById(saved.machine ?? PROFILES[0].id);
+  app.measured = (saved.measured && typeof saved.measured === 'object')
+    ? saved.measured : {};
+
+  useProfile(saved.machine ?? PROFILES[0].id);
   app.paper = paperById(saved.paper ?? PAPERS[0].id);
   $('machine').value = app.machine.id;
   $('paper').value = app.paper.id;
@@ -96,6 +105,20 @@ function fillSelects(saved) {
   if (saved.redRows) $('redRows').value = saved.redRows;
   if (saved.invert) $('invert').value = saved.invert;
   if (saved.sentence) $('sentence').value = saved.sentence;
+}
+
+/**
+ * Adopt a profile, with any measurement the owner has taken laid over it.
+ *
+ * The profile is left untouched. A machine that has been measured is simply
+ * a copy carrying the real numbers, so clearing the measurement is nothing
+ * more than dropping the copy.
+ */
+function useProfile(id) {
+  const base = profileById(id);
+  const mine = app.measured[id];
+  app.machine = mine ? { ...base, ...mine, pitchMeasured: true } : base;
+  return app.machine;
 }
 
 /** Rebuild the glyph atlas — needed whenever the character set changes. */
@@ -191,9 +214,12 @@ function convert() {
 
 let noteTimer = null;
 function note(text) {
-  $('setupNote').textContent = text;
+  const el = $('setupNote');
+  if (!el) return;
+  el.textContent = text;
+  el.hidden = !text;
   clearTimeout(noteTimer);
-  noteTimer = setTimeout(() => { $('setupNote').textContent = ''; }, 8000);
+  noteTimer = setTimeout(() => { el.textContent = ''; el.hidden = true; }, 8000);
 }
 
 /* ── drawing ─────────────────────────────────────────────────── */
@@ -289,9 +315,13 @@ function draw() {
   $('charCount').textContent = `${app.chosen.size} on`;
 
   const m = app.machine;
+  const pitch = PITCHES.find((p) => p.perInch === m.cpi);
   $('machineHint').textContent =
-    `${m.cpi} characters per inch, ${m.lpi} lines per inch` +
+    `${m.cpi} characters per inch` + (pitch ? ` (${pitch.name})` : '') +
+    `, ${m.lpi} lines per inch` +
     (m.twoColour ? ', black and red ribbon' : '') +
+    (m.pitchMeasured ? ', measured on your machine'
+                     : m.pitchMeasured === false ? ', assumed — not measured' : '') +
     (m.notes ? `. ${m.notes}` : '');
 
   const area = textArea(app.paper, app.machine);
@@ -431,9 +461,10 @@ function wire() {
   ['mode', 'align', 'paper', 'machine', 'letterStyle', 'invert'].forEach((id) => {
     $(id).onchange = () => {
       if (id === 'machine') {
-        app.machine = profileById($('machine').value);
+        useProfile($('machine').value);
         app.chosen = new Set(charset(app.machine));
         rebuildAtlas();
+        showMeasured();
       }
       if (id === 'paper') app.paper = paperById($('paper').value);
       $('sentenceRow').hidden = $('mode').value !== 'sentence';
@@ -488,7 +519,113 @@ function wire() {
 
   // charset dialog
   $('editCharset').onclick = openCharset;
+
+  // measuring
+  $('mApply').onclick = applyMeasurement;
+  $('mClear').onclick = clearMeasurement;
+  ['mCount', 'mMm', 'lCount', 'lMm'].forEach((id) => {
+    $(id).oninput = showExpected;
+    $(id).onkeydown = (e) => { if (e.key === 'Enter') applyMeasurement(); };
+  });
+
   window.addEventListener('resize', () => draw());
+}
+
+/* ── measuring ───────────────────────────────────────────── */
+
+/**
+ * Say what the ruler ought to read for each standard pitch, before anything
+ * is measured. Two numbers 16 mm apart are easy to tell apart with a ruler,
+ * and seeing them first makes it obvious the reading is a real decision and
+ * not a guess.
+ */
+function showExpected() {
+  const n = +$('mCount').value;
+  const steps = n - 1;
+  if (!(steps > 0)) { $('mExpect').textContent = ''; return; }
+
+  $('mExpect').textContent =
+    `Over ${steps} steps of carriage travel that should read ` +
+    PITCHES.map((p) => `${expectedMm(steps, p.perInch).toFixed(1)} mm for ${p.name}`)
+      .join(', or ') + '.';
+}
+
+function applyMeasurement() {
+  const steps = +$('mCount').value - 1;
+  const mm = +$('mMm').value;
+  const found = pitchFrom(steps, mm);
+
+  if (!found) {
+    $('mResult').textContent =
+      'Type the number of letters and the distance you measured.';
+    return;
+  }
+
+  const parts = [];
+  const patch = {};
+
+  if (found.confident) {
+    patch.cpi = found.nearest.perInch;
+    parts.push(
+      `${found.perInch.toFixed(2)} characters per inch — that is ` +
+      `${found.nearest.name}, ${found.nearest.perInch} to the inch.`);
+  } else {
+    // Refusing to guess is the point. Between pica and elite there is a
+    // twenty per cent gap; landing in the middle of it means the ruler
+    // slipped, or the count is out by one, and snapping to the nearer one
+    // would bake that mistake into every sheet from now on.
+    $('mResult').textContent =
+      `That works out at ${found.perInch.toFixed(2)} characters per inch, ` +
+      `which is ${found.offPercent.toFixed(0)} per cent away from ` +
+      `${found.nearest.name}. Something is off — most likely the count. ` +
+      `${steps + 1} letters typed means ${steps} steps of travel, so measure ` +
+      `the same edge on the first and the last letter, not the width of the ` +
+      `ink. Nothing has been changed.`;
+    return;
+  }
+
+  // Line spacing is optional; almost nobody needs it, so a blank field is
+  // not a fault.
+  const lSteps = +$('lCount').value - 1;
+  const lMm = +$('lMm').value;
+  if (lMm > 0) {
+    const lines = pitchFrom(lSteps, lMm, LINE_PITCHES);
+    if (lines?.confident) {
+      patch.lpi = lines.nearest.perInch;
+      parts.push(`Line spacing confirmed at ${lines.nearest.perInch} to the inch.`);
+    } else if (lines) {
+      parts.push(
+        `The line measurement gives ${lines.perInch.toFixed(2)} lines per ` +
+        `inch, which is not a spacing machines were built in. Left alone.`);
+    }
+  }
+
+  app.measured[app.machine.id] = patch;
+  useProfile(app.machine.id);
+
+  const area = textArea(app.paper, app.machine);
+  parts.push(`${app.paper.name} now holds ${area.cols} characters across.`);
+
+  $('mResult').textContent = parts.join(' ');
+  convert();
+}
+
+function clearMeasurement() {
+  delete app.measured[app.machine.id];
+  useProfile(app.machine.id);
+  $('mMm').value = '';
+  $('lMm').value = '';
+  $('mResult').textContent = 'Back to the numbers the profile ships with.';
+  convert();
+}
+
+/** Show an existing measurement when the machine is switched. */
+function showMeasured() {
+  const mine = app.measured[app.machine.id];
+  $('mResult').textContent = mine
+    ? `Measured: ${mine.cpi} characters per inch` +
+      (mine.lpi ? `, ${mine.lpi} lines per inch.` : '.')
+    : '';
 }
 
 function readImage(f) {
@@ -691,5 +828,7 @@ const saved = load();
 fillSelects(saved);
 rebuildAtlas();
 wire();
+showExpected();
+showMeasured();
 $('sentenceRow').hidden = $('mode').value !== 'sentence';
 convert();

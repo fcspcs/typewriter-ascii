@@ -8,6 +8,7 @@ import assert from 'node:assert';
 import {
   charset, makeTypeable, untypeable, PAPERS, paperById,
   textArea, sheetGrid, setUp, cellWidthMm, cellHeightMm,
+  pitchFrom, expectedMm, PITCHES, LINE_PITCHES,
 } from '../src/core/machine.js';
 import { PROFILES, profileById } from '../src/profiles/index.js';
 import {
@@ -79,6 +80,75 @@ check('untypeable reports only genuinely impossible characters', () => {
 check('newlines and spaces survive conversion', () => {
   const { text } = makeTypeable('a b\nc', sm7);
   assert.strictEqual(text, 'a b\nc');
+});
+
+console.log('measuring');
+
+check('a perfect pica measurement reads as pica', () => {
+  // 40 characters typed is 39 steps of carriage travel.
+  const r = pitchFrom(39, 39 * 2.54);
+  assert.strictEqual(r.nearest.perInch, 10);
+  assert.ok(r.confident);
+  assert.ok(Math.abs(r.perInch - 10) < 1e-9, `got ${r.perInch}`);
+});
+
+check('a perfect elite measurement reads as elite', () => {
+  const r = pitchFrom(39, 39 * 25.4 / 12);
+  assert.strictEqual(r.nearest.perInch, 12);
+  assert.ok(r.confident);
+});
+
+check('the two pitches are far apart at forty characters', () => {
+  // The whole point of forty rather than ten: the two readings have to be
+  // impossible to confuse with a ruler.
+  const gap = Math.abs(expectedMm(39, 10) - expectedMm(39, 12));
+  assert.ok(gap > 15, `only ${gap.toFixed(1)} mm apart`);
+});
+
+check('a millimetre of ruler slip does not change the answer', () => {
+  for (const p of PITCHES) {
+    for (const slip of [-1, -0.5, 0.5, 1]) {
+      const r = pitchFrom(39, expectedMm(39, p.perInch) + slip);
+      assert.strictEqual(r.nearest.perInch, p.perInch,
+        `${p.name} ${slip} mm out became ${r.nearest.name}`);
+      assert.ok(r.confident, `${p.name} ${slip} mm out lost confidence`);
+    }
+  }
+});
+
+check('measuring the ink block instead of edge to edge is caught', () => {
+  // The classic mistake: measuring the printed block is short by roughly a
+  // whole character, which must not silently pass as a valid pitch.
+  const r = pitchFrom(39, expectedMm(40, 10));
+  assert.ok(!r.confident, 'an off-by-one measurement was accepted');
+});
+
+check('a reading between the two pitches is refused, not rounded', () => {
+  const middle = (expectedMm(39, 10) + expectedMm(39, 12)) / 2;
+  const r = pitchFrom(39, middle);
+  assert.ok(!r.confident);
+  assert.ok(r.offPercent > 5, `only ${r.offPercent} per cent off`);
+});
+
+check('nonsense input gives nothing back rather than a wrong pitch', () => {
+  for (const [steps, mm] of [[0, 99], [39, 0], [-1, 99], [39, -5], [NaN, 99]]) {
+    assert.strictEqual(pitchFrom(steps, mm), null, `${steps} / ${mm}`);
+  }
+});
+
+check('line spacing measures the same way', () => {
+  const r = pitchFrom(39, expectedMm(39, 6), LINE_PITCHES);
+  assert.strictEqual(r.nearest.perInch, 6);
+  assert.ok(r.confident);
+});
+
+check('a measured pitch drives the sheet size', () => {
+  // What the measurement is actually for: the same paper holds a fifth more
+  // characters on an elite machine.
+  const elite = { ...sm7, cpi: 12 };
+  const a4 = paperById('a4');
+  assert.strictEqual(sheetGrid(a4, sm7).cols, 82);
+  assert.strictEqual(sheetGrid(a4, elite).cols, 99);
 });
 
 console.log('paper');
