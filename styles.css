@@ -382,6 +382,20 @@ td.rn { white-space: pre; }
 td.rn .red { color: var(--red); }
 td.rn .sp { background: var(--space); }
 
+/* ── nothing to type yet ─────────────────────────────────────── */
+/*
+ * An empty motif still produces arithmetic - setUp() dutifully centres
+ * nothing on the sheet and returns a margin stop of 41. Printing that as an
+ * instruction is worse than printing nothing, so these sections wait until
+ * there is real work to describe.
+ */
+.blank { display: none; color: var(--faint); font-size: 12px; margin: 0;
+         text-align: center; padding: 2.5rem 1rem; }
+body.empty .blank { display: block; }
+body.empty #stepSetup,
+body.empty #stepSheet,
+body.empty #stepTable { display: none; }
+
 /* ── full screen ─────────────────────────────────────────────── */
 
 body.full > header,

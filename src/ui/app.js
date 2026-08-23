@@ -235,6 +235,26 @@ function draw() {
   const tally = inkTally(lines, colours);
   const width = Math.max(0, ...lines.map((l) => l.length));
 
+  // With nothing to type, setUp() still returns numbers - it centres an
+  // empty motif on the sheet. Those numbers are arithmetic, not advice, and
+  // showing them as "set your margin stop to 41" is simply wrong. So the
+  // instructions, the sheet and the table stay out of the way until there
+  // is something real to type.
+  document.body.classList.toggle('empty', lines.length === 0);
+  if (!lines.length) {
+    $('mini').textContent = '';
+    $('facts').innerHTML = '';
+    $('warnings').innerHTML = '';
+    $('instructions').innerHTML = '';
+    $('sheet').innerHTML = '';
+    $('table').innerHTML = '';
+    app.els = [];
+    app.rows = [];
+    $('count').textContent = '';
+    $('bar').style.width = '0%';
+    return;
+  }
+
   $('facts').innerHTML = [
     ['size', `${width} × ${lines.length}`],
     ['keystrokes', String(tally.total)],
