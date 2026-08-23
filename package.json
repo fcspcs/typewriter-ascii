@@ -1,0 +1,12 @@
+{
+  "name": "typewriter-ascii",
+  "version": "0.1.0",
+  "description": "Turn images and text into ASCII art you can actually type on a mechanical typewriter.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "test": "node test/listen.test.mjs && node test/core.test.mjs",
+    "dev": "vite",
+    "build": "vite build"
+  }
+}
