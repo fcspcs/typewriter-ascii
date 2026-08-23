@@ -8,7 +8,7 @@
 
 import { PROFILES, profileById } from '../profiles/index.js';
 import {
-  charset, makeTypeable, PAPERS, paperById, textArea, setUp,
+  charset, makeTypeable, PAPERS, paperById, textArea, setUp, sheetGrid,
   pitchFrom, expectedMm, PITCHES, LINE_PITCHES,
 } from '../core/machine.js';
 import { buildAtlas } from '../core/glyphs.js';
@@ -346,31 +346,92 @@ const esc = (t) => String(t).replace(/[&<>]/g,
  * Whole motif, tiny, so a change to any setting is visible without
  * scrolling. Sized to fit its column rather than to a fixed value.
  */
+/**
+ * Measure how wide one character is in the preview font, per px of size.
+ *
+ * Monospaced faces are not all 0.6 em: the browser picks whatever the system
+ * offers, and guessing wrong tilts the whole sheet. Measured once, because
+ * the answer only changes if the font does.
+ */
+let advanceRatio = 0;
+function charAdvance() {
+  if (advanceRatio) return advanceRatio;
+  // 0.6 em is what Courier and most of its descendants use. It is the
+  // fallback rather than the answer, because the browser picks the face from
+  // a list and a wrong ratio tilts the whole sheet.
+  advanceRatio = 0.6;
+  try {
+    const c = document.createElement('canvas').getContext('2d');
+    const face = getComputedStyle(document.documentElement)
+      .getPropertyValue('--mono').trim() || 'monospace';
+    c.font = `100px ${face}`;
+    const w = c.measureText('M')?.width;
+    if (w > 0) advanceRatio = w / 100;
+  } catch { /* no canvas text metrics: keep the fallback */ }
+  return advanceRatio;
+}
+
+/**
+ * The preview is a sheet of paper, not a block of text.
+ *
+ * It used to draw the motif alone, tight to its own edges. That answered
+ * "what does it look like" and quietly dropped the two things the preview is
+ * actually for: what shape the paper is, and where on it the motif lands.
+ * A postcard and an A4 looked identical, and centring and top-left placement
+ * were indistinguishable although they are a whole setting apart.
+ *
+ * So the whole sheet is drawn, in the proportions of the chosen paper, with
+ * the motif standing where `setUp()` says the machine will put it. The cell
+ * is the machine's real cell — wider than tall at pica, more so at elite —
+ * so a circle that will come out as an egg looks like an egg here too.
+ */
 function drawMini() {
   const { lines, colours } = app;
   const host = $('mini');
-  if (!lines.length) { host.textContent = ''; return; }
+  const paperEl = host.parentElement;
+  if (!lines.length) { host.textContent = ''; paperEl.style.aspectRatio = ''; return; }
 
-  const width = Math.max(...lines.map((l) => l.length));
-  const box = host.parentElement.clientWidth - 34;
-  const size = clamp(Math.floor(box / Math.max(width, 1) * 1.68), 4, 13);
-  document.documentElement.style.setProperty('--mini-size', `${size}px`);
+  const sheet = sheetGrid(app.paper, app.machine);
+  const col0 = Math.max(0, (app.setup?.left ?? 0) - (app.setup?.paperGuide ?? 0));
+  const row0 = Math.max(0, app.setup?.advance ?? 0);
 
-  host.innerHTML = lines.map((line, r) => {
+  // The sheet keeps the paper's proportions, so the shape of the box is
+  // itself information: a postcard looks like a postcard.
+  paperEl.style.aspectRatio = `${app.paper.w} / ${app.paper.h}`;
+
+  // Fit the sheet's columns across the box; the cell height then follows
+  // from the machine, not from a line-height that happens to look nice.
+  const boxW = paperEl.clientWidth - 24;
+  const cellW = boxW / sheet.cols;
+  const cellH = cellW * (app.machine.cpi / app.machine.lpi);
+  const size = cellW / charAdvance();
+
+  host.style.fontSize = `${size}px`;
+  host.style.lineHeight = `${cellH}px`;
+
+  // Build every row of the sheet, blank ones included: the empty space above
+  // and to the left is exactly what the margin stop and the paper feed are
+  // being set to produce, so it is worth seeing.
+  const out = [];
+  for (let r = 0; r < sheet.rows; r++) {
+    const line = lines[r - row0];
+    if (line === undefined) { out.push(''); continue; }
+
     const text = line.replace(/\s+$/, '');
-    if (!text) return '';
-    let out = '';
+    let row = ' '.repeat(col0);
     let i = 0;
     while (i < text.length) {
-      const red = colours?.[r]?.[i] === 'red';
+      const red = colours?.[r - row0]?.[i] === 'red';
       let j = i;
-      while (j + 1 < text.length && (colours?.[r]?.[j + 1] === 'red') === red) j++;
+      while (j + 1 < text.length
+             && (colours?.[r - row0]?.[j + 1] === 'red') === red) j++;
       const chunk = esc(text.slice(i, j + 1));
-      out += red ? `<i class="r">${chunk}</i>` : chunk;
+      row += red ? `<i class="r">${chunk}</i>` : chunk;
       i = j + 1;
     }
-    return out;
-  }).join('\n');
+    out.push(row);
+  }
+  host.innerHTML = out.join('\n');
 }
 
 /** Short plain-English note under each picture style. */

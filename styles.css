@@ -271,6 +271,12 @@ input[type=range]::-moz-range-thumb {
  * ribbon.
  */
 .paper-stick { position: sticky; top: 1rem; }
+/*
+ * The box is the sheet. Its proportions are set from the chosen paper in
+ * drawMini(), so an A6 postcard is visibly a postcard and not a small A4,
+ * and the padding is even all round because a real sheet has no margin
+ * built into it — the margins are drawn, by leaving cells empty.
+ */
 .paper-view {
   --sheet-paper: #ffffff;
   --sheet-ink:   #171614;
@@ -278,15 +284,15 @@ input[type=range]::-moz-range-thumb {
 
   background: var(--sheet-paper);
   border: 1px solid var(--hair);
-  padding: 1.4rem 1rem;
-  overflow: auto;
-  max-height: 68vh;
+  padding: 12px;
+  overflow: hidden;
   /* Native scrollbars inside this box would otherwise be drawn dark. */
   color-scheme: light;
 }
 .paper-view pre {
   margin: 0;
-  font: 400 var(--mini-size, 10px)/1.16 var(--mono);
+  font-family: var(--mono);
+  font-weight: 400;
   white-space: pre;
   color: var(--sheet-ink);
 }
@@ -509,7 +515,7 @@ dialog menu { display: flex; justify-content: flex-end; gap: 1.3rem;
   section { padding: 1.8rem 0; }
   td.n { width: 2.6rem; }
   .key { width: 1.7rem; height: 1.7rem; font-size: 11px; }
-  .paper-view { max-height: 42vh; }
+  .paper-view { max-height: none; }
 }
 
 @media print {

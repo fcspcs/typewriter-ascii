@@ -359,6 +359,62 @@ await check('native controls follow the dark theme', () => {
   assert(meta, 'color-scheme meta tag missing');
 });
 
+await check('the preview is a sheet, in the shape of the chosen paper', async () => {
+  // The preview used to draw the motif alone, tight to its own edges: an A6
+  // postcard and an A4 looked identical, and centred and top-left placement
+  // were indistinguishable although a whole setting separates them.
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'text').click();
+  $('letterText').value = 'HI';
+  $('letterText').dispatchEvent(new window.Event('input'));
+  await wait(400);
+
+  const view = window.document.querySelector('.paper-view');
+  const a4 = paperRatio(view);
+  assert(a4, `no aspect ratio set: "${view.style.aspectRatio}"`);
+  assert(Math.abs(a4 - 210 / 297) < 0.01, `A4 came out at ${a4.toFixed(3)}`);
+
+  $('paper').value = 'a6';
+  $('paper').dispatchEvent(new window.Event('change'));
+  await wait(400);
+  const a6 = paperRatio(view);
+  assert(Math.abs(a6 - 105 / 148) < 0.01, `A6 came out at ${a6.toFixed(3)}`);
+
+  $('paper').value = 'a4';
+  $('paper').dispatchEvent(new window.Event('change'));
+  await wait(400);
+});
+
+function paperRatio(el) {
+  const m = /([\d.]+)\s*\/\s*([\d.]+)/.exec(el.style.aspectRatio ?? '');
+  return m ? +m[1] / +m[2] : 0;
+}
+
+await check('placement moves the motif on the sheet', async () => {
+  // Centred and top-left must not draw the same thing. The blank cells above
+  // and to the left are what the paper feed and the margin stop are being
+  // set to produce, so they belong in the picture.
+  $('align').value = 'centre';
+  $('align').dispatchEvent(new window.Event('change'));
+  await wait(400);
+  const centred = $('mini').textContent;
+
+  $('align').value = 'topleft';
+  $('align').dispatchEvent(new window.Event('change'));
+  await wait(400);
+  const topLeft = $('mini').textContent;
+
+  assert(centred !== topLeft, 'the preview ignores where the motif is placed');
+
+  const lead = (s) => s.split('\n').findIndex((l) => l.trim().length);
+  assert(lead(centred) > lead(topLeft),
+    `centred should start further down: ${lead(centred)} vs ${lead(topLeft)}`);
+
+  $('align').value = 'centre';
+  $('align').dispatchEvent(new window.Event('change'));
+  await wait(400);
+});
+
 await check('the paper preview stays white in the dark theme', () => {
   // Paper has no night mode. Everywhere else the theme is a matter of
   // comfort; inside this box the colours are a prediction of what comes out
