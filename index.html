@@ -226,15 +226,35 @@
           </p>
         </div>
 
-        <!--
-          The ribbon has two halves. The second one is a second ink already
-          paid for, so the question worth asking is not "which rows are red"
-          but "where does red do some work". Every option here is a rule
-          about the picture; the old line-number box is still available as
-          the last one for anybody who wants to place it by hand.
-        -->
+      </details>
+    </fieldset>
+
+    <!--
+      The ribbon gets its own block rather than sitting under "fine tuning"
+      beside contrast and detail. Those two are about turning a photograph
+      into characters; this is about how the finished thing gets typed, and
+      it applies just as much to a word as to a picture.
+
+      It starts with a switch, because using the red half at all is a yes/no
+      decision — it means a second pass at the machine — and burying that in
+      a menu of styles made it look like a style choice.
+    -->
+    <fieldset id="inkSet">
+      <legend>Ribbon</legend>
+
+      <div class="field">
+        <label class="check">
+          <input type="checkbox" id="useRed">
+          <span>Use the red half too</span>
+        </label>
+        <p class="hint" id="inkOff">
+          Everything in black, one pass through the machine.
+        </p>
+      </div>
+
+      <div id="inkOn" hidden>
         <div class="field">
-          <label for="ink">Red ribbon</label>
+          <label for="ink">Where the red goes</label>
           <select id="ink"></select>
           <p class="hint" id="inkHint"></p>
         </div>
@@ -250,7 +270,7 @@
         </div>
 
         <p class="hint" id="inkTally"></p>
-      </details>
+      </div>
     </fieldset>
   </div>
 

@@ -243,10 +243,14 @@ export function buildSheetPdf({
   });
 
   for (const w of setup.warnings ?? []) {
+    // Accepts both the old plain string and the { level, text } form.
+    const text = typeof w === 'string' ? w : w.text;
+    const stop = typeof w !== 'string' && w.level === 'stop';
     y += 2;
-    p2.line(20, y - 3, 20, y + wrap(w, 74).length * 4.2, { grey: 0.5, width: 1 });
-    for (const row of wrap(w, 74)) {
-      p2.text(23, y, row, { size: 8, font: 'F1' });
+    p2.line(20, y - 3, 20, y + wrap(text, 74).length * 4.2,
+      { grey: stop ? 0.1 : 0.55, width: stop ? 1.6 : 1 });
+    for (const row of wrap(text, 74)) {
+      p2.text(23, y, row, { size: 8, font: stop ? 'F3' : 'F1' });
       y += 4.2;
     }
     y += 3;

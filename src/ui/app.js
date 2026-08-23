@@ -67,6 +67,7 @@ const save = () => {
       detail: $('detail').value,
       redRows: $('redRows').value,
       ink: $('ink').value,
+      useRed: $('useRed').checked,
       inkAmount: $('inkAmount').value,
       invert: $('invert').value,
       sentence: $('sentence').value,
@@ -85,8 +86,6 @@ function fillSelects(saved) {
   $('letterStyle').innerHTML = Object.entries(STYLES)
     .map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
 
-  $('ink').innerHTML = INK_SCHEMES
-    .map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
   $('machine').innerHTML = PROFILES
     .map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
   $('paper').innerHTML = PAPERS
@@ -108,6 +107,7 @@ function fillSelects(saved) {
   if (saved.detail) $('detail').value = saved.detail;
   if (saved.redRows) $('redRows').value = saved.redRows;
   if (saved.ink) $('ink').value = saved.ink;
+  if (saved.useRed) $('useRed').checked = true;
   if (saved.inkAmount) $('inkAmount').value = saved.inkAmount;
   if (saved.invert) $('invert').value = saved.invert;
   if (saved.sentence) $('sentence').value = saved.sentence;
@@ -160,6 +160,48 @@ function currentTab() {
  * quietly does nothing.
  */
 function syncInkControls() {
+  /*
+   * Not every scheme applies to every motif, and offering one that cannot
+   * work is the same fault as the width slider had.
+   *
+   * `shadow` is the clear case: it colours the second surface of a lettering
+   * style that draws one. Offered on a plain face, or on a picture, there is
+   * no second surface and it would quietly produce nothing. So the menu is
+   * rebuilt for whatever is currently being made, rather than being a fixed
+   * list with dead entries in it.
+   */
+  // The switch decides whether any of this is on show at all. A second
+  // colour means a second pass at the machine, so it is a decision in its
+  // own right rather than one entry in a list of styles.
+  const on = $('useRed').checked && (app.machine.twoColour !== false);
+  $('inkOn').hidden = !on;
+  $('inkOff').hidden = on;
+  $('useRed').disabled = app.machine.twoColour === false;
+  if (app.machine.twoColour === false) {
+    $('inkOff').textContent =
+      `${app.machine.name} has a single-colour ribbon, so everything is black.`;
+  }
+  if (!on) {
+    $('inkTally').hidden = true;
+    return;
+  }
+
+  const twoSurface = currentTab() === 'text' && usesTwo($('letterStyle').value);
+  const offered = INK_SCHEMES.filter(
+    (s) => s.id !== 'none' && (s.id !== 'shadow' || twoSurface));
+
+  const wanted = $('ink').value;
+  const ids = offered.map((s) => s.id).join(',');
+  if (ids !== app.inkOffered) {
+    app.inkOffered = ids;
+    $('ink').innerHTML = offered
+      .map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+    // Keep the choice if it survived the change; a style swap should not
+    // silently reset a setting the user made.
+    $('ink').value = offered.some((s) => s.id === wanted)
+      ? wanted : offered[0].id;
+  }
+
   const scheme = $('ink').value;
   const def = INK_SCHEMES.find((s) => s.id === scheme);
   const usesAmount = ['depth', 'accent', 'lit', 'split'].includes(scheme);
@@ -264,7 +306,8 @@ function convert() {
   app.lines = lines.length ? lines : [];
   const width = Math.max(0, ...app.lines.map((l) => l.length));
   app.colours = inkPlan(app.lines, {
-    scheme: $('ink').value,
+    scheme: $('useRed').checked && app.machine.twoColour !== false
+      ? $('ink').value : 'none',
     atlas: app.atlas,
     amount: +$('inkAmount').value / 100,
     rows: parseRows($('redRows').value, app.lines.length),
@@ -372,8 +415,15 @@ function draw() {
   ].filter(Boolean)
    .map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
 
+  // A warning now says how serious it is. "This will not fit" and "the
+  // margins move in a bit" were previously typeset identically, which made
+  // the real one easy to miss and the mild one look like a telling-off.
   $('warnings').innerHTML = (app.setup?.warnings ?? [])
-    .map((w) => `<p class="warn">${w}</p>`).join('');
+    .map((w) => {
+      const level = typeof w === 'string' ? 'note' : (w.level ?? 'note');
+      const text = typeof w === 'string' ? w : w.text;
+      return `<p class="warn ${level}">${esc(text)}</p>`;
+    }).join('');
 
   $('modeHint').textContent = MODE_HINTS[$('mode').value] ?? '';
   $('invertHint').textContent = app.inverted
@@ -542,7 +592,7 @@ function wire() {
 
   // settings that only need a redraw
   ['mode', 'align', 'paper', 'machine', 'letterStyle', 'invert',
-   'ink'].forEach((id) => {
+   'ink', 'useRed'].forEach((id) => {
     $(id).onchange = () => {
       if (id === 'machine') {
         useProfile($('machine').value);

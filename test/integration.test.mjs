@@ -198,8 +198,10 @@ await check('the zero was replaced with a capital O', () => {
 console.log('red ribbon');
 
 await check('marking lines red colours them', () => {
-  // Naming lines by hand is now one scheme among several, so it has to be
-  // chosen before the line numbers mean anything.
+  // Using the red half at all is now a switch of its own, and naming lines
+  // by hand is one scheme among several behind it.
+  $('useRed').checked = true;
+  $('useRed').dispatchEvent(new window.Event('change'));
   $('ink').value = 'rows';
   $('ink').dispatchEvent(new window.Event('change'));
   $('redRows').value = '0';
@@ -217,9 +219,18 @@ await check('the facts mention red strikes', () => {
   assert(/red/.test($('facts').textContent), $('facts').textContent);
 });
 
-await check('every ribbon scheme is offered and reddens something', async () => {
-  // The menu is built from INK_SCHEMES; if one of them silently produced no
-  // red the user would meet a setting that appears to do nothing.
+const setInk = async (scheme) => {
+  $('useRed').checked = true;
+  $('useRed').dispatchEvent(new window.Event('change'));
+  await wait(60);
+  $('ink').value = scheme;
+  $('ink').dispatchEvent(new window.Event('change'));
+  await wait(240);
+};
+
+await check('the red half is off until it is switched on', async () => {
+  // A second colour means a second pass through the machine. That is a
+  // decision, not a style, so it starts off and says so.
   [...window.document.querySelectorAll('.tab')]
     .find((t) => t.dataset.tab === 'text').click();
   $('letterStyle').value = 'shadow';
@@ -228,47 +239,81 @@ await check('every ribbon scheme is offered and reddens something', async () => 
   $('letterText').dispatchEvent(new window.Event('input'));
   await wait(400);
 
+  $('useRed').checked = false;
+  $('useRed').dispatchEvent(new window.Event('change'));
+  await wait(250);
+
+  assert($('inkOn').hidden, 'the schemes are on show with the ribbon switched off');
+  assert(!/red/.test($('facts').textContent),
+    `red strikes with the switch off: "${$('facts').textContent}"`);
+});
+
+await check('every scheme offered reddens something', async () => {
+  // A name in the menu that produces no red is a control that does nothing.
+  $('useRed').checked = true;
+  $('useRed').dispatchEvent(new window.Event('change'));
+  await wait(250);
+
   const ids = [...$('ink').options].map((o) => o.value);
-  assert(ids.length >= 6, `only ${ids.length} schemes offered`);
+  assert(ids.length >= 5, `only ${ids.length} schemes offered`);
+  assert(!ids.includes('none'),
+    '"black only" is still in the menu as well as being the switch');
 
   for (const id of ids) {
-    if (id === 'none' || id === 'rows') continue;
-    $('ink').value = id;
-    $('ink').dispatchEvent(new window.Event('change'));
-    await wait(220);
-    assert(/red/.test($('facts').textContent),
-      `${id} produced no red strikes`);
+    if (id === 'rows') continue;
+    await setInk(id);
+    assert(/red/.test($('facts').textContent), `${id} produced no red strikes`);
   }
 });
 
+await check('shadow is only offered where there is a shadow to colour', async () => {
+  // It colours the second surface of a lettering style that draws one.
+  // On a plain face there is no second surface and it would do nothing.
+  $('letterStyle').value = 'shadow';
+  $('letterStyle').dispatchEvent(new window.Event('change'));
+  await wait(300);
+  assert([...$('ink').options].some((o) => o.value === 'shadow'),
+    'not offered on a shadowed style');
+
+  $('letterStyle').value = 'block';
+  $('letterStyle').dispatchEvent(new window.Event('change'));
+  await wait(300);
+  assert(![...$('ink').options].some((o) => o.value === 'shadow'),
+    'offered on a plain face, where it cannot do anything');
+
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'image').click();
+  await wait(300);
+  assert(![...$('ink').options].some((o) => o.value === 'shadow'),
+    'offered for a picture, which has no shadow layer');
+
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'text').click();
+  await wait(300);
+});
+
 await check('the amount slider only shows where it is read', async () => {
-  $('ink').value = 'shadow';
-  $('ink').dispatchEvent(new window.Event('change'));
-  await wait(220);
+  $('letterStyle').value = 'shadow';
+  $('letterStyle').dispatchEvent(new window.Event('change'));
+  await setInk('shadow');
   assert($('inkAmountRow').hidden,
     'an amount is offered for a scheme that takes its rule from the motif');
 
-  $('ink').value = 'depth';
-  $('ink').dispatchEvent(new window.Event('change'));
-  await wait(220);
+  await setInk('depth');
   assert(!$('inkAmountRow').hidden, 'the amount went missing where it applies');
   assert($('redRowsRow').hidden, 'line numbers offered for a picture rule');
 
-  $('ink').value = 'rows';
-  $('ink').dispatchEvent(new window.Event('change'));
-  await wait(220);
+  await setInk('rows');
   assert(!$('redRowsRow').hidden, 'no way to name the lines');
 });
 
 await check('the cost of the second pass is stated', async () => {
-  $('ink').value = 'lit';
-  $('ink').dispatchEvent(new window.Event('change'));
-  await wait(250);
+  await setInk('lit');
   assert(/two passes/.test($('inkTally').textContent),
     `got "${$('inkTally').textContent}"`);
 
-  $('ink').value = 'none';
-  $('ink').dispatchEvent(new window.Event('change'));
+  $('useRed').checked = false;
+  $('useRed').dispatchEvent(new window.Event('change'));
   await wait(250);
   assert($('inkTally').hidden, 'a pass count is shown for a single-pass motif');
 });
@@ -341,12 +386,14 @@ await check('the preview can actually stay put while the settings scroll', () =>
 
 await check('the preview follows a change of settings', () => {
   const before = $('mini').innerHTML;
+  $('useRed').checked = true;
+  $('useRed').dispatchEvent(new window.Event('change'));
   $('ink').value = 'bands';
   $('ink').dispatchEvent(new window.Event('change'));
   return new Promise((r) => setTimeout(() => {
     assert($('mini').innerHTML !== before, 'preview did not react');
-    $('ink').value = 'none';
-    $('ink').dispatchEvent(new window.Event('change'));
+    $('useRed').checked = false;
+    $('useRed').dispatchEvent(new window.Event('change'));
     setTimeout(r, 250);
   }, 400));
 });

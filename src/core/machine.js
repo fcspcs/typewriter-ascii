@@ -283,15 +283,48 @@ export function setUp(motifW, motifH, paper, m, align = 'centre') {
   const marginCols = Math.floor((sheet.cols - area.cols) / 2);
   const marginRows = Math.floor((sheet.rows - area.rows) / 2);
 
-  if (motifW > area.cols) {
-    warnings.push(
-      `The motif is ${motifW} columns wide but only ${area.cols} fit inside ` +
-      `the margins. The margins will be narrower than usual.`);
-  }
-  if (motifH > area.rows) {
-    warnings.push(
-      `The motif is ${motifH} lines tall but only ${area.rows} fit inside ` +
-      `the margins.`);
+  /*
+   * Three different situations, and they used to be reported as if they were
+   * one. Telling somebody to hold the margin release for seven columns is
+   * useless advice when the motif is 152 columns wide and the sheet only
+   * holds 82: no amount of margin technique makes those fit, and the
+   * instruction reads as a demand rather than a warning.
+   *
+   *   1. wider than the usable area, but fits on the paper
+   *        -> real, and the margins simply move. Worth a note.
+   *   2. wider than the paper
+   *        -> impossible. Say so, and say what to change.
+   *
+   * Each entry carries a severity so the interface can tell an
+   * impossibility from an inconvenience.
+   */
+  const tooWide = motifW > sheet.cols;
+  const tooTall = motifH > sheet.rows;
+
+  if (tooWide || tooTall) {
+    const bits = [];
+    if (tooWide) bits.push(`${motifW} columns wide, the sheet holds ${sheet.cols}`);
+    if (tooTall) bits.push(`${motifH} lines tall, the sheet holds ${sheet.rows}`);
+    warnings.push({
+      level: 'stop',
+      text: `This will not fit on ${paper.name}: ${bits.join('; ')}. ` +
+        `Use a smaller style, a shorter word, or a larger sheet.`,
+    });
+  } else {
+    if (motifW > area.cols) {
+      warnings.push({
+        level: 'note',
+        text: `Wider than the usual margins — ${motifW} columns against ` +
+          `${area.cols}. It fits on the paper; the margins just move in less.`,
+      });
+    }
+    if (motifH > area.rows) {
+      warnings.push({
+        level: 'note',
+        text: `Taller than the usual margins — ${motifH} lines against ` +
+          `${area.rows}. It fits on the paper, with less room top and bottom.`,
+      });
+    }
   }
 
   const fromEdge = align === 'topleft'
@@ -317,24 +350,35 @@ export function setUp(motifW, motifH, paper, m, align = 'centre') {
     guide = 0;
     left = Math.max(m.scale.leftMin, fromEdge);
     right = Math.min(m.scale.rightMax, left + motifW);
-    if (fromEdge < m.scale.leftMin) {
+    // Only worth explaining when the motif genuinely fits on the paper.
+    // If it does not, the message above already said so, and adding margin
+    // technique on top of an impossibility is just noise.
+    if (tooWide) {
+      // nothing to add
+    } else if (fromEdge < m.scale.leftMin) {
       marginRelease = true;
-      warnings.push(
-        `The motif starts at scale ${fromEdge} but the left margin stop ` +
-        `only reaches ${m.scale.leftMin}. Type the first ` +
-        `${m.scale.leftMin - fromEdge} columns of each line with the margin ` +
-        `release held down.`);
+      warnings.push({
+        level: 'note',
+        text: `The first ${m.scale.leftMin - fromEdge} columns sit left of ` +
+          `where the margin stop reaches. Hold the margin release down for ` +
+          `those, then let the stop take over.`,
+      });
     } else {
-      warnings.push(
-        `The motif runs to scale ${fromEdge + motifW} but the right margin ` +
-        `stop only reaches ${m.scale.rightMax}. Lines will run into the bell.`);
+      warnings.push({
+        level: 'note',
+        text: `The lines run past scale ${m.scale.rightMax}, so the bell ` +
+          `will ring before the end of each one. Keep typing.`,
+      });
     }
   }
 
-  if (guide + sheet.cols > m.scale.max) {
-    warnings.push(
-      `The right paper edge lands at scale ${guide + sheet.cols}, past the ` +
-      `end of the scale (${m.scale.max}).`);
+  if (!tooWide && guide + sheet.cols > m.scale.max) {
+    warnings.push({
+      level: 'note',
+      text: `The right edge of the paper sits past the end of the scale ` +
+        `(${guide + sheet.cols} against ${m.scale.max}). Nothing is typed ` +
+        `out there; it only means the scale stops telling you where you are.`,
+    });
   }
 
   return { paperGuide: guide, left, right, advance, marginRelease, warnings };

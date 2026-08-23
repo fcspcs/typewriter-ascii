@@ -219,6 +219,34 @@ check('an over-wide motif warns instead of failing silently', () => {
   assert.ok(s.warnings.length > 0);
 });
 
+check('not fitting the paper is a stop, not a note', () => {
+  // 200 columns on a sheet that holds 82. This used to be reported at the
+  // same weight as "the margins move in a bit", alongside advice about the
+  // margin release — technique for something no technique can fix.
+  const s = setUp(200, 10, paperById('a4'), sm7, 'centre');
+  const stops = s.warnings.filter((w) => w.level === 'stop');
+  assert.strictEqual(stops.length, 1, 'expected exactly one blocking warning');
+  assert.ok(/will not fit/i.test(stops[0].text), stops[0].text);
+  assert.ok(!s.warnings.some((w) => /margin release/i.test(w.text)),
+    'margin release advice given for a motif that cannot fit at all');
+});
+
+check('a motif that fits but overruns the margins is only a note', () => {
+  // 80 columns: wider than the 66 inside the margins, but the sheet holds
+  // 82, so it is genuinely typeable and the advice is worth having.
+  const s = setUp(80, 10, paperById('a4'), sm7, 'centre');
+  assert.ok(s.warnings.length > 0, 'said nothing at all');
+  assert.ok(!s.warnings.some((w) => w.level === 'stop'),
+    'a typeable motif was reported as impossible');
+});
+
+check('every warning carries a level and a readable sentence', () => {
+  for (const w of setUp(200, 400, paperById('a6'), sm7, 'centre').warnings) {
+    assert.ok(['stop', 'note'].includes(w.level), JSON.stringify(w));
+    assert.ok(w.text.length > 20 && /\.$/.test(w.text.trim()), w.text);
+  }
+});
+
 check('top-left placement respects the margin', () => {
   const s = setUp(20, 10, paperById('a4'), sm7, 'topleft');
   assert.ok(s.advance > 0, 'should still wind on past the top margin');
