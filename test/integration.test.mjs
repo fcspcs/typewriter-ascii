@@ -68,6 +68,7 @@ const check = async (name, fn) => {
   catch (e) { console.log('  FAIL ' + name + '\n       ' + e.message); failures++; }
 };
 const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 console.log('page loads');
 
@@ -352,6 +353,84 @@ await check('the instructions come back once there is something to type', async 
   assert(!window.document.body.classList.contains('empty'), 'still empty');
   assert($('instructions').children.length > 0, 'no instructions');
   assert(/keystrokes/.test($('facts').textContent), 'no facts');
+});
+
+console.log('the width slider tells the truth');
+
+await check('it cannot be dragged past what the paper holds', async () => {
+  // It used to run to 120 columns. A4 at pica holds 66 inside the margins,
+  // so the top half of its travel did nothing but crop the picture — you
+  // dragged and watched the preview refuse to change.
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'image').click();
+  await wait(350);
+
+  assert(+$('width').max === 66, `slider still runs to ${$('width').max}`);
+  assert(/66 inside the margins/.test($('widthHint').textContent),
+    `the limit is not explained: "${$('widthHint').textContent}"`);
+});
+
+await check('it follows a change of paper', async () => {
+  $('paper').value = 'a6';
+  $('paper').dispatchEvent(new window.Event('change'));
+  await wait(350);
+
+  const max = +$('width').max;
+  assert(max > 0 && max < 66, `postcard still allows ${max} columns`);
+  assert(+$('width').value <= max, 'the value was left above the new ceiling');
+
+  $('paper').value = 'a4';
+  $('paper').dispatchEvent(new window.Event('change'));
+  await wait(350);
+});
+
+await check('it gets out of the way where it does nothing', async () => {
+  // Lettering takes its size from the word and the face; pasted art from the
+  // source. The slider is not consulted in either, and a control that does
+  // nothing makes you doubt every other control on the page.
+  for (const tab of ['text', 'paste']) {
+    [...window.document.querySelectorAll('.tab')]
+      .find((t) => t.dataset.tab === tab).click();
+    await wait(350);
+    assert($('widthRow').hidden, `still offered in the ${tab} tab`);
+  }
+
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'image').click();
+  await wait(350);
+  assert(!$('widthRow').hidden, 'gone missing where it does apply');
+});
+
+console.log('setting up sits with the typing');
+
+await check('the setup panel lives inside the typing step', () => {
+  const setup = $('stepSetup');
+  assert(setup, 'no setup panel');
+  assert(setup.tagName === 'DETAILS', `it is a ${setup.tagName}, not foldable`);
+  assert($('stepSheet').contains(setup),
+    'still a section of its own above the typing');
+});
+
+await check('a shut panel still says what the settings were', async () => {
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'text').click();
+  $('letterText').value = 'HI';
+  $('letterText').dispatchEvent(new window.Event('input'));
+  await wait(400);
+
+  const summary = $('setupSummary').textContent;
+  assert(/margin stop to \d+/i.test(summary),
+    `the summary carries no numbers: "${summary}"`);
+});
+
+await check('it folds away once the first line is done', async () => {
+  $('stepSetup').open = true;
+  $('restart').click();
+  await wait(60);
+  $('next').click();
+  await wait(60);
+
+  assert(!$('stepSetup').open, 'still open after moving off the first line');
 });
 
 console.log('measuring the machine');

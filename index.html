@@ -199,10 +199,13 @@
       </div>
       <p class="hint" id="paperHint"></p>
 
-      <div class="field">
+      <div class="field" id="widthRow">
         <label for="width">How wide <output id="widthOut"></output></label>
-        <input type="range" id="width" min="10" max="120" value="60">
-        <p class="hint">Wider means more detail and a great many more keystrokes.</p>
+        <!-- The ceiling is set from the paper at runtime; 66 is A4 at pica. -->
+        <input type="range" id="width" min="10" max="66" value="60">
+        <p class="hint" id="widthHint">
+          Wider means more detail and a great many more keystrokes.
+        </p>
       </div>
 
       <details>
@@ -250,16 +253,6 @@
   </div>
 </section>
 
-<!-- ══ set the machine up ════════════════════════════════════ -->
-<section id="stepSetup">
-  <h2>Before you start</h2>
-  <p class="lede-sm">
-    Set these once, then you never think about them again. The margin stop
-    does the centring for you — that is why you never type leading spaces.
-  </p>
-  <ol class="setup" id="instructions"></ol>
-</section>
-
 <!-- ══ type it ═══════════════════════════════════════════════ -->
 <section id="stepSheet">
   <h2>Type it
@@ -269,6 +262,21 @@
       <button id="pdf" class="link">pdf</button>
     </span>
   </h2>
+
+  <!--
+    Setting the machine up used to be a section of its own, above this one.
+    That put a wall of numbers between seeing the picture and typing it, and
+    it was read once and then scrolled past forever. It belongs here: open
+    when you arrive, shut once the paper is in, one click away afterwards.
+  -->
+  <details id="stepSetup" open>
+    <summary id="setupSummary">Before you start — set the machine up</summary>
+    <p class="lede-sm">
+      Set these once, then you never think about them again. The margin stop
+      does the centring for you — that is why you never type leading spaces.
+    </p>
+    <ol class="setup" id="instructions"></ol>
+  </details>
 
   <p class="lede-sm">
     The line you are on opens up and shows what to strike.

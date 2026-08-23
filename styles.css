@@ -288,6 +288,19 @@ input[type=range]::-moz-range-thumb {
 
 /* ── setup list ──────────────────────────────────────────────── */
 
+/*
+ * Setting up sits inside “type it” rather than above it, folded away once
+ * the first line is done. Marked off with a rule so a shut panel still reads
+ * as a thing you can open, not as a stray line of text.
+ */
+#stepSetup {
+  border: 1px solid var(--hair);
+  padding: 0.5rem 1rem;
+  margin-bottom: 1.4rem;
+  background: var(--raised);
+}
+#stepSetup .lede-sm { margin-top: 0; }
+
 ol.setup { margin: 0; padding-left: 1.5rem; max-width: 50rem; }
 ol.setup li { margin-bottom: 0.9rem; }
 ol.setup b { font-weight: 600; }

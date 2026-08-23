@@ -133,8 +133,38 @@ function currentTab() {
   return document.querySelector('.tab.on')?.dataset.tab ?? 'image';
 }
 
+/**
+ * Keep the width slider honest.
+ *
+ * Two ways it can lie, and both were in here. It ran to 120 columns when no
+ * paper holds that many, so the top half of its travel did nothing but crop.
+ * And it stayed on screen for lettering and pasted art, where the size comes
+ * from the word or the source and the slider is simply not consulted — you
+ * could drag it all day and watch nothing happen.
+ *
+ * A control that does nothing is worse than a missing one: it makes you
+ * doubt what you are seeing everywhere else.
+ */
+function syncWidthControl() {
+  const applies = currentTab() === 'image';
+  $('widthRow').hidden = !applies;
+  if (!applies) return;
+
+  const area = textArea(app.paper, app.machine);
+  const el = $('width');
+  el.max = String(area.cols);
+  if (+el.value > area.cols) el.value = String(area.cols);
+
+  $('widthOut').textContent = `${el.value} cols`;
+  $('widthHint').textContent =
+    `Wider means more detail and a great many more keystrokes. ` +
+    `${app.paper.name} holds ${area.cols} inside the margins, which is as ` +
+    `far as this goes.`;
+}
+
 function convert() {
   const tab = currentTab();
+  syncWidthControl();
   const area = textArea(app.paper, app.machine);
   const maxCols = Math.min(+$('width').value, area.cols);
 
@@ -331,8 +361,15 @@ function draw() {
 
   drawMini();
 
-  $('instructions').innerHTML = instructions().map(
+  const steps = instructions();
+  $('instructions').innerHTML = steps.map(
     ([a, b]) => `<li><b>${a}</b><span>${b}</span></li>`).join('');
+
+  // The summary carries the settings itself, so a shut panel still answers
+  // "what did it say again?" without being opened.
+  $('setupSummary').textContent = steps.length
+    ? `Before you start — ${steps.map(([a]) => a.toLowerCase()).join(', ')}`
+    : 'Before you start — set the machine up';
 
   // size the sheet so the widest line fits without scrolling, where possible
   const ch = Math.max(20, width);
@@ -402,6 +439,10 @@ function paint(previous = -1) {
 
 function go(i, scroll = true) {
   const prev = app.at;
+  // Moving off the first line means the paper is in and the stops are set.
+  // Folding the setup away at that moment is the one point where it is
+  // certainly finished with, and it costs a click to get back.
+  if (i > 0 && prev === 0) $('stepSetup').open = false;
   app.at = clamp(i, 0, Math.max(0, app.lines.length - 1));
   app.strike = 0;
   paint(prev);
@@ -479,6 +520,10 @@ function wire() {
         ? `${$(id).value} cols`
         : `${$(id).value}%`;
     };
+    // Slider position is meaningless while dragging unless the number moves
+    // with it, so the readout updates on input and the work happens on
+    // change.
+
     $(id).oninput = show;
     $(id).onchange = () => { show(); convert(); };
     show();
