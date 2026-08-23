@@ -29,7 +29,12 @@ A generator that ignores the machine produces art that cannot be typed:
 
 - **Images** → shape-matched characters, tone-matched characters, outline
   only, or a repeating sentence that reads continuously through the picture
-- **Lettering** → words in four faces, drawn from scratch (see *Fonts* below)
+- **Lettering** → words, or several lines of them, drawn from scratch
+  (see *Lettering* below)
+- **Landscape** → the sheet goes in on its long edge when the motif will not
+  fit upright. Not a rotation of the artwork: type bars strike one way only,
+  so the *paper* turns, not the letters. A4 at pica goes from 82 columns to
+  116
 - **Existing art** → paste it in; characters your machine lacks are swapped
   for the nearest shape it has, and you are told what changed
 - **Setup instructions** → paper guide, margin stops, how far to wind on
@@ -132,6 +137,25 @@ hollowing, shearing, stencil bridges, doubling, shadows, relief, oblique
 projection, draughted and rounded outlines — each in a compact and a large
 size where it makes sense.
 
+A newline starts a second line of letters, so two short words can be stacked
+where one long one will not fit; a blank line leaves a gap.
+
+**Raised uses three weights, not two.** An outline drawn in one character
+with the interior in another is a hollow letter with a fill — an edge lit
+from every side at once has no light direction and nothing stands off the
+page. Light from the top left, heaviest character on the top and left edges,
+faintest on the bottom and right, body between.
+
+**The characters come from your machine, not from a wish.** A generator that
+reaches for `#` and falls back to `H` produces a flat grey wall on a machine
+with no `#` — and on an Olympia SM7 `H` is not even the darkest key: measured
+at the sampling cell it covers 0.171 against 0.204 for `B` and 0.196 for `M`.
+So the tones are picked from what the machine actually has, by **rank** rather
+than by coverage. The arithmetic midpoint of the SM7's range selects `t`, a
+thin vertical with a bar, because 60 of its 88 characters sit in the top half
+of the range; by rank the middle is `2`, which really is a middle grey in a
+block. Three tones on an SM7 come out as `B` `2` `-`.
+
 **Every style is checked against the machine.** The classic isometric and
 relief FIGlet faces all need a backslash, and a great many typewriters —
 the Olympia SM7 among them — have no backslash key, nor a pipe, nor a tilde.
@@ -193,7 +217,8 @@ Same modules, no browser:
 
 ```sh
 node tools/cli.mjs machines
-node tools/cli.mjs text "HELLO" --style outline
+node tools/cli.mjs text "HELLO" --style relief
+node tools/cli.mjs text 'PIANO\nSTIMMER' --style block
 node tools/cli.mjs file rose.txt --paper a4 --red 0-15 --pdf out.pdf
 ```
 
