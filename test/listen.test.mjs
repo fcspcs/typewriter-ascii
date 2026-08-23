@@ -1,47 +1,121 @@
 /**
- * Does the peak picker survive the rebound?
+ * Does the strike detector count the same thing twice, and does it count the
+ * same audio the same way twice?
  *
- * We synthesise the flux signal a typewriter produces: a sharp strike
- * followed by a weaker echo a few dozen milliseconds later, plus noise.
- * A naive threshold detector counts every one of those twice — that is the
- * bug this test exists to catch.
+ * THE SECOND QUESTION IS THE IMPORTANT ONE, AND IT USED NOT TO BE ASKED.
+ *
+ * The previous version of this file fed hand-built flux traces to `_pick()`
+ * with a hard-coded threshold. Eighty-nine assertions passed while the
+ * detector's dominant error sat entirely outside what they touched: the FFT,
+ * the band, the adaptive threshold and — above all — the timing. It was
+ * evidence about the test generator, not about typewriters.
+ *
+ * What replaces it is the phase sweep. Synthesise a recording, then run it
+ * through the real detector many times, moving only the offset between the
+ * audio and the analysis grid. That offset is arbitrary in a browser and
+ * drifts continuously, so it must not change the answer — and unlike a hit
+ * rate, this needs no ground truth at all. Any spread in the counts is
+ * provably error. Measured on real recordings, the old chain spread 9% on
+ * medium typing and 19% on fast typing; that is what this test exists to
+ * stop coming back.
+ *
+ * The synthetic typewriter below is a model, and a model is not a machine.
+ * It is honest about the properties this suite actually depends on — a
+ * broadband transient, a weaker rebound, a room — and nothing here should be
+ * read as a claim about how an Olympia SM7 sounds.
  */
-import { StrikeListener, DEFAULTS } from '../src/core/listen.js';
+import {
+  StrikeDetector, StrikeListener, LineTracker, DEFAULTS,
+} from '../src/core/listen.js';
 import assert from 'node:assert';
 
-/** Fake one frame of flux into a listener's peak picker. */
-function feed(listener, flux, now, threshold) {
-  listener._pick(flux, threshold, now);
+const RATE = 48000;
+
+/** Deterministic noise, so a failure is always the same failure. */
+function rng(seed = 1) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296 - 0.5;
+  };
 }
 
 /**
- * Build a flux trace, 60 fps.
- * @param {number[]} strikeTimes ms
- * @param {number} reboundDelay  ms after each strike
- * @param {number} reboundLevel  relative loudness of the rebound
+ * Build a recording.
+ *
+ * A strike is a broadband click with a fast attack and a short decay, plus a
+ * weaker copy of itself a few dozen milliseconds later for the rebound. A
+ * carriage return is a long train of smaller clatter, not a smooth swell —
+ * the old test modelled it as `3 * Math.sin(...)` over half a second, which
+ * is a sound no typewriter makes.
+ *
+ * @param {Object} spec
+ * @param {number} spec.seconds
+ * @param {number[]} [spec.strikes] strike times, seconds
+ * @param {number[]} [spec.returns] carriage-return start times, seconds
+ * @param {number} [spec.noise] room noise amplitude
+ * @param {number[]} [spec.force] per-strike loudness, defaults to 1
  */
-function trace(strikeTimes, reboundDelay = 45, reboundLevel = 0.55) {
-  const frames = [];
-  const end = Math.max(...strikeTimes) + 600;
-  for (let t = 0; t <= end; t += 16.7) {
-    let v = 0.4 + Math.sin(t / 37) * 0.15;      // room noise
-    for (const s of strikeTimes) {
-      // strike: fast attack, quick decay
-      const d = t - s;
-      if (d >= 0 && d < 60) v += 9 * Math.exp(-d / 12);
-      const r = t - s - reboundDelay;
-      if (r >= 0 && r < 60) v += 9 * reboundLevel * Math.exp(-r / 12);
+function record({
+  seconds, strikes = [], returns = [], noise = 0.0005, force = null,
+  reboundMs = 45, reboundLevel = 0.5, gain = 1,
+}) {
+  const n = Math.round(seconds * RATE);
+  const x = new Float32Array(n);
+  const r = rng(7);
+  for (let i = 0; i < n; i++) x[i] = r() * noise;
+
+  // One click: filtered noise under a sharp exponential decay. Broadband is
+  // the property that matters, since that is what the flux responds to.
+  const click = (at, amp, decayMs) => {
+    const start = Math.round(at * RATE);
+    const len = Math.round((decayMs * 6 * RATE) / 1000);
+    const q = rng(Math.round(at * 1e6) | 1);
+    let last = 0;
+    for (let i = 0; i < len && start + i < n; i++) {
+      const t = (i / RATE) * 1000;
+      // A touch of high-pass: differencing tilts the noise upwards, which is
+      // where a metal-on-platen impact actually puts its energy.
+      const w = q();
+      const v = w - last * 0.6;
+      last = w;
+      x[start + i] += v * amp * Math.exp(-t / decayMs);
     }
-    frames.push({ t, v });
+  };
+
+  strikes.forEach((t, i) => {
+    const a = (force?.[i] ?? 1) * gain;
+    click(t, a, 8);
+    click(t + reboundMs / 1000, a * reboundLevel, 6);
+  });
+
+  for (const t of returns) {
+    // Lever, travel, and the slam into the margin stop: continuous clatter
+    // for ~400 ms, loudest at the end. The 4x amplitude is not decoration —
+    // on real recordings events of 250 ms or more peak a measured 13 dB
+    // above events of 100 ms or less, and a fixture that made the return
+    // merely as loud as a keystroke would be testing a machine nobody owns.
+    for (let k = 0; k < 40; k++) {
+      const at = t + k * 0.01;
+      const ramp = 0.5 + k / 40;
+      click(at, 3 * ramp * gain, 9);
+    }
   }
-  return frames;
+  return x;
 }
 
-function countStrikes(frames, opt = {}) {
-  const hits = [];
-  const l = new StrikeListener({ ...opt, onStrike: (i) => hits.push(i) });
-  for (const f of frames) feed(l, f.v, f.t, 2.0);
-  return hits;
+/** Count strikes and line ends in a recording, at a given analysis phase. */
+function run(x, phase = 0, opt = {}, block = 480) {
+  const strikes = [];
+  const returns = [];
+  const d = new StrikeDetector(RATE, {
+    ...opt,
+    onStrike: (e) => strikes.push(e),
+    onReturn: (e) => returns.push(e),
+  });
+  const y = x.subarray(phase);
+  for (let i = 0; i < y.length; i += block) d.push(y.subarray(i, i + block));
+  return { strikes, returns, detector: d };
 }
 
 let failures = 0;
@@ -50,101 +124,359 @@ const check = (name, fn) => {
   catch (e) { console.log('  FAIL ' + name + '\n       ' + e.message); failures++; }
 };
 
-console.log('strike detection');
+/* ── the load-bearing test ───────────────────────────────────── */
 
-check('single strike counts once, not twice', () => {
-  const hits = countStrikes(trace([200]));
-  assert.strictEqual(hits.length, 1, `got ${hits.length}`);
+console.log('the same audio counts the same, whatever the clock does');
+
+// Twelve seconds of ordinary typing: uneven spacing and uneven force, which
+// is what a person produces and what a fixed-interval generator does not.
+const typing = (() => {
+  const times = [];
+  const force = [];
+  const r = rng(31);
+  let t = 0.4;
+  for (let i = 0; i < 40; i++) {
+    times.push(t);
+    force.push(0.6 + Math.abs(r()) * 0.8);
+    t += 0.18 + Math.abs(r()) * 0.28;
+  }
+  return { x: record({ seconds: t + 1, strikes: times, force }), times, force };
+})();
+
+const HOP = Math.round((RATE * DEFAULTS.hopMs) / 1000);
+
+check('the count does not move when the analysis phase does', () => {
+  // This is the whole point of the rewrite. The phase between the audio and
+  // the analysis grid is arbitrary in a browser; if it changes the answer,
+  // the user sees drift that has nothing to do with what they typed.
+  const counts = [];
+  for (let p = 0; p < HOP; p += Math.round(HOP / 12)) {
+    counts.push(run(typing.x, p).strikes.length);
+  }
+  const lo = Math.min(...counts);
+  const hi = Math.max(...counts);
+  assert.strictEqual(hi - lo, 0,
+    `counts ranged ${lo}..${hi} over ${counts.length} phases: ${counts.join(',')}`);
 });
 
-check('ten strikes at typing speed count as ten', () => {
-  const times = Array.from({ length: 10 }, (_, i) => 200 + i * 260);
-  const hits = countStrikes(trace(times));
-  assert.strictEqual(hits.length, 10, `got ${hits.length}`);
+check('the count does not move when the audio arrives in different sized blocks', () => {
+  // A worklet delivers 128 frames at a time, a ScriptProcessorNode 1024, and
+  // a test file whatever it likes. The framing belongs to the detector, so
+  // none of that may be visible in the result.
+  const counts = [128, 256, 480, 1024, 4096]
+    .map((b) => run(typing.x, 0, {}, b).strikes.length);
+  assert.strictEqual(new Set(counts).size, 1, `got ${counts.join(',')}`);
+});
+
+check('the count does not move when the recording level does', () => {
+  // Phones vary, distances vary, and nobody will hold the machine at a fixed
+  // 30 cm. The threshold is relative to the room by construction; this
+  // checks that it really is.
+  const counts = [0.25, 0.5, 1, 2, 4].map((g) => {
+    const y = new Float32Array(typing.x.length);
+    for (let i = 0; i < y.length; i++) y[i] = typing.x[i] * g;
+    return run(y).strikes.length;
+  });
+  assert.strictEqual(new Set(counts).size, 1, `got ${counts.join(',')}`);
+});
+
+check('event times come from the audio, not from when we looked', () => {
+  // The old code timestamped with performance.now(), which is when the main
+  // thread got round to it. Times must be recoverable from the samples
+  // alone, so replaying the same recording gives the same times to the
+  // millisecond regardless of how it was fed in.
+  const a = run(typing.x, 0, {}, 128).strikes.map((e) => e.at.toFixed(3));
+  const b = run(typing.x, 0, {}, 8192).strikes.map((e) => e.at.toFixed(3));
+  assert.deepStrictEqual(a, b, 'times depended on the delivery schedule');
+});
+
+check('every strike is found, and none is found twice', () => {
+  // With a clean synthetic recording there is a right answer, so use it —
+  // but only as a floor. This says the detector works on the easy case; it
+  // says nothing about a real machine in a real room.
+  const { strikes } = run(typing.x);
+  assert.strictEqual(strikes.length, typing.times.length,
+    `heard ${strikes.length} of ${typing.times.length}`);
+  strikes.forEach((s, i) => {
+    const off = Math.abs(s.at - typing.times[i] * 1000);
+    assert.ok(off < 60, `strike ${i} placed ${off.toFixed(0)} ms out`);
+  });
+});
+
+/* ── the things the old suite was right to test ──────────────── */
+
+console.log('strike detection');
+
+check('a single strike counts once, not twice', () => {
+  const x = record({ seconds: 2, strikes: [0.8] });
+  assert.strictEqual(run(x).strikes.length, 1);
+});
+
+check('the rebound is swallowed even when it is loud', () => {
+  const x = record({
+    seconds: 3, strikes: [0.8, 1.8], reboundMs: 60, reboundLevel: 0.8,
+  });
+  assert.strictEqual(run(x).strikes.length, 2);
 });
 
 check('fast typing still resolves each strike', () => {
-  // 8 strikes per second — quick but human
-  const times = Array.from({ length: 8 }, (_, i) => 200 + i * 125);
-  const hits = countStrikes(trace(times, 40, 0.5));
-  assert.strictEqual(hits.length, 8, `got ${hits.length}`);
+  // Eight a second: quick, but well within what a practised typist does.
+  const times = Array.from({ length: 8 }, (_, i) => 0.5 + i * 0.125);
+  const x = record({ seconds: 2.5, strikes: times, reboundMs: 40 });
+  assert.strictEqual(run(x).strikes.length, 8);
 });
 
-check('a loud rebound is still not a strike', () => {
-  const hits = countStrikes(trace([200, 700], 60, 0.8));
-  assert.strictEqual(hits.length, 2, `got ${hits.length}`);
+check('varying strike force is not mistaken for a rebound', () => {
+  // Real typing is uneven. A light stroke after a heavy one must still count.
+  const times = [0.5, 0.8, 1.1, 1.4];
+  const x = record({ seconds: 2.2, strikes: times, force: [1, 0.4, 1, 0.4] });
+  assert.strictEqual(run(x).strikes.length, 4);
 });
 
-check('quiet room produces no phantom strikes', () => {
-  const frames = [];
-  for (let t = 0; t < 3000; t += 16.7) frames.push({ t, v: 0.5 + Math.random() * 0.3 });
-  const hits = countStrikes(frames);
-  assert.strictEqual(hits.length, 0, `got ${hits.length}`);
+check('a quiet room produces no phantom strikes', () => {
+  const x = record({ seconds: 5, strikes: [], noise: 0.002 });
+  assert.strictEqual(run(x).strikes.length, 0);
 });
 
-
-check('slow deliberate typing, long rebound gap', () => {
-  const times = Array.from({ length: 6 }, (_, i) => 200 + i * 700);
-  const hits = countStrikes(trace(times, 90, 0.6));
-  assert.strictEqual(hits.length, 6, `got ${hits.length}`);
+check('a noisy room produces no phantom strikes either', () => {
+  // Forty times the noise of the quiet case. Nothing about it is impulsive,
+  // so nothing about it should read as an onset.
+  const x = record({ seconds: 5, strikes: [], noise: 0.08 });
+  assert.strictEqual(run(x).strikes.length, 0);
 });
 
-check('varying strike force is not mistaken for rebound', () => {
-  // Real typing is uneven: a light stroke after a heavy one must still count.
-  const frames = [];
-  const times = [200, 500, 800, 1100];
-  const force = [9, 4, 9, 4];
-  for (let t = 0; t <= 1800; t += 16.7) {
-    let v = 0.4;
-    times.forEach((s, i) => {
-      const d = t - s;
-      if (d >= 0 && d < 60) v += force[i] * Math.exp(-d / 12);
-      const r = d - 45;
-      if (r >= 0 && r < 60) v += force[i] * 0.5 * Math.exp(-r / 12);
-    });
-    frames.push({ t, v });
+check('the band is set in hertz, so it means the same at any sample rate', () => {
+  // The old code took a fraction of Nyquist, which listened above 6.6 kHz on
+  // one device and above 7.2 kHz on another. Same code, different detector.
+  for (const rate of [44100, 48000]) {
+    const d = new StrikeDetector(rate);
+    const perBin = rate / d.opt.fftSize;
+    assert.ok(Math.abs(d.binLo * perBin - DEFAULTS.bandLowHz) < perBin,
+      `low edge is ${(d.binLo * perBin).toFixed(0)} Hz at ${rate}`);
+    assert.ok(Math.abs(d.binHi * perBin - DEFAULTS.bandHighHz) < perBin,
+      `high edge is ${(d.binHi * perBin).toFixed(0)} Hz at ${rate}`);
   }
-  const hits = countStrikes(frames);
-  assert.strictEqual(hits.length, 4, `got ${hits.length}`);
 });
 
-check('space bar (two mechanical clicks) counts once', () => {
-  // Down and release, close together and similar in level.
-  const hits = countStrikes(trace([300], 35, 0.75));
-  assert.strictEqual(hits.length, 1, `got ${hits.length}`);
+check('the band keeps the part of the strike that carries the energy', () => {
+  // Zhuang et al. 2005 put the keystroke between 400 Hz and 12 kHz. The old
+  // band began at 7.2 kHz and threw away a measured 62% of it.
+  assert.ok(DEFAULTS.bandLowHz <= 1000, 'the low edge is above the strike');
+  assert.ok(DEFAULTS.bandHighHz >= 10000, 'the high edge cuts into the strike');
 });
 
-check('carriage return does not add a strike', () => {
-  // A long rumble rather than a transient: high level, slow rise.
-  const frames = [];
-  for (let t = 0; t <= 1200; t += 16.7) {
-    let v = 0.4;
-    if (t > 400 && t < 900) v += 3 * Math.sin((t - 400) / 500 * Math.PI);
-    frames.push({ t, v });
+/* ── carriage return ─────────────────────────────────────────── */
+
+console.log('carriage return');
+
+/** A line of typing followed by the carriage coming back. */
+function line(count = 12, at = 0.4, pace = 0.25) {
+  const strikes = Array.from({ length: count }, (_, i) => at + i * pace);
+  const ret = strikes[strikes.length - 1] + 0.6;
+  return { strikes, ret, end: ret + 1 };
+}
+
+check('a carriage return is recognised as a line end', () => {
+  const l = line();
+  const x = record({ seconds: l.end, strikes: l.strikes, returns: [l.ret] });
+  const { returns } = run(x);
+  assert.strictEqual(returns.length, 1, `got ${returns.length}`);
+  assert.ok(returns[0].durationMs >= DEFAULTS.returnMinMs,
+    `only ${returns[0].durationMs.toFixed(0)} ms long`);
+});
+
+check('a long noise that is not louder than typing is not a line end', () => {
+  // A chair scraping, or a lorry outside: long enough, but nothing like as
+  // loud as the machine. Duration alone would fall for it.
+  const l = line();
+  const x = record({ seconds: l.end, strikes: l.strikes, returns: [l.ret] });
+  // Quarter amplitude for the return only: rebuild it that way.
+  const quiet = record({
+    seconds: l.end, strikes: l.strikes, returns: [],
+  });
+  const scale = 0.12;
+  const merged = new Float32Array(x.length);
+  for (let i = 0; i < x.length; i++) {
+    merged[i] = quiet[i] + (x[i] - quiet[i]) * scale;
   }
-  const hits = countStrikes(frames);
-  assert.ok(hits.length <= 1, `got ${hits.length}`);
+  assert.strictEqual(run(merged).returns.length, 0);
 });
+
+check('nothing is called a line end before any strike has been heard', () => {
+  // "Louder than an ordinary strike" is meaningless until ordinary strikes
+  // have been heard, and an absolute level would only measure the phone's
+  // distance from the machine. Refusing to answer is the correct answer.
+  const x = record({ seconds: 3, strikes: [], returns: [1.0] });
+  assert.strictEqual(run(x).returns.length, 0);
+});
+
+check('a burst of fast typing is not a carriage return', () => {
+  // This is the failure that matters. A run of quick strikes lasts as long
+  // as a return and is nearly as loud, so it can merge into one continuous
+  // loud stretch. Calling that a line end would reset the count halfway
+  // along the line, which is worse than never resetting at all.
+  const slow = Array.from({ length: 8 }, (_, i) => 0.4 + i * 0.25);
+  const fast = Array.from({ length: 12 }, (_, i) => 2.6 + i * 0.09);
+  const x = record({ seconds: 5, strikes: [...slow, ...fast] });
+  assert.strictEqual(run(x).returns.length, 0);
+});
+
+check('ordinary typing produces no line ends', () => {
+  const l = line(16);
+  const x = record({ seconds: l.end, strikes: l.strikes });
+  assert.strictEqual(run(x).returns.length, 0);
+});
+
+check('the return reports the strikes counted inside it', () => {
+  // The clatter of the return trips the onset detector. The caller needs to
+  // know how many of those to take back off the line's total.
+  const l = line();
+  const x = record({ seconds: l.end, strikes: l.strikes, returns: [l.ret] });
+  const { returns } = run(x);
+  assert.strictEqual(returns.length, 1);
+  assert.ok(returns[0].strikesInside >= 0, 'no count reported');
+});
+
+check('line ends are found at the same place whatever the phase', () => {
+  const l = line();
+  const x = record({ seconds: l.end, strikes: l.strikes, returns: [l.ret] });
+  const found = [];
+  for (let p = 0; p < HOP; p += Math.round(HOP / 6)) found.push(run(x, p).returns.length);
+  assert.strictEqual(new Set(found).size, 1, `got ${found.join(',')}`);
+});
+
+check('three lines produce three line ends, not two and not five', () => {
+  const strikes = [];
+  const returns = [];
+  let t = 0.4;
+  for (let n = 0; n < 3; n++) {
+    for (let i = 0; i < 10; i++) { strikes.push(t); t += 0.22; }
+    returns.push(t + 0.2);
+    t += 1.2;
+  }
+  const x = record({ seconds: t + 1, strikes, returns });
+  assert.strictEqual(run(x).returns.length, 3);
+});
+
+/* ── line bookkeeping ────────────────────────────────────────── */
+
+console.log('keeping the count honest');
+
+check('the count resets at every line end', () => {
+  // The reason carriage-return detection is worth building at all: an error
+  // is confined to the line it happened on instead of following the typist
+  // down the page.
+  const t = new LineTracker().begin(10);
+  for (let i = 0; i < 12; i++) t.strike();
+  t.lineEnd();
+  assert.strictEqual(t.count, 0, 'the count carried over into the next line');
+});
+
+check('a line that counted right is not reported as lost', () => {
+  const t = new LineTracker().begin(10);
+  for (let i = 0; i < 10; i++) t.strike();
+  const r = t.lineEnd();
+  assert.strictEqual(r.error, 0);
+  assert.strictEqual(r.lost, false);
+});
+
+check('being one out is forgiven, being three out is not', () => {
+  const near = new LineTracker().begin(40);
+  for (let i = 0; i < 41; i++) near.strike();
+  assert.strictEqual(near.lineEnd().lost, false);
+
+  const far = new LineTracker().begin(40);
+  for (let i = 0; i < 37; i++) far.strike();
+  assert.strictEqual(far.lineEnd().lost, true);
+});
+
+check('strikes heard during the return itself do not count against the line', () => {
+  const t = new LineTracker().begin(20);
+  for (let i = 0; i < 22; i++) t.strike();
+  const r = t.lineEnd(2);      // two of those were the carriage coming back
+  assert.strictEqual(r.heard, 20);
+  assert.strictEqual(r.error, 0);
+});
+
+check('saying where you are clears the lost state', () => {
+  const t = new LineTracker().begin(40);
+  for (let i = 0; i < 30; i++) t.strike();
+  t.lineEnd();
+  assert.strictEqual(t.lost, true);
+  t.resolve(12);
+  assert.strictEqual(t.lost, false);
+  assert.strictEqual(t.count, 12);
+});
+
+check('the recent error is reported, so the user can be told', () => {
+  const t = new LineTracker().begin(40);
+  for (let i = 0; i < 38; i++) t.strike();
+  t.lineEnd();
+  t.begin(40);
+  for (let i = 0; i < 38; i++) t.strike();
+  t.lineEnd();
+  assert.strictEqual(t.drift, -2, `drift reads ${t.drift}`);
+});
+
+/* ── calibration ─────────────────────────────────────────────── */
 
 console.log('calibration');
 
-check('calibrate finds a window that yields the right count', () => {
-  // peaks as the detector would see them: strike + rebound per keystroke
+check('calibrate finds an interval that yields the right count', () => {
+  // Candidates as the detector sees them with the gate wide open: a strike
+  // and its rebound for every keystroke.
   const peaks = [];
   for (let i = 0; i < 12; i++) {
-    peaks.push({ at: i * 300, strength: 9 });
-    peaks.push({ at: i * 300 + 55, strength: 5 });
+    peaks.push({ at: i * 300 });
+    peaks.push({ at: i * 300 + 55 });
   }
   const cal = StrikeListener.calibrate(12, peaks);
   assert.ok(cal, 'no calibration returned');
   assert.strictEqual(cal.err, 0, `error ${cal.err}`);
+  assert.ok(cal.minIntervalMs > 55 && cal.minIntervalMs <= 300,
+    `settled on ${cal.minIntervalMs} ms`);
 });
 
 check('calibration result actually applies', () => {
   const l = new StrikeListener();
-  l.apply({ refractoryMs: 123, reboundRatio: 0.7 });
-  assert.strictEqual(l.opt.refractoryMs, 123);
-  assert.strictEqual(l.opt.reboundRatio, 0.7);
+  l.apply({ minIntervalMs: 123 });
+  assert.strictEqual(l.opt.minIntervalMs, 123);
+});
+
+check('calibration refuses to invent an answer from nothing', () => {
+  assert.strictEqual(StrikeListener.calibrate(20, []), null);
+  assert.strictEqual(StrikeListener.calibrate(1, [{ at: 0 }]), null);
+});
+
+/* ── the shape of the analysis ───────────────────────────────── */
+
+console.log('the analysis grid');
+
+check('the hop is fixed and fine enough to see a transient', () => {
+  // Dixon 2006 uses 10 ms, Zhuang et al. 10 ms, Böck & Widmer 5 ms. A frame
+  // at 60 fps is 16.7 ms and at 30 fps is 33 ms, which is coarser than any
+  // of them and, worse, not constant.
+  assert.ok(DEFAULTS.hopMs <= 10, `hop is ${DEFAULTS.hopMs} ms`);
+  const d = new StrikeDetector(48000);
+  assert.strictEqual(d.hop, 480);
+});
+
+check('the analysis windows overlap, so no audio goes unexamined', () => {
+  const d = new StrikeDetector(48000);
+  const windowMs = (d.opt.fftSize / 48000) * 1000;
+  assert.ok(windowMs > DEFAULTS.hopMs * 2,
+    `window ${windowMs.toFixed(1)} ms against a ${DEFAULTS.hopMs} ms hop`);
+});
+
+check('it runs comfortably faster than real time', () => {
+  // It has to keep up on a phone that is also drawing the sheet. Node on a
+  // server is not a phone, so this is a smoke test for an accidental
+  // quadratic, not a performance claim about any device.
+  const x = record({ seconds: 10, strikes: Array.from({ length: 30 }, (_, i) => 0.3 + i * 0.3) });
+  const t0 = Date.now();
+  run(x);
+  const ms = Date.now() - t0;
+  assert.ok(ms < 5000, `10 s of audio took ${ms} ms`);
 });
 
 console.log(failures ? `\n${failures} failed` : '\nall green');
