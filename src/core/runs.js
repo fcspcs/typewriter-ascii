@@ -6,6 +6,8 @@
  * one. So every space counts as a step, exactly like a character.
  */
 
+import { inkWeights } from './ink.js';
+
 /**
  * @typedef {Object} Run
  * @property {string}  ch     the character (' ' for a space run)
@@ -162,6 +164,16 @@ export function inkPlan(lines, { scheme = 'none', atlas = null, amount = 0.5,
     ? tonalCut(lines, weight, amount, scheme)
     : 0;
 
+  // The heaviest character actually in the motif, for the shadow scheme.
+  let heaviest = 0;
+  if (scheme === 'shadow') {
+    for (const line of lines) {
+      for (const ch of line) {
+        if (ch !== ' ') heaviest = Math.max(heaviest, weight(ch));
+      }
+    }
+  }
+
   const map = lines.map((line, r) => {
     const out = [];
     for (let c = 0; c < width; c++) {
@@ -195,11 +207,17 @@ export function inkPlan(lines, { scheme = 'none', atlas = null, amount = 0.5,
       /*
        * Lettering styles that already produce two kinds of cell — a face and
        * a shadow, drawn with different characters — get the shadow in red.
-       * `.` never reaches here; the shadow characters are the light fill the
-       * style was built with.
+       *
+       * "Anything that is not the heaviest character present" rather than a
+       * list of shadow characters. The list was wrong the moment the tones
+       * stopped being hard-coded: it named `+` and `:` because those were
+       * the only light characters the old code could ever pick, and on an
+       * SM7 the shadow now comes out as `-` or `2`, neither of which was on
+       * it. A list of characters cannot answer a question about *this*
+       * motif; the motif can.
        */
       case 'shadow':
-        return SHADOW_CHARS.has(ch);
+        return w < heaviest;
 
       /*
        * A light from the top left, the way anything is drawn when it wants
@@ -275,44 +293,6 @@ function tonalCut(lines, weight, amount, scheme) {
   return best;
 }
 
-/**
- * Characters the lettering styles use for their second surface.
- *
- * Kept here rather than imported from lettering.js: runs.js is the layer
- * everything else depends on, and pulling the letter machinery in for one
- * lookup would invert that.
- */
-const SHADOW_CHARS = new Set(['+', '/', '_', '!', '(', ')', ':', '.', ',', '`']);
-
-/**
- * A function from character to how much ink it puts on the paper, 0..1.
- *
- * With an atlas this is measured. Without one it is a rough ranking — good
- * enough to order light from heavy, which is all the schemes ask of it.
- */
-function inkWeights(atlas) {
-  const ORDER = ' .,:;\'`-_~!/|()[]{}+=<>*^?ilrtcvxzsnuoaebdhkpqgwmMWNHRBQ#@';
-  const ranked = (ch) => {
-    const i = ORDER.indexOf(ch);
-    return i < 0 ? 0.5 : i / (ORDER.length - 1);
-  };
-
-  const glyphs = atlas?.glyphs ?? [];
-  if (glyphs.length) {
-    const max = atlas.maxCoverage || 1;
-    const values = glyphs.map((g) => g.coverage / max);
-    // A measured atlas beats a hand-written ranking — but only if it actually
-    // measured something. A canvas that cannot render (a headless browser, a
-    // blocked font) reports every glyph as identical, and every scheme built
-    // on tone would then quietly do nothing. Fall back rather than pretend.
-    const spread = Math.max(...values) - Math.min(...values);
-    if (spread > 0.05) {
-      const byChar = new Map(glyphs.map((g, i) => [g.ch, values[i]]));
-      return (ch) => byChar.get(ch) ?? ranked(ch);
-    }
-  }
-  return ranked;
-}
 
 /** What the schemes are called, and what they do. For the interface. */
 export const INK_SCHEMES = [

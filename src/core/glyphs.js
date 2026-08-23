@@ -107,18 +107,34 @@ export function buildAtlas(chars, font = 'monospace') {
     coverage: 0,
     shape: new Float32Array(RADIAL * ANGULAR),
     ink: 0,
+    centre: 0.5,
   });
 
   for (const ch of chars) {
     const mask = renderGlyph(ch, font);
     const { hist, total } = shapeOf(mask);
     let sum = 0;
-    for (let i = 0; i < mask.length; i++) sum += mask[i];
+    let moment = 0;
+    for (let i = 0; i < mask.length; i++) {
+      sum += mask[i];
+      moment += Math.floor(i / CELL_W) * mask[i];
+    }
     glyphs.push({
       ch,
       coverage: sum / mask.length,   // 0…1, for tone
       shape: hist,
       ink: total,
+      /*
+       * Where the ink sits vertically, 0 (top) … 1 (bottom).
+       *
+       * Coverage alone picks the wrong character at the faint end. The two
+       * faintest marks on an SM7 are ` and ´ at 0.0167 coverage, but their
+       * ink sits at 0.21 of the cell, tucked under the line above: a block
+       * of them reads as a row of ticks floating over the letter, not as a
+       * pale surface. `.` is 0.0179 — the same weight to any eye — and sits
+       * at 0.73. So this breaks ties between characters of equal weight.
+       */
+      centre: sum > 0 ? moment / sum / (CELL_H - 1) : 0.5,
     });
   }
 
