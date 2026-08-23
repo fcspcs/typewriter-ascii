@@ -320,6 +320,32 @@
     A number means repeat that many times.
   </p>
 
+  <!--
+    The point of all this is that your hands never leave the machine, and
+    the most reliable way to achieve that is not the microphone. A camera
+    shutter remote enumerates as a keyboard, so it already works: nothing
+    was added for it, it just needed saying out loud where somebody would
+    read it.
+  -->
+  <details id="stepHands">
+    <summary>Keeping your hands on the machine</summary>
+    <p class="lede-sm">
+      <strong>Space, Enter or ↓</strong> moves to the next line, <strong>↑</strong>
+      goes back. That is all the app needs, which is why a
+      <strong>Bluetooth camera shutter remote</strong> works — the ten-euro
+      kind sold for phone selfies. They enumerate as a keyboard and send a
+      space or a volume key, so pair one, tape it where your wrist rests or
+      put a foot switch under the desk, and press it at the end of each line.
+      Nothing to install and nothing to configure.
+    </p>
+    <p class="lede-sm">
+      That is worth doing even if you also use <strong>listen</strong>. The
+      microphone counts strikes within a line; the button is what guarantees
+      the line itself is right, and a wrong line is the error that ruins a
+      sheet.
+    </p>
+  </details>
+
   <div class="progress"><i id="bar"></i></div>
   <div class="controls">
     <button id="prev">&uarr;</button>
@@ -344,6 +370,15 @@
     <p class="hint" id="earNote">
       The red mark is the trigger level. It should sit above the room noise
       and below your strikes.
+    </p>
+    <!--
+      Counting by ear is a convenience, not a foundation. It cannot be
+      checked while you type, because you are looking at the paper — so the
+      moment it disagrees with the line it says so and stops, rather than
+      showing a column it cannot stand behind.
+    -->
+    <p class="warn" id="lost" hidden>
+      <strong>Lost.</strong> <span id="lostWhy"></span>
     </p>
   </div>
 

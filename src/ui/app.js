@@ -20,7 +20,7 @@ import {
   inkPlan, INK_SCHEMES, inkTally, parseRows, strikesInLine, runsOf,
 } from '../core/runs.js';
 import { letter, STYLES, usesTwo } from '../core/lettering.js';
-import { StrikeListener } from '../core/listen.js';
+import { StrikeListener, LineTracker, METER_FULL_SCALE } from '../core/listen.js';
 import { buildSheetPdf, downloadPdf } from '../core/pdf.js';
 import {
   renderSheet, paintSheet, paintStrike, renderTable, paintTable, keepInView,
@@ -48,6 +48,7 @@ const app = {
   rows: [],
   setup: null,
   listener: null,
+  tracker: null,      // set while listening: what the count is worth
 };
 
 /* ── persistence ─────────────────────────────────────────────── */
@@ -472,7 +473,23 @@ function draw() {
 
   app.els = renderSheet($('sheet'), lines, colours);
   app.els.forEach((el, i) => {
-    el.onclick = () => { if (i !== app.at) go(i); };
+    el.onclick = (e) => {
+      if (i !== app.at) { go(i); return; }
+      // Clicking inside the line you are on is how you say "I am here" when
+      // the count has gone wrong. Without it, the only remedy for a lost
+      // count is to start the line again, on a machine that cannot erase.
+      const cell = e.target.closest?.('.c');
+      if (!cell) return;
+      const cells = [...el.querySelectorAll('.c')];
+      const idx = cells.indexOf(cell);
+      if (idx < 0) return;
+      app.strike = idx;
+      app.tracker?.resolve(idx);
+      showCount(null);
+      paintStrike(app.els, app.lines, app.colours, app.at, app.strike);
+      $('strikes').textContent =
+        `${app.strike} / ${strikesInLine(app.lines[app.at] ?? '')}`;
+    };
   });
 
   app.rows = renderTable($('table'), lines, colours, app.setup?.advance ?? 0);
@@ -529,8 +546,20 @@ function paint(previous = -1) {
     `${app.strike} / ${strikesInLine(app.lines[app.at] ?? '')}`;
 }
 
-function go(i, scroll = true) {
+/**
+ * @param {number} i line to move to
+ * @param {boolean} [scroll]
+ * @param {boolean} [byHand] true when a person moved the line rather than
+ *   the microphone. A person saying where they are settles the question, so
+ *   it also clears a lost count; a carriage return only ends the line.
+ */
+function go(i, scroll = true, byHand = true) {
   const prev = app.at;
+  if (byHand && app.tracker) {
+    app.tracker.resolve(0);
+    app.tracker.begin(strikesInLine(app.lines[i] ?? ''));
+    showCount(null);
+  }
   // Moving off the first line means the paper is in and the stops are set.
   // Folding the setup away at that moment is the one point where it is
   // certainly finished with, and it costs a click to get back.
@@ -551,13 +580,67 @@ function headerHeight() {
 function strike() {
   const total = strikesInLine(app.lines[app.at] ?? '');
   app.strike++;
+  app.tracker?.strike();
   if (app.strike >= total) {
-    if (app.at < app.lines.length - 1) go(app.at + 1);
+    // Do not walk on by ear alone. The carriage return is the event that
+    // says the line is finished, and it is far easier to hear than a
+    // keystroke; while the microphone is on, that is what moves the line.
+    // Running off the end of the count instead would compound a miscount
+    // into a wrong line, which is the one error that ruins a whole sheet.
+    if (!app.listener && app.at < app.lines.length - 1) go(app.at + 1);
     else { app.strike = total; paint(); }
     return;
   }
   paintStrike(app.els, app.lines, app.colours, app.at, app.strike);
   $('strikes').textContent = `${app.strike} / ${total}`;
+}
+
+/**
+ * The carriage came back, so the line is over.
+ *
+ * This is where an error stops travelling. Whatever the count did during
+ * this line, the next one starts from zero — which turns a mistake that
+ * would otherwise follow the typist down the page into one confined to a
+ * single line.
+ */
+function lineEnd(inside = 0) {
+  const t = app.tracker;
+  if (!t) return;
+  const r = t.lineEnd(inside);
+  if (app.at < app.lines.length - 1) go(app.at + 1, true, false);
+  t.begin(strikesInLine(app.lines[app.at] ?? ''));
+  showCount(r);
+}
+
+/**
+ * Say how much the count is worth, and stop pretending when it is worth
+ * nothing.
+ *
+ * The typist is looking at the paper, not at the screen, and the machine has
+ * no undo — so a column that is quietly one out is worse than no column at
+ * all, because the sheet is ruined before anyone notices. A display that
+ * admits it is lost is merely annoying.
+ */
+function showCount(r) {
+  const lost = !!app.tracker?.lost;
+  document.body.classList.toggle('lost', lost);
+  $('lost').hidden = !lost;
+  if (lost && r) {
+    // The line that just went wrong is already typed and cannot be helped.
+    // What the disagreement really says is that counting is not working in
+    // this room, so the *next* line should not be trusted either — which is
+    // the warning worth giving.
+    const off = r.error > 0 ? `${r.error} too many` : `${-r.error} too few`;
+    $('lostWhy').textContent =
+      `The last line counted ${off} against the ${r.expected} it holds. ` +
+      `Do not trust the highlight until you have clicked where you are.`;
+    return;
+  }
+  if (r) {
+    $('earNote').textContent = r.error === 0
+      ? `Line counted exactly right: ${r.expected}.`
+      : `Line counted ${r.heard} against ${r.expected}. Close enough to carry on.`;
+  }
 }
 
 /* ── events ──────────────────────────────────────────────────── */
@@ -633,7 +716,10 @@ function wire() {
   $('restart').onclick = () => go(0);
 
   document.addEventListener('keydown', (e) => {
-    if (e.target.matches('input, textarea, select')) return;
+    // `matches` only exists on elements, and a key event does not always
+    // have one for a target — a remote that sends its keypress before
+    // anything on the page has focus lands on the document itself.
+    if (e.target?.matches?.('input, textarea, select')) return;
     if (e.key === ' ' || e.key === 'ArrowDown' || e.key === 'Enter') {
       e.preventDefault(); go(app.at + 1);
     } else if (e.key === 'ArrowUp') {
@@ -648,6 +734,7 @@ function wire() {
   $('listen').onclick = toggleListen;
   $('back1').onclick = () => {
     app.strike = Math.max(0, app.strike - 1);
+    app.tracker?.strike(-1);
     paintStrike(app.els, app.lines, app.colours, app.at, app.strike);
   };
   $('sens').oninput = () => {
@@ -836,8 +923,10 @@ async function toggleListen() {
   if (app.listener) {
     app.listener.stop();
     app.listener = null;
-    document.body.classList.remove('counting');
+    app.tracker = null;
+    document.body.classList.remove('counting', 'lost');
     $('ear').hidden = true;
+    $('lost').hidden = true;
     $('listen').textContent = 'listen';
     $('listen').classList.remove('on');
     return;
@@ -850,9 +939,11 @@ async function toggleListen() {
       setTimeout(() => $('lamp').classList.remove('on'), 60);
       strike();
     },
+    onReturn: ({ strikesInside }) => lineEnd(strikesInside),
     onFrame: ({ flux, threshold }) => {
-      $('level').style.width = `${Math.min(100, flux / 8 * 100)}%`;
-      $('markTh').style.left = `${Math.min(100, threshold / 8 * 100)}%`;
+      const pc = (v) => `${Math.min(100, Math.max(0, v / METER_FULL_SCALE * 100))}%`;
+      $('level').style.width = pc(flux);
+      $('markTh').style.left = pc(threshold);
     },
   });
 
@@ -866,10 +957,12 @@ async function toggleListen() {
     return;
   }
   app.listener = l;
+  app.tracker = new LineTracker().begin(strikesInLine(app.lines[app.at] ?? ''));
   document.body.classList.add('counting');
   $('ear').hidden = false;
   $('listen').textContent = 'stop listening';
   $('listen').classList.add('on');
+  if (l.warning) $('earNote').textContent = l.warning;
 }
 
 /**
@@ -886,10 +979,11 @@ async function calibrate() {
   const l = app.listener;
   const original = l.onStrike;
 
-  // Record every candidate, not just accepted ones.
-  const relaxed = { refractoryMs: l.opt.refractoryMs, reboundRatio: l.opt.reboundRatio };
-  l.opt.refractoryMs = 10;
-  l.opt.reboundRatio = 0;
+  // Record every candidate, not just accepted ones: with the gate wide open
+  // the rebound comes through too, which is exactly what has to be measured.
+  const relaxed = l.opt.minIntervalMs;
+  l.opt.minIntervalMs = 10;
+  if (l.detector) l.detector.opt.minIntervalMs = 10;
   l.onStrike = (info) => peaks.push(info);
 
   $('earNote').textContent =
@@ -909,10 +1003,9 @@ async function calibrate() {
   if (cal && cal.err === 0) {
     l.apply(cal);
     $('earNote').textContent =
-      `Calibrated: ${cal.refractoryMs} ms between strikes on this machine.`;
+      `Calibrated: ${cal.minIntervalMs} ms between strikes on this machine.`;
   } else {
-    l.opt.refractoryMs = relaxed.refractoryMs;
-    l.opt.reboundRatio = relaxed.reboundRatio;
+    l.apply({ minIntervalMs: relaxed });
     $('earNote').textContent =
       'Could not settle on a setting. Try again somewhere quieter, or use ' +
       'the sensitivity slider.';

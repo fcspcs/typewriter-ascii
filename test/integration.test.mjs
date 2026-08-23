@@ -628,6 +628,65 @@ await check('the measurement can be undone', async () => {
     'the pitch is no longer named');
 });
 
+console.log('counting by ear, and admitting when it has failed');
+
+await check('nothing claims to be lost before anything is being counted', () => {
+  assert($('lost').hidden, 'the lost warning is showing with no listener');
+  assert(!window.document.body.classList.contains('lost'), 'lost class set');
+});
+
+await check('the microphone panel is hidden until listening starts', () => {
+  assert($('ear').hidden, 'the ear panel is showing unprompted');
+});
+
+await check('the way to keep your hands on the machine is explained', () => {
+  // The most reliable line advance is a ten-euro Bluetooth shutter remote,
+  // which already works because it enumerates as a keyboard. It is worth
+  // nothing if nobody is told, so this checks the page says so.
+  const hands = $('stepHands');
+  assert(hands, 'no panel about keeping your hands on the machine');
+  const t = hands.textContent;
+  assert(/shutter remote/i.test(t), `remotes are not mentioned: "${t}"`);
+  assert(/foot switch/i.test(t), 'foot switches are not mentioned');
+  assert(/Space|Enter/.test(t), 'the keys it actually listens for are not named');
+});
+
+await check('the keys named in that panel are the keys that work', async () => {
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'text').click();
+  $('letterText').value = 'HI';
+  $('letterText').dispatchEvent(new window.Event('input'));
+  await wait(400);
+  $('restart').click();
+  await wait(60);
+
+  const line = () => [...window.document.querySelectorAll('.sheet .ln')]
+    .findIndex((e) => e.classList.contains('now'));
+  const press = (key) => window.document.dispatchEvent(
+    new window.KeyboardEvent('keydown', { key, bubbles: true }));
+
+  const start = line();
+  press(' ');
+  assert(line() === start + 1, 'space did not advance the line');
+  press('ArrowUp');
+  assert(line() === start, 'up did not go back');
+  press('Enter');
+  assert(line() === start + 1, 'enter did not advance the line');
+  press('ArrowUp');
+});
+
+await check('clicking a character in the open line moves the count there', async () => {
+  $('restart').click();
+  await wait(60);
+  const open = window.document.querySelector('.sheet .ln.now');
+  const cells = [...open.querySelectorAll('.c')];
+  assert(cells.length > 3, `the open line has ${cells.length} characters`);
+  cells[2].click();
+  await wait(30);
+  assert(/^2 \//.test($('strikes').textContent),
+    `the count reads "${$('strikes').textContent}"`);
+});
+
 console.log('errors during the run');
 
 await check('nothing threw along the way', () => {
