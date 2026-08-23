@@ -1,0 +1,388 @@
+/*
+ * One typeface, one ink, one paper. Everything else is spacing.
+ *
+ * Rules kept deliberately: no rounded corners, no shadows, no gradients,
+ * no coloured panels. A typewriter has none of those and neither does a
+ * sheet of paper. Structure comes from whitespace and single hairlines.
+ */
+
+:root {
+  --paper:  #faf9f6;
+  --ink:    #171614;
+  --red:    #a8322a;
+  --faint:  #8b8880;
+  --rule:   #d9d6ce;
+  --hair:   #ebe8e1;
+  --mark:   #f0ead6;   /* current line */
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono",
+          Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #14140f;
+    --ink:   #e8e5dc;
+    --red:   #d9645a;
+    --faint: #85817a;
+    --rule:  #33322c;
+    --hair:  #24241f;
+    --mark:  #2a2820;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 14px/1.65 var(--mono);
+  letter-spacing: 0.01em;
+  padding-bottom: 4rem;
+}
+
+/* ── skeleton ────────────────────────────────────────────────── */
+
+.bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  padding: 1.6rem clamp(1rem, 4vw, 3rem) 1.2rem;
+  border-bottom: 1px solid var(--ink);
+}
+
+h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.bar nav { display: flex; gap: 1.2rem; align-items: baseline; }
+
+main { padding: 0 clamp(1rem, 4vw, 3rem); max-width: 78rem; margin: 0 auto; }
+
+section {
+  padding: 2.4rem 0;
+  border-bottom: 1px solid var(--hair);
+}
+section:last-of-type { border-bottom: 0; }
+
+h2 {
+  margin: 0 0 1.4rem;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--faint);
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+}
+h2 .tools { margin-left: auto; display: flex; gap: 1.2rem; }
+
+footer {
+  max-width: 78rem;
+  margin: 3rem auto 0;
+  padding: 1.6rem clamp(1rem, 4vw, 3rem);
+  border-top: 1px solid var(--hair);
+  color: var(--faint);
+  font-size: 12px;
+}
+footer p { margin: 0.3rem 0; }
+
+a { color: inherit; text-underline-offset: 3px; }
+
+/* ── controls ────────────────────────────────────────────────── */
+
+button, select, input, textarea, output {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 0.45rem 0.6rem;
+}
+
+button {
+  cursor: pointer;
+  padding: 0.45rem 1rem;
+  -webkit-tap-highlight-color: transparent;
+}
+button:hover { border-color: var(--ink); }
+button:active { transform: translateY(1px); }
+
+/* Text-only actions. A link is a link; it does not need a box. */
+button.link {
+  border: 0;
+  padding: 0;
+  color: var(--faint);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+button.link:hover { color: var(--ink); }
+button.link.on { color: var(--ink); }
+
+label {
+  display: block;
+  font-size: 12px;
+  color: var(--faint);
+  letter-spacing: 0.06em;
+}
+label > select,
+label > input[type=text] { margin-top: 0.35rem; width: 100%; }
+
+output { border: 0; padding: 0; color: var(--ink); }
+
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  border: 0;
+  padding: 0;
+  width: 100%;
+  margin-top: 0.7rem;
+  height: 1px;
+  background: var(--rule);
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px; height: 11px;
+  background: var(--ink);
+  border-radius: 50%;
+  cursor: pointer;
+}
+input[type=range]::-moz-range-thumb {
+  width: 11px; height: 11px;
+  background: var(--ink);
+  border: 0; border-radius: 50%;
+  cursor: pointer;
+}
+
+.row  { display: flex; gap: 1.2rem; align-items: center; flex-wrap: wrap;
+        margin-top: 0.9rem; }
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 1.4rem 1.6rem;
+}
+.grid + .grid { margin-top: 1.4rem; }
+.wide { grid-column: 1 / -1; }
+
+.note { color: var(--faint); font-size: 12px; margin: 0.9rem 0 0;
+        max-width: 46rem; }
+
+/* ── tabs ────────────────────────────────────────────────────── */
+
+.tabs { display: flex; gap: 1.6rem; margin-bottom: 1.5rem; }
+.tab {
+  border: 0; padding: 0 0 0.4rem;
+  color: var(--faint);
+  border-bottom: 1px solid transparent;
+  letter-spacing: 0.04em;
+}
+.tab.on { color: var(--ink); border-bottom-color: var(--ink); }
+.tab:hover { border-color: transparent; color: var(--ink); }
+
+.panel { display: none; }
+.panel.on { display: block; }
+
+textarea, #letterText { width: 100%; }
+textarea { resize: vertical; line-height: 1.4; }
+
+/* ── image drop ──────────────────────────────────────────────── */
+
+#drop {
+  display: block;
+  border: 1px dashed var(--rule);
+  padding: 2.6rem 1rem;
+  text-align: center;
+  color: var(--faint);
+  cursor: pointer;
+}
+#drop:hover, #drop.over { border-color: var(--ink); color: var(--ink); }
+#drop.has { padding: 1rem; border-style: solid; }
+#preview { max-width: 100%; max-height: 15rem; display: block; margin: 0 auto; }
+
+/* ── facts, warnings, setup list ─────────────────────────────── */
+
+.facts {
+  display: flex; flex-wrap: wrap; gap: 0 2.4rem;
+  margin: 0 0 1.4rem; font-size: 12px;
+}
+.facts div { display: flex; gap: 0.5rem; }
+.facts dt { color: var(--faint); margin: 0; }
+.facts dd { margin: 0; }
+
+.warn {
+  border-left: 2px solid var(--red);
+  padding: 0.5rem 0 0.5rem 0.9rem;
+  margin: 0 0 0.9rem;
+  font-size: 13px;
+}
+
+ol.setup { margin: 0 0 1.8rem; padding-left: 1.4rem; max-width: 46rem; }
+ol.setup li { margin-bottom: 0.7rem; }
+ol.setup b { font-weight: 600; }
+ol.setup span { display: block; color: var(--faint); font-size: 12px; }
+
+/* ── progress ────────────────────────────────────────────────── */
+
+.progress { height: 1px; background: var(--rule); margin: 0 0 1rem; }
+.progress i { display: block; height: 1px; background: var(--ink); width: 0;
+              transition: width .18s linear; }
+
+.controls { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;
+            margin-bottom: 1.6rem; }
+.count { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* ── listening ───────────────────────────────────────────────── */
+
+#ear { border-left: 1px solid var(--rule); padding-left: 1rem;
+       margin: 0 0 1.6rem; }
+#ear .row:first-child { margin-top: 0; }
+#ear label { display: flex; align-items: center; gap: 0.8rem; flex: 1 1 14rem; }
+
+.lamp { width: 7px; height: 7px; background: var(--rule); flex: none;
+        border-radius: 50%; transition: background .04s; }
+.lamp.on { background: var(--red); }
+
+.meter { position: relative; flex: 1 1 8rem; height: 3px;
+         background: var(--hair); min-width: 6rem; }
+.meter i { display: block; height: 3px; background: var(--ink); width: 0; }
+.meter u { position: absolute; top: -3px; bottom: -3px; width: 1px;
+           background: var(--red); left: 50%; }
+
+/* ── the sheet ───────────────────────────────────────────────── */
+/*
+ * The sheet is the main view. Lines that are done are inked; the line you
+ * are on opens up in place and shows its runs; everything ahead stays pale.
+ */
+
+.sheet {
+  border: 1px solid var(--hair);
+  padding: 1.2rem 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  font-size: var(--sheet-size, 12px);
+  line-height: 1.18;
+}
+
+.ln {
+  display: block;
+  white-space: pre;
+  padding: 0 1.2rem;
+  color: var(--faint);
+  opacity: 0.4;
+  cursor: pointer;
+}
+.ln .r { font-style: normal; }
+.ln.done { color: var(--ink); opacity: 1; }
+.ln.done .r { color: var(--red); }
+
+/* the open line */
+.ln.now {
+  opacity: 1;
+  color: var(--ink);
+  background: var(--mark);
+  padding-top: 1.5rem;
+  padding-bottom: 0.5rem;
+  margin: 0.5rem 0;
+  cursor: default;
+}
+.ln.now .r { color: var(--red); }
+
+/* runs drawn inside the open line */
+.run { position: relative; display: inline-block; }
+.run .n {
+  position: absolute; top: -1.35em; left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.8em; letter-spacing: 0;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.run.gap  { border-bottom: 1px solid var(--rule); }
+.run.rep  { border-bottom: 1px solid var(--ink); }
+.run .c { display: inline-block; }
+.run .c.five { box-shadow: inset 1px 0 0 var(--rule); }
+.run .c.hit  { background: var(--ink); color: var(--paper); }
+.run .c.past { opacity: 0.35; }
+
+/* ── table ───────────────────────────────────────────────────── */
+
+.scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { border-collapse: collapse; width: max-content; min-width: 100%;
+        font-size: 12px; }
+tr { border-bottom: 1px solid var(--hair); cursor: pointer; }
+tr.now { background: var(--mark); }
+tr.done td { opacity: 0.4; }
+td { padding: 0.5rem 0.9rem 0.5rem 0; vertical-align: baseline; }
+td.n { color: var(--faint); text-align: right; width: 3.5rem;
+       font-variant-numeric: tabular-nums; position: sticky; left: 0;
+       background: var(--paper); padding-right: 1.1rem; }
+tr.now td.n { background: var(--mark); color: var(--ink); }
+td.rn { white-space: pre; }
+td.rn .red { color: var(--red); }
+
+/* ── full screen ─────────────────────────────────────────────── */
+
+body.full > header,
+body.full #stepSource,
+body.full #stepSetup,
+body.full #stepTable,
+body.full footer,
+body.full .facts,
+body.full ol.setup,
+body.full #warnings { display: none; }
+
+body.full main { max-width: none; padding: 0; }
+body.full #stepSheet { padding: 0.8rem clamp(0.6rem, 2vw, 2rem); border: 0; }
+body.full h2 { margin-bottom: 0.9rem; }
+body.full .sheet { border: 0; font-size: var(--sheet-full, 15px); }
+
+/* ── charset dialog ──────────────────────────────────────────── */
+
+dialog {
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 1.8rem;
+  max-width: 40rem;
+  width: calc(100% - 2rem);
+}
+dialog::backdrop { background: rgba(0,0,0,.35); }
+dialog h2 { margin-bottom: 0.6rem; }
+dialog menu { display: flex; justify-content: flex-end; gap: 1.4rem;
+              margin: 1.6rem 0 0; padding: 0; align-items: center; }
+
+#keyboard { margin: 1.2rem 0 0; }
+.krow { display: flex; gap: 3px; margin-bottom: 3px; flex-wrap: wrap; }
+.krow.ind { padding-left: 1.1rem; }
+.key {
+  width: 1.9rem; height: 1.9rem; padding: 0;
+  border: 1px solid var(--rule);
+  color: var(--faint);
+  font-size: 12px;
+  display: grid; place-items: center;
+}
+.key.on { border-color: var(--ink); color: var(--ink); }
+.key:hover { border-color: var(--ink); }
+
+@media (max-width: 640px) {
+  body { font-size: 13px; }
+  section { padding: 1.8rem 0; }
+  td.n { width: 2.6rem; }
+  .key { width: 1.6rem; height: 1.6rem; font-size: 11px; }
+}
+
+@media print {
+  .bar, footer, .tabs, .controls, .progress, #ear, h2 .tools,
+  #stepSource, #stepSetup { display: none; }
+  .ln, .ln.now { opacity: 1; color: #000; background: none; }
+  .sheet { border: 0; }
+}

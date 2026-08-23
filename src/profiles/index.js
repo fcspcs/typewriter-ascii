@@ -24,15 +24,18 @@ export const PROFILES = [
     layout: 'QWERTZ (German)',
     cpi: 10,
     lpi: 6,
+    // Read off the keyboard itself. Note there is no zero and no 'at' sign:
+    // digits stop at 9, and a capital O stands in for zero. Getting this
+    // wrong is the fastest way to produce art that cannot be typed.
     rows: [
-      '1234567890ß´',
-      'qwertzuiopü+',
+      '123456789=ß´',
+      'qwertzuiopü',
       'asdfghjklöä',
       'yxcvbnm,.-',
     ],
     shiftRows: [
-      ';"/%&()_§=:`',
-      'QWERTZUIOPÜ*',
+      ';"/%&()_§+:`',
+      'QWERTZUIOPÜ',
       'ASDFGHJKLÖÄ',
       'YXCVBNM?!\'',
     ],
@@ -41,10 +44,10 @@ export const PROFILES = [
     backspace: true,
     halfSpace: true,
     notes:
-      'No zero key — type a capital O. Half spacing is done by holding the ' +
-      'space bar down while striking. The line space plunger shifts the ' +
-      'baseline while keeping the line grid, which is what you want for ' +
-      'overstrike work.',
+      'No zero key — type a capital O. Also absent: @ # $ * ^ ~ | \\ [ ] ' +
+      '{ } < >. Half spacing is done by holding the space bar down while ' +
+      'striking. The line space plunger shifts the baseline while keeping ' +
+      'the line grid, which is what you want for overstrike work.',
   },
 
   {

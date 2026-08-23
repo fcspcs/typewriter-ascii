@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Typewriter ASCII</title>
+<meta name="description" content="Turn images and text into ASCII art you can actually type on a mechanical typewriter.">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="bar">
+  <h1>Typewriter&nbsp;ASCII</h1>
+  <nav>
+    <select id="machine" aria-label="Machine"></select>
+    <button id="editCharset" class="link">characters</button>
+  </nav>
+</header>
+
+<main>
+
+<!-- ── source ─────────────────────────────────────────────────── -->
+<section id="stepSource">
+  <h2>1 &nbsp; Source</h2>
+
+  <div class="tabs" role="tablist">
+    <button class="tab on" data-tab="image" role="tab">Image</button>
+    <button class="tab"    data-tab="text"  role="tab">Lettering</button>
+    <button class="tab"    data-tab="paste" role="tab">Existing art</button>
+  </div>
+
+  <div class="panel on" data-panel="image">
+    <label id="drop" for="file">
+      <input type="file" id="file" accept="image/*" hidden>
+      <span id="dropText">Drop an image, or click to choose</span>
+      <canvas id="preview" hidden></canvas>
+    </label>
+    <p class="note">
+      High contrast works best. Silhouettes and line drawings survive the
+      trip to a typewriter; group photos do not.
+    </p>
+  </div>
+
+  <div class="panel" data-panel="text">
+    <input type="text" id="letterText" placeholder="A word" maxlength="40">
+    <div class="row">
+      <label>Style
+        <select id="letterStyle">
+          <option value="block">Block</option>
+          <option value="outline">Outline</option>
+          <option value="shadow">Shadow</option>
+          <option value="slab">Slab</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <div class="panel" data-panel="paste">
+    <textarea id="pasted" rows="8" spellcheck="false"
+      placeholder="Paste ASCII art here. Spacing is kept exactly as given."></textarea>
+    <p class="note">
+      Characters your machine cannot type are swapped for the nearest shape
+      it has. You will be told what changed.
+    </p>
+  </div>
+</section>
+
+<!-- ── settings ───────────────────────────────────────────────── -->
+<section id="stepSetup">
+  <h2>2 &nbsp; Setup</h2>
+
+  <div class="grid">
+    <label>Paper
+      <select id="paper"></select>
+    </label>
+
+    <label>Placement
+      <select id="align">
+        <option value="centre">Centred</option>
+        <option value="topleft">Top left</option>
+      </select>
+    </label>
+
+    <label>Rendering
+      <select id="mode">
+        <option value="shape">Follow shapes</option>
+        <option value="tone">Match tone</option>
+        <option value="outline">Outline only</option>
+        <option value="sentence">Repeat a sentence</option>
+      </select>
+    </label>
+
+    <label>Width <output id="widthOut"></output>
+      <input type="range" id="width" min="10" max="120" value="60">
+    </label>
+
+    <label>Contrast <output id="contrastOut"></output>
+      <input type="range" id="contrast" min="50" max="300" value="130">
+    </label>
+
+    <label>Detail <output id="detailOut"></output>
+      <input type="range" id="detail" min="0" max="100" value="45">
+    </label>
+  </div>
+
+  <div class="grid" id="sentenceRow" hidden>
+    <label class="wide">Sentence
+      <input type="text" id="sentence" value="she loved him and he loved her">
+    </label>
+  </div>
+
+  <div class="grid">
+    <label class="wide">Red ribbon
+      <input type="text" id="redRows" placeholder="lines, e.g. 0-15,20">
+    </label>
+  </div>
+
+  <p class="note" id="setupNote"></p>
+</section>
+
+<!-- ── result ─────────────────────────────────────────────────── -->
+<section id="stepSheet">
+  <h2>3 &nbsp; Type it
+    <span class="tools">
+      <button id="full" class="link">full screen</button>
+      <button id="listen" class="link">listen</button>
+    </span>
+  </h2>
+
+  <dl class="facts" id="facts"></dl>
+  <div id="warnings"></div>
+
+  <ol class="setup" id="instructions"></ol>
+
+  <div class="progress"><i id="bar"></i></div>
+  <div class="controls">
+    <button id="prev">&uarr;</button>
+    <button id="next">line done &darr;</button>
+    <button id="restart" class="link">restart</button>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div id="ear" hidden>
+    <div class="row">
+      <span class="lamp" id="lamp"></span>
+      <div class="meter"><i id="level"></i><u id="markTh"></u></div>
+      <span class="count" id="strikes"></span>
+    </div>
+    <div class="row">
+      <label>Sensitivity
+        <input type="range" id="sens" min="1" max="99" value="55">
+      </label>
+      <button id="back1" class="link">&minus;1</button>
+      <button id="calibrate" class="link">calibrate</button>
+    </div>
+    <p class="note" id="earNote">
+      The red mark is the trigger level. It should sit above the room noise
+      and below your strikes.
+    </p>
+  </div>
+
+  <div class="sheet" id="sheet"></div>
+</section>
+
+<!-- ── full table ─────────────────────────────────────────────── -->
+<section id="stepTable">
+  <h2>All lines</h2>
+  <div class="scroll"><table id="table"></table></div>
+</section>
+
+</main>
+
+<footer>
+  <p>
+    Every space is a keystroke. Counting them is the whole job.
+  </p>
+  <p>
+    <a href="https://github.com/fcspcs/typewriter-ascii">Source</a> ·
+    MIT · runs entirely in your browser
+  </p>
+</footer>
+
+<!-- ── charset editor ─────────────────────────────────────────── -->
+<dialog id="charsetDialog">
+  <form method="dialog">
+    <h2>Characters</h2>
+    <p class="note">
+      Switch off anything your machine lacks or you would rather not use.
+      Fewer characters means a coarser picture but a calmer one.
+    </p>
+    <div id="keyboard"></div>
+    <div class="row">
+      <button type="button" class="link" data-pick="all">all</button>
+      <button type="button" class="link" data-pick="none">none</button>
+      <button type="button" class="link" data-pick="letters">letters</button>
+      <button type="button" class="link" data-pick="marks">marks only</button>
+    </div>
+    <label class="wide">Or type them
+      <input type="text" id="charsetText" spellcheck="false">
+    </label>
+    <div class="row">
+      <button type="button" id="learn" class="link">learn from typing</button>
+      <span class="note" id="learnNote"></span>
+    </div>
+    <menu>
+      <button value="cancel" class="link">cancel</button>
+      <button value="ok" id="charsetOk">done</button>
+    </menu>
+  </form>
+</dialog>
+
+<script type="module" src="/src/ui/app.js"></script>
+</body>
+</html>
