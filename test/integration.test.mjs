@@ -198,6 +198,10 @@ await check('the zero was replaced with a capital O', () => {
 console.log('red ribbon');
 
 await check('marking lines red colours them', () => {
+  // Naming lines by hand is now one scheme among several, so it has to be
+  // chosen before the line numbers mean anything.
+  $('ink').value = 'rows';
+  $('ink').dispatchEvent(new window.Event('change'));
   $('redRows').value = '0';
   $('redRows').dispatchEvent(new window.Event('input'));
 });
@@ -211,6 +215,62 @@ await check('red cells appear in the sheet', () => {
 
 await check('the facts mention red strikes', () => {
   assert(/red/.test($('facts').textContent), $('facts').textContent);
+});
+
+await check('every ribbon scheme is offered and reddens something', async () => {
+  // The menu is built from INK_SCHEMES; if one of them silently produced no
+  // red the user would meet a setting that appears to do nothing.
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'text').click();
+  $('letterStyle').value = 'shadow';
+  $('letterStyle').dispatchEvent(new window.Event('change'));
+  $('letterText').value = 'AB';
+  $('letterText').dispatchEvent(new window.Event('input'));
+  await wait(400);
+
+  const ids = [...$('ink').options].map((o) => o.value);
+  assert(ids.length >= 6, `only ${ids.length} schemes offered`);
+
+  for (const id of ids) {
+    if (id === 'none' || id === 'rows') continue;
+    $('ink').value = id;
+    $('ink').dispatchEvent(new window.Event('change'));
+    await wait(220);
+    assert(/red/.test($('facts').textContent),
+      `${id} produced no red strikes`);
+  }
+});
+
+await check('the amount slider only shows where it is read', async () => {
+  $('ink').value = 'shadow';
+  $('ink').dispatchEvent(new window.Event('change'));
+  await wait(220);
+  assert($('inkAmountRow').hidden,
+    'an amount is offered for a scheme that takes its rule from the motif');
+
+  $('ink').value = 'depth';
+  $('ink').dispatchEvent(new window.Event('change'));
+  await wait(220);
+  assert(!$('inkAmountRow').hidden, 'the amount went missing where it applies');
+  assert($('redRowsRow').hidden, 'line numbers offered for a picture rule');
+
+  $('ink').value = 'rows';
+  $('ink').dispatchEvent(new window.Event('change'));
+  await wait(220);
+  assert(!$('redRowsRow').hidden, 'no way to name the lines');
+});
+
+await check('the cost of the second pass is stated', async () => {
+  $('ink').value = 'lit';
+  $('ink').dispatchEvent(new window.Event('change'));
+  await wait(250);
+  assert(/two passes/.test($('inkTally').textContent),
+    `got "${$('inkTally').textContent}"`);
+
+  $('ink').value = 'none';
+  $('ink').dispatchEvent(new window.Event('change'));
+  await wait(250);
+  assert($('inkTally').hidden, 'a pass count is shown for a single-pass motif');
 });
 
 console.log('character set');
@@ -281,11 +341,13 @@ await check('the preview can actually stay put while the settings scroll', () =>
 
 await check('the preview follows a change of settings', () => {
   const before = $('mini').innerHTML;
-  $('redRows').value = '1';
-  $('redRows').dispatchEvent(new window.Event('input'));
+  $('ink').value = 'bands';
+  $('ink').dispatchEvent(new window.Event('change'));
   return new Promise((r) => setTimeout(() => {
     assert($('mini').innerHTML !== before, 'preview did not react');
-    r();
+    $('ink').value = 'none';
+    $('ink').dispatchEvent(new window.Event('change'));
+    setTimeout(r, 250);
   }, 400));
 });
 
@@ -315,13 +377,19 @@ await check('the sentence field only appears when it applies', () => {
 });
 
 await check('the machine explains what it is', () => {
-  assert(/per inch/.test($('machineHint').textContent),
+  // Short on screen, the rest in the tooltip: this sits in a narrow column
+  // of settings, and a sentence there is read once and then in the way.
+  assert(/cpi/.test($('machineHint').textContent),
     $('machineHint').textContent);
+  assert(/pica|elite/.test($('machineHint').textContent),
+    'the pitch is not named');
 });
 
 await check('the paper says how much fits', () => {
-  assert(/characters across/.test($('paperHint').textContent),
+  assert(/\d+ x \d+/.test($('paperHint').textContent),
     $('paperHint').textContent);
+  assert(/characters across/.test($('paperHint').title),
+    `the long form is not in the tooltip: "${$('paperHint').title}"`);
 });
 
 
@@ -465,7 +533,7 @@ await check('an elite reading changes what fits on the sheet', async () => {
     `got "${$('mResult').textContent}"`);
   assert(/81 characters across/.test($('mResult').textContent),
     'sheet width did not follow the measurement');
-  assert(/12 characters per inch/.test($('machineHint').textContent),
+  assert(/12 cpi/.test($('machineHint').textContent),
     'the machine still describes itself as pica');
 });
 
@@ -482,7 +550,7 @@ await check('a reading between the pitches is refused and nothing changes', asyn
 
   assert(/Nothing has been changed/.test($('mResult').textContent),
     `got "${$('mResult').textContent}"`);
-  assert(/12 characters per inch/.test($('machineHint').textContent),
+  assert(/12 cpi/.test($('machineHint').textContent),
     'a bad reading was allowed through');
 });
 
@@ -490,7 +558,7 @@ await check('the measurement can be undone', async () => {
   $('mClear').click();
   await new Promise((r) => setTimeout(r, 60));
 
-  assert(/10 characters per inch/.test($('machineHint').textContent),
+  assert(/10 cpi/.test($('machineHint').textContent),
     `still measured: "${$('machineHint').textContent}"`);
   assert(/\(pica\)/.test($('machineHint').textContent),
     'the pitch is no longer named');

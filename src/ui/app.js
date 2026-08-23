@@ -17,7 +17,7 @@ import {
   fitGrid, toCharacters, toSentence, cellAspect, keystrokes,
 } from '../core/convert.js';
 import {
-  colourMap, inkTally, parseRows, strikesInLine, runsOf,
+  inkPlan, INK_SCHEMES, inkTally, parseRows, strikesInLine, runsOf,
 } from '../core/runs.js';
 import { letter, STYLES, usesTwo } from '../core/lettering.js';
 import { StrikeListener } from '../core/listen.js';
@@ -66,6 +66,8 @@ const save = () => {
       contrast: $('contrast').value,
       detail: $('detail').value,
       redRows: $('redRows').value,
+      ink: $('ink').value,
+      inkAmount: $('inkAmount').value,
       invert: $('invert').value,
       sentence: $('sentence').value,
     }));
@@ -83,6 +85,8 @@ function fillSelects(saved) {
   $('letterStyle').innerHTML = Object.entries(STYLES)
     .map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
 
+  $('ink').innerHTML = INK_SCHEMES
+    .map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
   $('machine').innerHTML = PROFILES
     .map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
   $('paper').innerHTML = PAPERS
@@ -103,6 +107,8 @@ function fillSelects(saved) {
   if (saved.contrast) $('contrast').value = saved.contrast;
   if (saved.detail) $('detail').value = saved.detail;
   if (saved.redRows) $('redRows').value = saved.redRows;
+  if (saved.ink) $('ink').value = saved.ink;
+  if (saved.inkAmount) $('inkAmount').value = saved.inkAmount;
   if (saved.invert) $('invert').value = saved.invert;
   if (saved.sentence) $('sentence').value = saved.sentence;
 }
@@ -145,6 +151,33 @@ function currentTab() {
  * A control that does nothing is worse than a missing one: it makes you
  * doubt what you are seeing everywhere else.
  */
+/**
+ * Show only the ribbon controls the chosen scheme actually reads.
+ *
+ * `shadow` and `bands` take their rule from the motif and have nothing to
+ * tune; `rows` wants line numbers and not a slider. Leaving the others on
+ * screen would repeat the mistake the width slider made — a control that
+ * quietly does nothing.
+ */
+function syncInkControls() {
+  const scheme = $('ink').value;
+  const def = INK_SCHEMES.find((s) => s.id === scheme);
+  const usesAmount = ['depth', 'accent', 'lit', 'split'].includes(scheme);
+
+  $('inkHint').textContent = def?.hint ?? '';
+  $('inkAmountRow').hidden = !usesAmount;
+  $('redRowsRow').hidden = scheme !== 'rows';
+  $('inkAmountOut').textContent = `${$('inkAmount').value}%`;
+
+  // What it costs at the machine: the red is a second pass, and knowing how
+  // many strikes that is decides whether the effect is worth it.
+  const t = inkTally(app.lines, app.colours);
+  $('inkTally').textContent = t.red
+    ? `${t.black} strikes in black, ${t.red} in red — two passes.`
+    : '';
+  $('inkTally').hidden = !t.red;
+}
+
 function syncWidthControl() {
   const applies = currentTab() === 'image';
   $('widthRow').hidden = !applies;
@@ -230,8 +263,13 @@ function convert() {
 
   app.lines = lines.length ? lines : [];
   const width = Math.max(0, ...app.lines.map((l) => l.length));
-  const rowSpec = parseRows($('redRows').value, app.lines.length);
-  app.colours = colourMap(app.lines, { rows: rowSpec });
+  app.colours = inkPlan(app.lines, {
+    scheme: $('ink').value,
+    atlas: app.atlas,
+    amount: +$('inkAmount').value / 100,
+    rows: parseRows($('redRows').value, app.lines.length),
+  });
+  syncInkControls();
 
   app.setup = setUp(width, app.lines.length, app.paper, app.machine,
                     $('align').value);
@@ -344,20 +382,24 @@ function draw() {
     : '';
   $('charCount').textContent = `${app.chosen.size} on`;
 
+  // Both hints sit in a narrow column of settings. Anything that is not a
+  // number you might act on goes in the tooltip instead of on screen: the
+  // machine's notes, and whether the pitch was measured or assumed.
   const m = app.machine;
   const pitch = PITCHES.find((p) => p.perInch === m.cpi);
+  const measured = m.pitchMeasured === true ? 'measured on your machine'
+    : m.pitchMeasured === false ? 'assumed, not measured' : '';
   $('machineHint').textContent =
-    `${m.cpi} characters per inch` + (pitch ? ` (${pitch.name})` : '') +
-    `, ${m.lpi} lines per inch` +
-    (m.twoColour ? ', black and red ribbon' : '') +
-    (m.pitchMeasured ? ', measured on your machine'
-                     : m.pitchMeasured === false ? ', assumed — not measured' : '') +
-    (m.notes ? `. ${m.notes}` : '');
+    `${m.cpi} cpi` + (pitch ? ` (${pitch.name})` : '') + `, ${m.lpi} lpi` +
+    (m.twoColour ? ', two-colour ribbon' : '');
+  $('machineHint').title =
+    [measured && `Pitch ${measured}.`, m.notes].filter(Boolean).join(' ');
 
   const area = textArea(app.paper, app.machine);
-  $('paperHint').textContent =
+  $('paperHint').textContent = `${area.cols} x ${area.rows} inside the margins`;
+  $('paperHint').title =
     `${app.paper.name} holds ${area.cols} characters across and ` +
-    `${area.rows} lines inside the margins.`;
+    `${area.rows} lines between the margins at ${m.cpi} characters per inch.`;
 
   drawMini();
 
@@ -499,7 +541,8 @@ function wire() {
   });
 
   // settings that only need a redraw
-  ['mode', 'align', 'paper', 'machine', 'letterStyle', 'invert'].forEach((id) => {
+  ['mode', 'align', 'paper', 'machine', 'letterStyle', 'invert',
+   'ink'].forEach((id) => {
     $(id).onchange = () => {
       if (id === 'machine') {
         useProfile($('machine').value);
@@ -513,7 +556,7 @@ function wire() {
     };
   });
 
-  ['width', 'contrast', 'detail'].forEach((id) => {
+  ['width', 'contrast', 'detail', 'inkAmount'].forEach((id) => {
     const out = $(`${id}Out`);
     const show = () => {
       out.textContent = id === 'width'

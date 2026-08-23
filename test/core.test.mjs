@@ -13,7 +13,7 @@ import {
 import { PROFILES, profileById } from '../src/profiles/index.js';
 import {
   runsOf, runsToText, strikesInLine, colourMap, inkTally, parseRows,
-  columnOfStrike,
+  columnOfStrike, inkPlan, INK_SCHEMES,
 } from '../src/core/runs.js';
 import { letter, STYLES } from '../src/core/lettering.js';
 import { fitGrid, sentenceReads, keystrokes } from '../src/core/convert.js';
@@ -297,6 +297,83 @@ check('row ranges parse the way people write them', () => {
 
 check('row ranges are clipped to the motif', () => {
   assert.deepStrictEqual([...parseRows('0-99', 3)], [0, 1, 2]);
+});
+
+console.log('ribbon colour');
+
+check('black only leaves nothing for the second pass', () => {
+  const art = ['##', '##'];
+  const t = inkTally(art, inkPlan(art, { scheme: 'none' }));
+  assert.strictEqual(t.red, 0);
+  assert.strictEqual(t.black, 4);
+});
+
+check('a space is never coloured, whatever the scheme', () => {
+  // A space is not a strike. Colouring one would put a keystroke in the
+  // count that nobody types.
+  const art = ['# #', '   '];
+  for (const s of INK_SCHEMES.map((x) => x.id)) {
+    const map = inkPlan(art, { scheme: s, amount: 0.9 });
+    assert.strictEqual(map[0][1], 'black', s);
+    assert.ok(map[1].every((c) => c === 'black'), s);
+  }
+});
+
+check('shadow colours the shadow and leaves the face alone', () => {
+  // The point of the scheme: a shadowed style already draws two surfaces
+  // with two characters, so the ribbon can simply follow that division.
+  const art = letter('A', { style: 'shadow', fill: '#', light: '+' });
+  const map = inkPlan(art, { scheme: 'shadow' });
+  art.forEach((line, r) => {
+    [...line].forEach((ch, c) => {
+      if (ch === '#') assert.strictEqual(map[r][c], 'black', 'face went red');
+      if (ch === '+') assert.strictEqual(map[r][c], 'red', 'shadow stayed black');
+    });
+  });
+});
+
+check('accent reddens the heavy strikes, depth the faint ones', () => {
+  // The two are opposites and must not quietly agree with each other.
+  const art = ['#.#.', '.#.#'];
+  const accent = inkPlan(art, { scheme: 'accent', amount: 0.6 });
+  const depth = inkPlan(art, { scheme: 'depth', amount: 0.6 });
+  const redAt = (m, ch) => art.some((line, r) =>
+    [...line].some((c, i) => c === ch && m[r][i] === 'red'));
+  assert.ok(redAt(accent, '#'), 'accent left the heavy character black');
+  assert.ok(redAt(depth, '.'), 'depth left the faint character black');
+  assert.ok(!redAt(depth, '#'), 'depth reddened the heavy character too');
+});
+
+check('more amount means more red, never less', () => {
+  const art = ['#+.#', '.+#+'];
+  let last = -1;
+  for (const a of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+    const t = inkTally(art, inkPlan(art, { scheme: 'depth', amount: a }));
+    assert.ok(t.red >= last, `${a} gave less red than the step before`);
+    last = t.red;
+  }
+});
+
+check('every scheme in the list is actually implemented', () => {
+  // A name in the menu that falls through to "no red" is a control that
+  // does nothing, which is the fault this whole feature was replacing.
+  const art = letter('AB', { style: 'shadow', fill: '#', light: '+' });
+  for (const s of INK_SCHEMES) {
+    if (s.id === 'none') continue;
+    const opt = { scheme: s.id, amount: 0.5 };
+    if (s.id === 'rows') opt.rows = new Set([0]);
+    if (s.id === 'chars') opt.chars = '#';
+    const t = inkTally(art, inkPlan(art, opt));
+    assert.ok(t.red > 0, `${s.id} produced no red at all`);
+    assert.ok(t.black > 0, `${s.id} left nothing in black`);
+  }
+});
+
+check('every scheme offered has a name and an explanation', () => {
+  for (const s of INK_SCHEMES) {
+    assert.ok(s.name && s.hint, s.id);
+    assert.ok(s.hint.length < 80, `${s.id} hint is too long for the column`);
+  }
 });
 
 console.log('lettering');

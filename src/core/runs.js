@@ -105,6 +105,170 @@ export function colourMap(lines, { mask = null, rows = null, chars = '' } = {}) 
   });
 }
 
+/**
+ * Decide the ribbon colour for every cell.
+ *
+ * The old control was a text box asking for line numbers — "0-15" — which
+ * answered the question "which rows are red" and never the question anybody
+ * actually has, which is "where does the red *help*". Colour on a typewriter
+ * is not decoration: the ribbon has two halves, and the second half is a
+ * second ink you have already paid for. Used with the shape of the motif it
+ * buys depth, shadow and material.
+ *
+ * Every scheme here is a rule about the picture, not about row numbers.
+ *
+ * @param {string[]} lines
+ * @param {Object} o
+ * @param {string} o.scheme
+ * @param {Object} [o.atlas]   glyph atlas, for the schemes that need to know
+ *                             how much ink a character carries
+ * @param {number} [o.amount]  0..1, how much of the motif turns red
+ * @param {Set<number>|number[]} [o.rows]  explicit rows, for scheme 'rows'
+ */
+export function inkPlan(lines, { scheme = 'none', atlas = null, amount = 0.5,
+                                 rows = null, chars = '' } = {}) {
+  const width = Math.max(0, ...lines.map((l) => l.length));
+  const height = lines.length;
+  const black = () => lines.map(() => Array(width).fill('black'));
+  if (scheme === 'none' || !height) return black();
+
+  // Explicit schemes keep working through the same door as before.
+  if (scheme === 'rows') return colourMap(lines, { rows });
+  if (scheme === 'chars') return colourMap(lines, { chars });
+
+  /* How much ink each character carries, 0..1. The atlas measured this when
+   * it rendered the glyphs; without one, fall back to a rough ordering so
+   * the schemes still do something sensible in tests and on paper. */
+  const weight = inkWeights(atlas);
+
+  const map = lines.map((line, r) => {
+    const out = [];
+    for (let c = 0; c < width; c++) {
+      const ch = line[c] ?? ' ';
+      if (ch === ' ') { out.push('black'); continue; }
+      out.push(redAt(ch, r, c) ? 'red' : 'black');
+    }
+    return out;
+  });
+  return map;
+
+  function redAt(ch, r, c) {
+    const w = weight(ch);
+    switch (scheme) {
+      /*
+       * Depth. The darkest characters carry the picture; red on the lightest
+       * ones pushes them back, because red ink on white paper reads lighter
+       * than black at the same coverage. So the faintest `amount` of the
+       * tonal range goes red and the picture gains a background.
+       */
+      case 'depth':
+        return w < amount;
+
+      /*
+       * The opposite, and the more theatrical one: the heaviest strikes go
+       * red, so the picture keeps its drawing in black and the accents burn.
+       */
+      case 'accent':
+        return w > 1 - amount * 0.7;
+
+      /*
+       * Lettering styles that already produce two kinds of cell — a face and
+       * a shadow, drawn with different characters — get the shadow in red.
+       * `.` never reaches here; the shadow characters are the light fill the
+       * style was built with.
+       */
+      case 'shadow':
+        return SHADOW_CHARS.has(ch);
+
+      /*
+       * A light from the top left, the way anything is drawn when it wants
+       * to look solid: cells in the lower right half of the motif go red.
+       * Cheap, and it works on any shape at all.
+       */
+      case 'lit': {
+        const d = (c / Math.max(1, width - 1)) + (r / Math.max(1, height - 1));
+        return d > 2 - amount * 2;
+      }
+
+      /*
+       * Bands across the picture. Not a gimmick: on a wide motif it is the
+       * one scheme that makes a lost line obvious, because the colour tells
+       * you which band you are in.
+       */
+      case 'bands': {
+        const band = Math.max(2, Math.round(height / 6));
+        return Math.floor(r / band) % 2 === 1;
+      }
+
+      /* Top half red, bottom half black, or wherever `amount` puts the line. */
+      case 'split':
+        return r < height * amount;
+
+      default:
+        return false;
+    }
+  }
+}
+
+/**
+ * Characters the lettering styles use for their second surface.
+ *
+ * Kept here rather than imported from lettering.js: runs.js is the layer
+ * everything else depends on, and pulling the letter machinery in for one
+ * lookup would invert that.
+ */
+const SHADOW_CHARS = new Set(['+', '/', '_', '!', '(', ')', ':', '.', ',', '`']);
+
+/**
+ * A function from character to how much ink it puts on the paper, 0..1.
+ *
+ * With an atlas this is measured. Without one it is a rough ranking — good
+ * enough to order light from heavy, which is all the schemes ask of it.
+ */
+function inkWeights(atlas) {
+  const ORDER = ' .,:;\'`-_~!/|()[]{}+=<>*^?ilrtcvxzsnuoaebdhkpqgwmMWNHRBQ#@';
+  const ranked = (ch) => {
+    const i = ORDER.indexOf(ch);
+    return i < 0 ? 0.5 : i / (ORDER.length - 1);
+  };
+
+  const glyphs = atlas?.glyphs ?? [];
+  if (glyphs.length) {
+    const max = atlas.maxCoverage || 1;
+    const values = glyphs.map((g) => g.coverage / max);
+    // A measured atlas beats a hand-written ranking — but only if it actually
+    // measured something. A canvas that cannot render (a headless browser, a
+    // blocked font) reports every glyph as identical, and every scheme built
+    // on tone would then quietly do nothing. Fall back rather than pretend.
+    const spread = Math.max(...values) - Math.min(...values);
+    if (spread > 0.05) {
+      const byChar = new Map(glyphs.map((g, i) => [g.ch, values[i]]));
+      return (ch) => byChar.get(ch) ?? ranked(ch);
+    }
+  }
+  return ranked;
+}
+
+/** What the schemes are called, and what they do. For the interface. */
+export const INK_SCHEMES = [
+  { id: 'none',   name: 'Black only',
+    hint: 'One pass, no ribbon change.' },
+  { id: 'depth',  name: 'Depth',
+    hint: 'Faint areas in red so they fall back behind the dark ones.' },
+  { id: 'accent', name: 'Accent',
+    hint: 'The heaviest strikes in red. Drawing stays black.' },
+  { id: 'shadow', name: 'Shadow',
+    hint: 'The shadow of a lettering style in red, the face in black.' },
+  { id: 'lit',    name: 'Lit from the left',
+    hint: 'Lower right in red, as if lit from the top left.' },
+  { id: 'bands',  name: 'Bands',
+    hint: 'Alternating bands. Easiest to keep your place in.' },
+  { id: 'split',  name: 'Split',
+    hint: 'Top red, bottom black.' },
+  { id: 'rows',   name: 'Chosen lines',
+    hint: 'Name the lines yourself.' },
+];
+
 /** How many strikes are black and how many red. */
 export function inkTally(lines, colours) {
   let black = 0, red = 0;
