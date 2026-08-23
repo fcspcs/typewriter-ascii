@@ -27,20 +27,62 @@ export function cellAspect(m) {
 
 /**
  * @param {ImageData} img
- * @returns {{data: Float32Array, w: number, h: number}} 0 = paper, 1 = ink
+ * @param {Object} [opt]
+ * @param {boolean|'auto'} [opt.invert='auto']
+ * @returns {{data: Float32Array, w: number, h: number, inverted: boolean}}
+ *          0 = paper, 1 = ink
  */
-export function toInk(img, { invert = false } = {}) {
+export function toInk(img, { invert = 'auto' } = {}) {
   const { width: w, height: h, data } = img;
   const out = new Float32Array(w * h);
+  let sum = 0;
+
   for (let i = 0; i < w * h; i++) {
     const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
     const a = data[i * 4 + 3] / 255;
     // Rec. 601 luma, then treat transparency as paper.
     const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
     const ink = 1 - (lum * a + (1 - a));
-    out[i] = invert ? 1 - ink : ink;
+    out[i] = ink;
+    sum += ink;
   }
-  return { data: out, w, h };
+
+  // Which way round is the picture?
+  //
+  // A typewriter puts ink on white paper. It physically cannot fill a sheet
+  // with ink — and a picture that is mostly ink is not a drawing, it is a
+  // negative. White lettering on a black field is extremely common (logos,
+  // album art, anything screenshotted from a dark page), and taken at face
+  // value it produces a solid wall of the darkest character with the actual
+  // artwork invisible inside it.
+  //
+  // So: if most of the image reads as ink, it is a negative. Flip it.
+  const mean = sum / (w * h);
+  const flip = invert === 'auto' ? mean > 0.55 : Boolean(invert);
+  if (flip) for (let i = 0; i < out.length; i++) out[i] = 1 - out[i];
+
+  return { data: out, w, h, inverted: flip };
+}
+
+/**
+ * Stretch the ink range so it uses the characters available.
+ *
+ * Without this a picture that only ever sits between, say, 0.4 and 0.6 gets
+ * rendered with the two or three characters whose coverage happens to land
+ * in that band — flat, and usually the heavy ones. Percentile ends rather
+ * than min/max, so one stray white speck cannot set the scale.
+ */
+export function normalise(field, low = 0.02, high = 0.98) {
+  const sorted = Float32Array.from(field.data).sort();
+  const lo = sorted[Math.floor(sorted.length * low)];
+  const hi = sorted[Math.floor(sorted.length * high)];
+  if (hi - lo < 0.05) return field;      // genuinely flat; leave it alone
+
+  const out = new Float32Array(field.data.length);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = clamp((field.data[i] - lo) / (hi - lo), 0, 1);
+  }
+  return { data: out, w: field.w, h: field.h };
 }
 
 /** Separable box blur, run a few times — close enough to a gaussian. */

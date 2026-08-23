@@ -89,15 +89,25 @@ Half spacing sideways and downwards, typing outside the margin stops, the
 invisible ribbon setting for rehearsing a line, and why the underscore prints
 black when you have selected red: **[docs/machine-tricks.md](docs/machine-tricks.md)**.
 
-## Fonts
+## Lettering
 
-The lettering faces are drawn from scratch and MIT-licensed like the rest of
-the project.
+Fifteen styles, built from two hand-drawn faces and a set of transforms:
+hollowing, shearing, stencil bridges, doubling, shadows, relief. Solid,
+hollow, slanted, stencil, wide, nameplate, and combinations — each in a
+compact and a large size where it makes sense.
 
-They are deliberately **not** the classic FIGlet collection. Those fonts are
-wonderful, but their licences are a patchwork — some public domain, some
-free-but-no-redistribution, a few with no stated terms at all. Bundling them
-would push that mess onto everyone who forks this.
+Keystrokes vary a lot between them. On the same word, hollow faces cost
+roughly a third of what solid ones do, which matters when you are the printer.
+
+The letterforms are drawn from scratch and MIT-licensed like the rest of the
+project. They are *informed* by the classic FIGlet faces — anyone who has
+seen `banner` or `slant` will spot the family resemblance, because there are
+only so many ways to draw a capital A out of blocks — but no glyph data is
+copied.
+
+That is deliberate. The FIGlet collection has a patchwork of licences: some
+public domain, some free-but-no-redistribution, a few with no stated terms at
+all. Bundling them would push that problem onto everyone who forks this.
 
 To use them anyway, point [`figlet`](https://github.com/patorjk/figlet.js) at
 your own copy of the `.flf` files. They are worth having; they just are not

@@ -14,7 +14,7 @@ import {
   runsOf, runsToText, strikesInLine, colourMap, inkTally, parseRows,
   columnOfStrike,
 } from '../src/core/runs.js';
-import { letter } from '../src/core/lettering.js';
+import { letter, STYLES } from '../src/core/lettering.js';
 import { fitGrid, sentenceReads, keystrokes } from '../src/core/convert.js';
 
 let failures = 0;
@@ -210,14 +210,15 @@ check('row ranges are clipped to the motif', () => {
 
 console.log('lettering');
 
-check('a word renders to a block of equal-length lines', () => {
-  const l = letter('AB');
+check('a word renders to a block of lines', () => {
+  const l = letter('AB', { style: 'block' });
   assert.strictEqual(l.length, 5);
-  assert.ok(l.every((x) => x.length <= l[0].length + 2));
+  const w = Math.max(...l.map((x) => x.length));
+  assert.ok(l.every((x) => x.length <= w), 'a line overran the block');
 });
 
 check('lettering uses only the fill characters it was given', () => {
-  const l = letter('HI', { fill: 'X' });
+  const l = letter('HI', { style: 'block', fill: 'X' });
   const used = new Set(l.join('').replace(/ /g, ''));
   assert.deepStrictEqual([...used], ['X']);
 });
@@ -228,23 +229,67 @@ check('the shadow style uses both characters', () => {
   assert.ok(used.has('#') && used.has('+'), [...used].join(''));
 });
 
-check('the outline style is genuinely lighter than the solid one', () => {
-  // Compare ink DENSITY, not raw keystrokes: the outline face is drawn at a
-  // larger size, so counting strikes alone would compare two different
-  // things and pass for the wrong reason.
+check('every hollow style really is hollow', () => {
+  // Compare ink DENSITY, not raw strokes: hollow faces are drawn larger, so
+  // counting strokes would compare two different things and pass for the
+  // wrong reason. This has caught the same mistake twice - at 2x scale the
+  // hollowing silently does nothing.
   const density = (style) => {
     const l = letter('OO', { style });
     const cells = l.length * Math.max(...l.map((x) => x.length));
     return keystrokes(l) / cells;
   };
-  const solid = density('block');
-  const thin = density('outline');
-  assert.ok(thin < solid * 0.85, `outline ${thin.toFixed(2)} vs block ${solid.toFixed(2)}`);
+  const pairs = [['block', 'hollow'], ['big', 'hollowBig']];
+  for (const [solid, thin] of pairs) {
+    const a = density(solid);
+    const b = density(thin);
+    assert.ok(b < a * 0.85,
+      `${thin} ${b.toFixed(2)} is not lighter than ${solid} ${a.toFixed(2)}`);
+  }
 });
 
+
+
 check('unknown characters become blanks, not crashes', () => {
-  const l = letter('A\u4f60B');
+  const l = letter('A\u4f60B', { style: 'block' });
   assert.strictEqual(l.length, 5);
+});
+
+
+check('every lettering style is different from every other', () => {
+  // Two styles that render identically means a transform silently did
+  // nothing - which is how 'hollow, big' shipped as a copy of 'big'.
+  const seen = new Map();
+  for (const key of Object.keys(STYLES)) {
+    const art = letter('ABCO', { style: key }).join('|');
+    assert.ok(!seen.has(art), `${key} renders the same as ${seen.get(art)}`);
+    seen.set(art, key);
+  }
+});
+
+check('every style renders every letter and digit', () => {
+  for (const key of Object.keys(STYLES)) {
+    const art = letter('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', { style: key });
+    assert.ok(art.length > 0, `${key} produced nothing`);
+    assert.ok(art.some((l) => l.trim()), `${key} produced only blanks`);
+  }
+});
+
+check('only styles that declare a second ink use one', () => {
+  for (const key of Object.keys(STYLES)) {
+    const art = letter('ABO', { style: key, fill: '#', light: '+' }).join('');
+    const usesLight = art.includes('+');
+    assert.strictEqual(usesLight, Boolean(STYLES[key].two),
+      `${key}: uses light ink = ${usesLight}, declared = ${!!STYLES[key].two}`);
+  }
+});
+
+check('styles have no blank rows top or bottom', () => {
+  for (const key of Object.keys(STYLES)) {
+    const art = letter('AB', { style: key });
+    assert.ok(art[0].trim(), `${key} starts with a blank row`);
+    assert.ok(art[art.length - 1].trim(), `${key} ends with a blank row`);
+  }
 });
 
 console.log('grid fitting');

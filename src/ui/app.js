@@ -12,13 +12,13 @@ import {
 } from '../core/machine.js';
 import { buildAtlas } from '../core/glyphs.js';
 import {
-  toInk, blur, contrast, edges, outline, cropToContent,
+  toInk, blur, contrast, edges, outline, cropToContent, normalise,
   fitGrid, toCharacters, toSentence, cellAspect, keystrokes,
 } from '../core/convert.js';
 import {
   colourMap, inkTally, parseRows, strikesInLine, runsOf,
 } from '../core/runs.js';
-import { letter } from '../core/lettering.js';
+import { letter, STYLES, usesTwo } from '../core/lettering.js';
 import { StrikeListener } from '../core/listen.js';
 import { buildSheetPdf, downloadPdf } from '../core/pdf.js';
 import {
@@ -30,6 +30,7 @@ const $ = (id) => document.getElementById(id);
 
 const app = {
   machine: PROFILES[0],
+  inverted: false,
   paper: PAPERS[0],
   chosen: new Set(),
   atlas: null,
@@ -59,6 +60,7 @@ const save = () => {
       contrast: $('contrast').value,
       detail: $('detail').value,
       redRows: $('redRows').value,
+      invert: $('invert').value,
       sentence: $('sentence').value,
     }));
   } catch { /* private mode */ }
@@ -71,6 +73,10 @@ const load = () => {
 /* ── setup ───────────────────────────────────────────────────── */
 
 function fillSelects(saved) {
+  // Built from the styles themselves, so adding one needs no HTML change.
+  $('letterStyle').innerHTML = Object.entries(STYLES)
+    .map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
+
   $('machine').innerHTML = PROFILES
     .map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
   $('paper').innerHTML = PAPERS
@@ -88,6 +94,7 @@ function fillSelects(saved) {
   if (saved.contrast) $('contrast').value = saved.contrast;
   if (saved.detail) $('detail').value = saved.detail;
   if (saved.redRows) $('redRows').value = saved.redRows;
+  if (saved.invert) $('invert').value = saved.invert;
   if (saved.sentence) $('sentence').value = saved.sentence;
 }
 
@@ -121,6 +128,7 @@ function convert() {
       const light = have.includes('+') ? '+'
         : have.includes(':') ? ':' : (have[1] ?? fill);
       lines = letter(word, { style, fill, light });
+      app.twoInk = usesTwo(style);
     }
   } else if (tab === 'paste') {
     const raw = $('pasted').value.replace(/\t/g, '    ');
@@ -133,7 +141,11 @@ function convert() {
       }
     }
   } else if (app.image) {
-    let field = toInk(app.image);
+    const want = $('invert').value;           // auto | no | yes
+    let field = toInk(app.image, {
+      invert: want === 'auto' ? 'auto' : want === 'yes',
+    });
+    app.inverted = field.inverted;
 
     const detail = +$('detail').value / 100;
     const mode = $('mode').value;
@@ -142,6 +154,9 @@ function convert() {
     // leaving it in produces noise that reads as dirt.
     field = blur(field, Math.max(0, (1 - detail) * (field.w / maxCols) * 0.9));
     field = contrast(field, +$('contrast').value / 100);
+    // Use the whole range of characters, not just the band the source
+    // happens to occupy.
+    field = normalise(field);
 
     if (mode === 'outline') field = outline(field, 0.45);
     field = cropToContent(field);
@@ -267,6 +282,10 @@ function draw() {
     .map((w) => `<p class="warn">${w}</p>`).join('');
 
   $('modeHint').textContent = MODE_HINTS[$('mode').value] ?? '';
+  $('invertHint').textContent = app.inverted
+    ? 'This looks like light artwork on a dark background, so it has been '
+      + 'turned round. A typewriter cannot ink a whole sheet.'
+    : '';
   $('charCount').textContent = `${app.chosen.size} on`;
 
   const m = app.machine;
@@ -409,7 +428,7 @@ function wire() {
   });
 
   // settings that only need a redraw
-  ['mode', 'align', 'paper', 'machine', 'letterStyle'].forEach((id) => {
+  ['mode', 'align', 'paper', 'machine', 'letterStyle', 'invert'].forEach((id) => {
     $(id).onchange = () => {
       if (id === 'machine') {
         app.machine = profileById($('machine').value);

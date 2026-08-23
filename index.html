@@ -54,6 +54,16 @@
           <p class="hint" id="modeHint"></p>
         </div>
 
+        <div class="field">
+          <label for="invert">Light or dark</label>
+          <select id="invert">
+            <option value="auto">Work it out</option>
+            <option value="no">Dark drawing on light paper</option>
+            <option value="yes">Light drawing on a dark background</option>
+          </select>
+          <p class="hint" id="invertHint"></p>
+        </div>
+
         <div class="field" id="sentenceRow" hidden>
           <label for="sentence">The sentence</label>
           <input type="text" id="sentence" value="she loved him and he loved her">
@@ -72,13 +82,11 @@
         </div>
         <div class="field">
           <label for="letterStyle">Letters</label>
-          <select id="letterStyle">
-            <option value="block">Solid</option>
-            <option value="outline">Hollow</option>
-            <option value="shadow">With a shadow</option>
-            <option value="slab">Ruled above and below</option>
-          </select>
-          <p class="hint">Hollow letters take about half the keystrokes.</p>
+          <select id="letterStyle"></select>
+          <p class="hint">
+            Hollow and stencil faces take far fewer keystrokes than solid
+            ones. Shadowed and raised faces use a second, lighter character.
+          </p>
         </div>
       </div>
 
