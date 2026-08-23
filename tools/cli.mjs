@@ -21,7 +21,8 @@ import {
   makeTypeable, PAPERS, paperById, setUp, charset,
 } from '../src/core/machine.js';
 import { colourMap, inkTally, parseRows, runsOf, runsToText } from '../src/core/runs.js';
-import { letter } from '../src/core/lettering.js';
+import { letter, tonesOf } from '../src/core/lettering.js';
+import { toneRamp } from '../src/core/ink.js';
 import { buildSheetPdf } from '../src/core/pdf.js';
 
 const args = process.argv.slice(2);
@@ -53,7 +54,7 @@ options
   --paper <id>    default a4
   --align <centre|topleft>
   --red <lines>   e.g. 0-15,20 — put these lines on the red ribbon
-  --style <block|outline|shadow|slab>   for 'text'
+  --style <id>    for 'text'; \n in the word starts a second line
   --pdf <path>    also write a printable PDF
   --quiet         only the setup summary
 `);
@@ -94,10 +95,13 @@ if (cmd === 'file') {
 } else if (cmd === 'text') {
   const word = args[1];
   if (!word) die('Which word?');
-  const have = charset(machine);
-  const fill = have.includes('#') ? '#' : have.includes('H') ? 'H' : have[0];
-  const light = have.includes('+') ? '+' : have.includes(':') ? ':' : fill;
-  lines = letter(word, { style: opt('style', 'block'), fill, light });
+  const style = opt('style', 'block');
+  // Same ramp the page uses, taken from the machine rather than wished for.
+  // A literal \n in the argument starts a second line of lettering, because
+  // a shell makes a real newline awkward to type.
+  const tones = toneRamp(Math.max(1, tonesOf(style)),
+    { allowed: charset(machine) });
+  lines = letter(word.replace(/\\n/g, '\n'), { style, tones });
 } else {
   die(`Unknown command: ${cmd}`);
 }
@@ -137,7 +141,15 @@ if (setup.marginRelease) {
 
 console.log(`${width} × ${lines.length} characters, ${tally.total} keystrokes` +
   (tally.red ? ` (${tally.red} red)` : '') + `, ${paper.name}, ${machine.name}`);
-for (const w of setup.warnings) console.log(`warning: ${w}`);
+// setUp() reports { level, text } so the interface can tell an impossibility
+// from an inconvenience. Interpolating the object printed `warning:
+// [object Object]` and lost the message entirely - including "this will not
+// fit on A4", which is the one warning that matters.
+for (const w of setup.warnings) {
+  const text = typeof w === 'string' ? w : w.text;
+  const level = typeof w === 'string' ? 'note' : (w.level ?? 'note');
+  console.log(`${level === 'stop' ? 'CANNOT' : 'note'}: ${text}`);
+}
 console.log();
 instructions.forEach(([h, b], i) => console.log(`${i + 1}. ${h}\n   ${b}`));
 

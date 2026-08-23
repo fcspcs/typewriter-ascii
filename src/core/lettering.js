@@ -18,8 +18,15 @@
  * variety comes from: hollowing, shearing, stencilling, doubling, shadows.
  *
  * Glyph data uses:
- *   #  ink
+ *   #  ink        the heaviest character the machine has
+ *   +  mid tone   a second, lighter character
+ *   ~  faint      a third, lighter still
  *   .  paper
+ *
+ * Three placeholders rather than two because two is not enough to draw a
+ * raised surface. A relief needs a lit edge, a body and a shaded edge; with
+ * one tone for the whole outline the light has no direction and the letter
+ * reads as a hollow box with a fill. See relief().
  */
 
 /* ------------------------------------------------------------------ */
@@ -257,18 +264,35 @@ function slab(rows) {
 }
 
 /**
- * Outline in the main character, interior filled with the lighter one.
+ * Raised surface: lit edge, body, shaded edge.
  *
- * Two weights of ink read as a raised surface. Needs a stroke thick enough
- * to have an inside, hence the scaling — see outlineOf().
+ * The two-tone version drew the whole outline in one character and the
+ * interior in another. That is a hollow letter with a fill, not a relief:
+ * an edge lit from every side at once carries no light direction, so nothing
+ * appears to stand up off the page.
+ *
+ * Three tones fix it for the price of one more character. The light comes
+ * from the top left, as it does in every drawing that wants to look solid,
+ * so the top and left edges take the heaviest character, the bottom and
+ * right edges the faintest, and the body sits between them. On the SM7 that
+ * is `B` / `2` / `-` and the letter genuinely lifts.
+ *
+ * Needs a stroke thick enough to have an inside, hence the scaling — see
+ * outlineOf().
  */
 function relief(rows) {
-  const solid = pad(scaleBy(rows, 3));
-  const edge = hollow(solid);
-  return solid.map((row, y) =>
+  const g = pad(scaleBy(rows, 3));
+  const h = g.length;
+  const w = g[0].length;
+  const ink = (y, x) => y >= 0 && x >= 0 && y < h && x < w && g[y][x] === '#';
+
+  return g.map((row, y) =>
     [...row].map((c, x) => {
       if (c !== '#') return '.';
-      return edge[y][x] === '#' ? '#' : '+';
+      // Lit before shaded: a top-left corner is lit, not both at once.
+      if (!ink(y - 1, x) || !ink(y, x - 1)) return '#';
+      if (!ink(y + 1, x) || !ink(y, x + 1)) return '~';
+      return '+';
     }).join(''));
 }
 
@@ -419,46 +443,116 @@ function bulb(rows) {
 
 /**
  * A style is a face plus a chain of transforms.
- * `two` marks styles that use a second, lighter character.
+ *
+ * `tones` is how many weights of character the style draws with, and it is
+ * the number the caller uses to ask the machine for a ramp. One means a
+ * silhouette; two a face and a shadow behind it; three a lit edge, a body
+ * and a shaded edge. `two` is kept as a derived convenience for the ribbon
+ * schemes, which only ever ask "is there a second surface to colour".
  */
 export const STYLES = {
-  big:      { name: 'Big',            face: 'big',   fns: [] },
-  block:    { name: 'Block',          face: 'block', fns: [] },
-  hollow:   { name: 'Hollow',         face: 'block', fns: [outlineOf] },
-  hollowBig:{ name: 'Hollow, big',    face: 'big',   fns: [outlineOf] },
-  slant:    { name: 'Slanted',        face: 'big',   fns: [slant] },
-  slantBlock:{ name: 'Slanted, small', face: 'block', fns: [slant] },
-  shadow:   { name: 'Shadowed',       face: 'block', fns: [shadow], two: true },
-  shadowBig:{ name: 'Shadowed, big',  face: 'big',   fns: [shadow], two: true },
-  relief:   { name: 'Raised',         face: 'block', fns: [relief], two: true },
-  stencil:  { name: 'Stencil',        face: 'big',   fns: [stencil] },
-  wide:     { name: 'Wide',           face: 'block', fns: [widen] },
-  slab:     { name: 'Nameplate',      face: 'block', fns: [slab] },
-  slantHollow: { name: 'Slanted hollow', face: 'block', fns: [outlineOf, slant] },
-  reliefBig:{ name: 'Raised, big',    face: 'big',   fns: [relief], two: true },
+  big:      { name: 'Big',            face: 'big',   fns: [], tones: 1 },
+  block:    { name: 'Block',          face: 'block', fns: [], tones: 1 },
+  hollow:   { name: 'Hollow',         face: 'block', fns: [outlineOf], tones: 1 },
+  hollowBig:{ name: 'Hollow, big',    face: 'big',   fns: [outlineOf], tones: 1 },
+  slant:    { name: 'Slanted',        face: 'big',   fns: [slant], tones: 1 },
+  slantBlock:{ name: 'Slanted, small', face: 'block', fns: [slant], tones: 1 },
+  shadow:   { name: 'Shadowed',       face: 'block', fns: [shadow], tones: 2 },
+  shadowBig:{ name: 'Shadowed, big',  face: 'big',   fns: [shadow], tones: 2 },
+  relief:   { name: 'Raised',         face: 'block', fns: [relief], tones: 3 },
+  stencil:  { name: 'Stencil',        face: 'big',   fns: [stencil], tones: 1 },
+  wide:     { name: 'Wide',           face: 'block', fns: [widen], tones: 1 },
+  slab:     { name: 'Nameplate',      face: 'block', fns: [slab], tones: 1 },
+  slantHollow: { name: 'Slanted hollow', face: 'block', fns: [outlineOf, slant],
+              tones: 1 },
+  reliefBig:{ name: 'Raised, big',    face: 'big',   fns: [relief], tones: 3 },
   oblique:  { name: 'Three dimensional', face: 'block', fns: [extrude],
-              uses: '/_' },
+              uses: '/_', tones: 1 },
   obliqueBig:{ name: 'Three dimensional, big', face: 'big', fns: [extrude],
-              uses: '/_' },
+              uses: '/_', tones: 1 },
+  /*
+   * Zero tones is not an oversight. These two draw every stroke with a
+   * character chosen for its *direction* - `!` up, `_` across, `/` at a
+   * corner, brackets for a curve - so there is no surface for a tone to
+   * fill and the ramp is never consulted. Declaring 1 would make the
+   * interface reserve a character the style then ignores, which is exactly
+   * the class of quiet nothing this pass is here to remove.
+   */
   drafted:  { name: 'Drafted',        face: 'block', fns: [drafted],
-              uses: '/_!' },
+              uses: '/_!', tones: 0 },
   draftedBig:{ name: 'Drafted, big',  face: 'big',   fns: [drafted],
-              uses: '/_!' },
+              uses: '/_!', tones: 0 },
   bulb:     { name: 'Rounded',        face: 'block', fns: [bulb],
-              uses: '()_' },
+              uses: '()_', tones: 0 },
   bulbBig:  { name: 'Rounded, big',   face: 'big',   fns: [bulb],
-              uses: '()_' },
-  wideBig:  { name: 'Wide, big',      face: 'big',   fns: [widen] },
+              uses: '()_', tones: 0 },
+  wideBig:  { name: 'Wide, big',      face: 'big',   fns: [widen], tones: 1 },
 };
 
+/** How many weights of character a style draws with. */
+export function tonesOf(style) {
+  return STYLES[style]?.tones ?? 1;
+}
+
 /**
- * Render a word.
+ * Blank rows between one line of lettering and the next.
+ *
+ * A quarter of the block height, at least one row. Set from the block rather
+ * than fixed, because the faces differ and so do the transforms: BLOCK is
+ * five rows and BIG seven, and relief scales its face by three. Measured on
+ * the two plain faces this gives 1 blank row under BLOCK and 2 under BIG.
+ * One row under BIG leaves the descender of one line crowding the cap of the
+ * next; three under BLOCK reads as two separate motifs rather than two lines
+ * of one.
+ */
+const leadingFor = (h) => Math.max(1, Math.round(h / 4));
+
+/**
+ * Render one line of a word into placeholder rows.
+ * '#', '+', '~' are the three inks; '.' is paper.
+ */
+function renderRow(word, spec, face, spacing) {
+  const chars = [...String(word).toUpperCase()];
+  const glyphs = chars.map((ch) => {
+    let rows = face[ch] ?? face[' '];
+    for (const fn of spec.fns) rows = fn(rows);
+    return pad(rows);
+  });
+  if (!glyphs.length) return [];
+
+  const h = Math.max(...glyphs.map((g) => g.length));
+  const gap = spacing * (spec.fns.includes(widen) ? 2 : 1);
+
+  const out = [];
+  for (let y = 0; y < h; y++) {
+    let line = '';
+    glyphs.forEach((g, i) => {
+      line += g[y] ?? '.'.repeat(g[0].length);
+      if (i < glyphs.length - 1) line += '.'.repeat(gap);
+    });
+    out.push(line);
+  }
+  return out;
+}
+
+/**
+ * Render a word, or several lines of one.
+ *
+ * A newline in `word` starts a new line of lettering. The blocks are stacked
+ * with a blank gap between them (see leadingFor), and an empty input line
+ * gives a whole blank block, so a blank line works as deliberate spacing
+ * rather than collapsing away.
+ *
+ * Tones may be given as `tones: ['B', '2', '-']`, heaviest first, which is
+ * what a caller gets from toneRamp() in ink.js. `fill` and `light` remain as
+ * the one- and two-tone shorthand, so existing callers keep working.
  *
  * @param {string} word
  * @param {Object} [opt]
  * @param {keyof STYLES} [opt.style='big']
- * @param {string} [opt.fill='#']    character for the solid parts
- * @param {string} [opt.light='+']   character for shadows and relief
+ * @param {string[]} [opt.tones]     characters, heaviest first
+ * @param {string} [opt.fill='#']    heaviest character
+ * @param {string} [opt.light='+']   second character, for shadow and relief
  * @param {number} [opt.spacing=1]   blank columns between letters
  * @returns {string[]} lines
  */
@@ -473,46 +567,74 @@ export function letter(word, opt = {}) {
   const spec = STYLES[style] ?? STYLES.big;
   const face = FACES[spec.face];
 
-  const chars = [...String(word).toUpperCase()];
-  const glyphs = chars.map((ch) => {
-    let rows = face[ch] ?? face[' '];
-    for (const fn of spec.fns) rows = fn(rows);
-    return pad(rows);
+  /*
+   * Three inks, and a short ramp has to degrade rather than fail.
+   *
+   * A machine with two usable characters cannot draw a three-tone relief, so
+   * the faint tone falls back to the mid one and the style quietly becomes
+   * its two-tone self. Falling back to `fill` instead would paint the shaded
+   * edge in the same character as the lit edge, which is not a degraded
+   * relief — it is a solid blob.
+   */
+  const ramp = Array.isArray(opt.tones) && opt.tones.length
+    ? opt.tones : [fill, light];
+  const heavy = ramp[0] ?? fill;
+  const mid = ramp[1] ?? heavy;
+  const faint = ramp[2] ?? mid;
+
+  const blocks = String(word).split('\n')
+    .map((row) => renderRow(row, spec, face, spacing));
+
+  // Height of a rendered block, for the leading and for blank lines. Taken
+  // from a block that has one rather than from the face itself, because the
+  // transforms change it: relief scales by three, extrude adds its depth.
+  const blockH = Math.max(1, ...blocks.map((b) => b.length));
+  const gapRows = leadingFor(blockH);
+
+  const rows = [];
+  blocks.forEach((block, i) => {
+    if (i) for (let k = 0; k < gapRows; k++) rows.push('');
+    // An empty input line is a blank block, not nothing: it is how somebody
+    // puts air between two lines on purpose.
+    if (!block.length) for (let k = 0; k < blockH; k++) rows.push('');
+    else rows.push(...block);
   });
-  if (!glyphs.length) return [];
 
-  const h = Math.max(...glyphs.map((g) => g.length));
-  const gap = spacing * (spec.fns.includes(widen) ? 2 : 1);
+  const lines = rows.map((row) =>
+    // '#', '+' and '~' are placeholders for the three inks. Anything else a
+    // transform emitted is a literal character it chose deliberately - the
+    // diagonals and brackets that make the drawn faces work - and must pass
+    // through untouched. Mapping them to blanks silently erased three whole
+    // styles.
+    [...row].map((c) => (
+      c === '#' ? heavy
+        : c === '+' ? mid
+          : c === '~' ? faint
+            : c === '.' ? ' ' : c)).join('').replace(/\s+$/, ''));
 
-  const lines = [];
-  for (let y = 0; y < h; y++) {
-    let line = '';
-    glyphs.forEach((g, i) => {
-      const row = g[y] ?? '.'.repeat(g[0].length);
-      // '#' and '+' are placeholders for the two inks. Anything else a
-      // transform emitted is a literal character it chose deliberately -
-      // the diagonals and brackets that make the drawn faces work - and
-      // must pass through untouched. Mapping them to blanks silently
-      // erased three whole styles.
-      line += [...row]
-        .map((c) => (c === '#' ? fill : c === '+' ? light : c === '.' ? ' ' : c))
-        .join('');
-      if (i < glyphs.length - 1) line += ' '.repeat(gap);
-    });
-    lines.push(line.replace(/\s+$/, ''));
-  }
   // Drop rows that ended up empty — punctuation-only words leave a lot.
+  // Only at the ends: a blank row in the middle is either the leading or a
+  // blank line the user asked for, and both are meant to be there.
   while (lines.length && !lines[0].trim()) lines.shift();
   while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
   return lines;
 }
 
-/** Which characters a style needs, so the picker can warn. */
-export function charsUsed(style, fill = '#', light = '+') {
-  return STYLES[style]?.two ? [fill, light] : [fill];
+/**
+ * Every character a style will actually strike, so the picker can warn.
+ *
+ * Both halves matter: the tones it takes from the machine, and the fixed
+ * marks a drawn face insists on. A style can have no tones at all and still
+ * need three specific keys - see `drafted`.
+ */
+export function charsUsed(style, tones = ['#', '+', '~']) {
+  return [...new Set([
+    ...tones.slice(0, tonesOf(style)),
+    ...(STYLES[style]?.uses ?? ''),
+  ])];
 }
 
-/** Does this style use a second character? */
+/** Does this style use a second, lighter character? */
 export function usesTwo(style) {
-  return Boolean(STYLES[style]?.two);
+  return tonesOf(style) > 1;
 }

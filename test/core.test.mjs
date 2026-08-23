@@ -15,7 +15,10 @@ import {
   runsOf, runsToText, strikesInLine, colourMap, inkTally, parseRows,
   columnOfStrike, inkPlan, INK_SCHEMES,
 } from '../src/core/runs.js';
-import { letter, STYLES } from '../src/core/lettering.js';
+import {
+  letter, STYLES, charsUsed, tonesOf, usesTwo,
+} from '../src/core/lettering.js';
+import { toneRamp, inkLadder, inkWeights } from '../src/core/ink.js';
 import { fitGrid, sentenceReads, keystrokes } from '../src/core/convert.js';
 
 let failures = 0;
@@ -471,12 +474,19 @@ check('every style renders every letter and digit', () => {
   }
 });
 
-check('only styles that declare a second ink use one', () => {
+check('a style uses exactly the number of inks it declares', () => {
+  // `tones` is what the interface asks the machine for. A style that
+  // declares three and draws two gets a character it never uses; one that
+  // declares two and draws three emits a placeholder as a literal `~`.
+  const TONES = ['1', '2', '3'];
   for (const key of Object.keys(STYLES)) {
-    const art = letter('ABO', { style: key, fill: '#', light: '+' }).join('');
-    const usesLight = art.includes('+');
-    assert.strictEqual(usesLight, Boolean(STYLES[key].two),
-      `${key}: uses light ink = ${usesLight}, declared = ${!!STYLES[key].two}`);
+    const art = letter('ABO', { style: key, tones: TONES }).join('');
+    const used = TONES.filter((t) => art.includes(t));
+    assert.strictEqual(used.length, STYLES[key].tones,
+      `${key}: drew ${used.length} inks, declares ${STYLES[key].tones}`);
+    assert.ok(!art.includes('~'), `${key} leaked a tone placeholder`);
+    assert.ok(!art.includes('#'), `${key} leaked an ink placeholder`);
+    assert.ok(!art.includes('+'), `${key} leaked an ink placeholder`);
   }
 });
 
@@ -557,6 +567,182 @@ check('a sentence still reads across line breaks', () => {
 
 check('a scrambled sentence is caught', () => {
   assert.ok(!sentenceReads(['xyz'], 'she loved him'));
+});
+
+console.log('choosing characters for a tone');
+
+check('the ramp never asks for a key the machine has not got', () => {
+  // The whole fault this replaced: app.js asked for '#', the SM7 has no '#',
+  // and every style fell through to a wall of 'H'.
+  const have = new Set(charset(sm7));
+  for (const n of [1, 2, 3, 4, 5, 6, 8]) {
+    for (const ch of toneRamp(n, { allowed: have })) {
+      assert.ok(have.has(ch), `${n}-tone ramp wants ${ch}, not on the SM7`);
+    }
+  }
+});
+
+check('the heaviest tone is the heaviest character available', () => {
+  // 'H' was what the old code settled for. Measured at the atlas cell it
+  // covers 0.171 against 0.204 for 'B' - a mid-weight character standing in
+  // for the darkest one, which is why solid faces read flat.
+  const have = new Set(charset(sm7));
+  const ladder = inkLadder({ allowed: have });
+  assert.strictEqual(toneRamp(3, { allowed: have })[0], ladder[0].ch);
+  assert.notStrictEqual(ladder[0].ch, 'H', 'H is not the heaviest SM7 key');
+});
+
+check('the tones of a ramp are ordered and distinct', () => {
+  const have = new Set(charset(sm7));
+  const w = inkWeights(null);
+  for (const n of [2, 3, 4, 5, 6]) {
+    const ramp = toneRamp(n, { allowed: have });
+    assert.strictEqual(new Set(ramp).size, ramp.length, `${n}: repeated a tone`);
+    for (let i = 1; i < ramp.length; i++) {
+      assert.ok(w(ramp[i]) < w(ramp[i - 1]),
+        `${n}: ${ramp[i]} is not lighter than ${ramp[i - 1]}`);
+    }
+  }
+});
+
+check('a machine with few keys gets fewer tones, not repeated ones', () => {
+  // Repeating a character is how a shadow ends up identical to the face it
+  // is meant to sit behind.
+  const ramp = toneRamp(4, { allowed: new Set(['H', 'X']) });
+  assert.strictEqual(new Set(ramp).size, ramp.length);
+  assert.ok(ramp.length <= 2, ramp.join(''));
+});
+
+check('the middle tone is a middle grey, not a thin one', () => {
+  // Picked by rank, not by weight. The arithmetic midpoint of the SM7's
+  // coverage range is 0.110, which selects 't' - a thin vertical with a bar,
+  // not a tone. 60 of its 88 characters sit in the top half of the range, so
+  // the midpoint lands far down the population.
+  const have = new Set(charset(sm7));
+  const ladder = inkLadder({ allowed: have });
+  const mid = toneRamp(3, { allowed: have })[1];
+  const rank = ladder.findIndex((g) => g.ch === mid);
+  const off = Math.abs(rank - (ladder.length - 1) / 2) / ladder.length;
+  assert.ok(off < 0.1, `${mid} sits at rank ${rank} of ${ladder.length}`);
+});
+
+check('the faintest tone is a mark on the line, not one above it', () => {
+  // The two faintest SM7 keys are ` and ´ at 0.0167 coverage, but their ink
+  // sits at 0.21 of the cell height - a block of them reads as ticks
+  // floating over the letter, not as a pale surface. '.' is 0.0179, the same
+  // weight to any eye, and sits at 0.73.
+  const faint = toneRamp(3, { allowed: new Set(charset(sm7)) })[2];
+  assert.ok(!'`\u00b4\'"^'.includes(faint), `${faint} floats above the line`);
+});
+
+console.log('several lines of lettering');
+
+check('a newline makes a second line of letters', () => {
+  const one = letter('AB', { style: 'block', fill: '#' });
+  const two = letter('AB\nCD', { style: 'block', fill: '#' });
+  assert.ok(two.length > one.length * 2,
+    `${two.length} rows for two lines against ${one.length} for one`);
+});
+
+check('the two blocks are separated by blank rows', () => {
+  const two = letter('AB\nCD', { style: 'block', fill: '#' });
+  const blanks = two.filter((l) => !l.trim()).length;
+  assert.ok(blanks >= 1, 'the two lines run straight into each other');
+  // Never at the ends - those are keystrokes nobody types.
+  assert.ok(two[0].trim() && two[two.length - 1].trim());
+});
+
+check('a blank line is kept as a gap', () => {
+  // Otherwise there is no way to ask for air between two lines, and a blank
+  // line silently does nothing.
+  const tight = letter('AB\nCD', { style: 'block', fill: '#' });
+  const airy = letter('AB\n\nCD', { style: 'block', fill: '#' });
+  assert.ok(airy.length > tight.length,
+    `${airy.length} rows against ${tight.length} - the blank line vanished`);
+});
+
+check('every line of a multi-line word is drawn', () => {
+  const art = letter('A\nB\nC', { style: 'block', fill: '#' }).join('\n');
+  // Three separate blocks means three groups of inked rows.
+  const groups = art.split('\n').reduce((n, l, i, all) =>
+    n + (l.trim() && !(all[i - 1] ?? '').trim() ? 1 : 0), 0);
+  assert.strictEqual(groups, 3, `found ${groups} blocks`);
+});
+
+check('a single line is unchanged by the multi-line support', () => {
+  // The common case must not have grown a blank row or shifted.
+  const l = letter('HELLO', { style: 'big', fill: '#' });
+  assert.strictEqual(l.length, 7);
+  assert.ok(l.every((x) => x.trim()), 'a blank row crept into one line');
+});
+
+console.log('the raised face has a light direction');
+
+check('raised draws three distinct weights', () => {
+  // Two tones is a hollow letter with a fill: an edge lit from every side at
+  // once has no light direction and nothing stands off the page.
+  for (const style of ['relief', 'reliefBig']) {
+    const art = letter('O', { style, tones: ['1', '2', '3'] }).join('');
+    for (const t of ['1', '2', '3']) {
+      assert.ok(art.includes(t), `${style} never used tone ${t}`);
+    }
+  }
+});
+
+check('the lit edge is up and left, the shaded edge down and right', () => {
+  // The direction is the whole point: with no direction it is a hollow
+  // letter with a fill. The leftmost cell of the bottom row is a corner and
+  // is lit, so this counts rather than forbidding.
+  const art = letter('L', { style: 'relief', tones: ['1', '2', '3'] });
+  const count = (row, t) => [...row].filter((c) => c === t).length;
+  const top = art[0];
+  const bottom = art[art.length - 1];
+  assert.ok(count(top, '1') > 0 && count(top, '3') === 0,
+    `the top row is not lit: ${top}`);
+  assert.ok(count(bottom, '3') > count(bottom, '1'),
+    `the bottom row is not shaded: ${bottom}`);
+
+  // And the same sideways, on a row that crosses the upright.
+  const mid = art[Math.floor(art.length / 2)];
+  assert.ok(mid.indexOf('1') < mid.lastIndexOf('3'),
+    `the light does not run left to right: ${mid}`);
+});
+
+check('a two-key machine degrades the raised face instead of failing', () => {
+  // The shaded edge falls back to the body, never to the lit edge - that
+  // would paint both edges the same and give a solid blob.
+  const art = letter('O', { style: 'relief', tones: ['A', 'B'] }).join('');
+  assert.ok(art.includes('A') && art.includes('B'));
+  assert.ok(!/[^AB ]/.test(art), `leaked a placeholder: ${art.slice(0, 40)}`);
+});
+
+check('the shadow scheme finds the shadow whatever it is drawn with', () => {
+  // It used to test a fixed list of characters, which named '+' and ':'
+  // because those were the only light characters the old code could pick.
+  // On an SM7 the shadow now comes out as '-' or '2', neither of which was
+  // on the list, and the scheme quietly reddened nothing.
+  for (const tones of [['#', '+'], ['B', '-'], ['M', '2'], ['W', 'x']]) {
+    const art = letter('AB', { style: 'shadow', tones });
+    const map = inkPlan(art, { scheme: 'shadow' });
+    let face = 0, shade = 0;
+    art.forEach((line, r) => [...line].forEach((ch, c) => {
+      if (ch === tones[0]) { face++; assert.strictEqual(map[r][c], 'black',
+        `${tones.join('/')}: the face went red`); }
+      if (ch === tones[1]) { shade++; assert.strictEqual(map[r][c], 'red',
+        `${tones.join('/')}: the shadow stayed black`); }
+    }));
+    assert.ok(face > 0 && shade > 0, `${tones.join('/')}: nothing drawn`);
+  }
+});
+
+check('charsUsed names the fixed marks a drawn face needs', () => {
+  // `drafted` draws every stroke with a character chosen for its direction,
+  // so it takes no tone at all - but it still needs three specific keys, and
+  // a picker that only reported tones would say it needs nothing.
+  assert.deepStrictEqual(charsUsed('drafted', ['B', '2', '-']).sort(),
+    ['!', '/', '_']);
+  assert.deepStrictEqual(charsUsed('block', ['B', '2', '-']), ['B']);
+  assert.deepStrictEqual(charsUsed('relief', ['B', '2', '-']), ['B', '2', '-']);
 });
 
 console.log(failures ? `\n${failures} failed` : '\nall green');
