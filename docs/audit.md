@@ -291,7 +291,65 @@ asserting a boolean, because jsdom does no layout — a bounding box would
 answer nothing, so the three real hiding mechanisms on this page are walked
 explicitly.
 
-### 13. Imports that nothing calls
+### 13. Landscape in the picture tab needed a second action, and did not say so
+
+`src/ui/app.js:580`
+
+Raised on review: does the landscape switch really work in all three modes,
+or only for lettering? Checked in all three. The switch is in the *paper*
+fieldset, beside the sheet size and the position, is never hidden and is
+never cleared by a change of mode — so lettering and pasted art both turn the
+sheet with a single tick.
+
+Pictures are different, and it took building a canvas stub with an actual
+motif in it to see how. A picture's size comes from the width slider, and
+ticking the switch raises only the slider's **ceiling**:
+
+```
+landscape OFF -> ratio 0.707  cols 64   width max 66
+landscape ON  -> ratio 0.707  cols 64   width max 100   <-- nothing turned
+width dragged to 95:
+                 ratio 1.414  cols 99   facts: A4 sideways
+```
+
+The behaviour is right — the width is deliberately not raised automatically,
+because it would more than double the keystroke count without being asked
+(measured on the stub photograph: 420 strikes at 60 columns against 950 at
+95), and a paper setting has no business rewriting how much work the job is.
+
+The *hint* was the fault. It read **"Upright — this fits as it is"**, which is
+a true answer to a question nobody asked: the user has just ticked a box and
+wants to know why nothing happened. **Cosmetic, but it is the difference
+between a feature that works and one that looks broken.**
+
+**Done:** on a picture whose width is still inside the upright limit, the
+hint now names the next action — *"Nothing to turn for yet — 60 columns still
+fits upright. Drag “how wide” past 66 to use the extra room."* The generic
+wording stays for lettering and pasted art, where the size comes from the
+motif and there is nothing to drag.
+
+The reason the switch belongs to the paper is now written where it will be
+read, in `index.html` beside the control: landscape is a property of the
+sheet, not of the motif source. You feed the paper in sideways; the sheet
+does not know whether a photograph, a word or pasted art is going to land on
+it, and a wide photograph gains exactly as much as a long word.
+
+Tests: *turning the sheet works in all three modes* in
+`test/integration.test.mjs`, five checks — the switch reachable and unchanged
+in each tab and in the same fieldset as the sheet size, then each of the
+three modes actually turning the sheet, then the hint. Verified they bite by
+making the switch text-only, which is the shape this was checked against:
+*pasted art turns the sheet*, *a picture turns the sheet* and the hint check
+all fail, while the word test still passes.
+
+**The canvas stub was the real gap.** It returned a uniformly white field, so
+the picture path ran with nothing to convert — `cropToContent` found no motif
+and every picture test was really a test that nothing threw. It now returns a
+dark bar across anything wider than a glyph cell, which is a motif with edges
+to crop to and tone to sample. Atlas cells stay white on purpose: feeding
+them a black bar would measure the bar instead of the character.
+
+### 14. Imports that nothing calls
 
 `src/ui/app.js:16` — `edges` and `keystrokes` imported from `convert.js`,
 never called. `keystrokes` appears in the file only inside strings and
@@ -393,11 +451,12 @@ directly but nothing exercises the button.
 
 ## Not done
 
-- **The picture path is untested end to end.** Measuring glyph shapes needs a
-  canvas; the browser test stubs one that returns a blank field, so
-  `toCharacters` runs but has nothing to see. Everything about landscape and
-  the tone ramp was checked on lettering and on the arithmetic, not on a
-  photograph.
+- **The picture path is now covered, but only against a synthetic motif.**
+  The canvas stub returns a dark bar (see fault 13), which is enough to prove
+  the pipeline runs end to end, that landscape works for a picture and that
+  the width ceiling follows. It is not a photograph: shape matching against a
+  real image, and whether the chosen characters flatter it, is still
+  unverified here.
 - **Nothing has been typed on a real machine.** The claim that `B`/`2`/`-`
   reads as a raised surface rests on the rendered ASCII, which is in this
   document, and on measured coverage — not on an SM7.

@@ -29,12 +29,35 @@ const { window } = dom;
 window.matchMedia ??= () => ({ matches: false, addListener() {}, removeListener() {} });
 window.requestAnimationFrame = (fn) => setTimeout(() => fn(Date.now()), 0);
 window.scrollTo = () => {};
+/*
+ * A canvas that returns something worth looking at.
+ *
+ * It used to hand back a uniformly white field, so the picture path ran but
+ * had nothing to convert - `cropToContent` found no motif and every test
+ * about pictures was really a test that nothing threw. This returns a dark
+ * bar across the middle of anything larger than a glyph cell, which is a
+ * motif with real edges to crop to and real tone to sample.
+ *
+ * Atlas cells are 16 px wide and are left white on purpose: glyph measuring
+ * has its own fallback for a canvas that cannot render (see ink.js), and
+ * feeding it a black bar would measure the bar instead of the character.
+ */
+const ATLAS_CELL_W = 16;
 window.HTMLCanvasElement.prototype.getContext = function () {
   return {
     fillRect() {}, drawImage() {}, fillText() {},
-    getImageData: (x, y, w, h) => ({
-      width: w, height: h, data: new Uint8ClampedArray(w * h * 4).fill(255),
-    }),
+    getImageData: (x, y, w, h) => {
+      const data = new Uint8ClampedArray(w * h * 4).fill(255);
+      if (w > ATLAS_CELL_W) {
+        for (let yy = Math.floor(h * 0.2); yy < Math.floor(h * 0.8); yy++) {
+          for (let xx = Math.floor(w * 0.05); xx < Math.floor(w * 0.95); xx++) {
+            const i = (yy * w + xx) * 4;
+            data[i] = 20; data[i + 1] = 20; data[i + 2] = 20;
+          }
+        }
+      }
+      return { width: w, height: h, data };
+    },
     set font(v) {}, get font() { return ''; },
     set fillStyle(v) {}, set textAlign(v) {}, set textBaseline(v) {},
   };
@@ -42,6 +65,16 @@ window.HTMLCanvasElement.prototype.getContext = function () {
 window.HTMLDialogElement ??= class {};
 window.HTMLElement.prototype.showModal ??= function () { this.open = true; };
 window.HTMLElement.prototype.close ??= function () { this.open = false; };
+window.URL.createObjectURL = () => 'blob:test';
+window.URL.revokeObjectURL = () => {};
+
+// A wide photograph, 4:1. jsdom has no decoder, so the app is handed the
+// dimensions and told the load finished.
+window.Image = class {
+  constructor() { this.width = 1200; this.height = 300; }
+  set src(v) { setTimeout(() => this.onload?.(), 0); }
+  get src() { return 'blob:test'; }
+};
 
 // Globals the modules expect to find.
 for (const k of ['document', 'navigator', 'location', 'localStorage',
@@ -673,6 +706,149 @@ await check('turning the sheet survives a reload', async () => {
     `not saved: ${JSON.stringify(saved.landscape)}`);
   await setLandscape(false);
 });
+
+console.log('turning the sheet works in all three modes');
+
+/**
+ * Load the stub photograph into the picture tab.
+ *
+ * `readImage()` takes the file from the input, so the list has to be planted
+ * before the change event; jsdom will not populate it.
+ */
+const loadPicture = async () => {
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'image').click();
+  await wait(300);
+  Object.defineProperty($('file'), 'files',
+    { value: [new window.Blob(['x'])], configurable: true });
+  $('file').dispatchEvent(new window.Event('change'));
+  await wait(600);
+};
+
+const motifCols = () => Math.max(0,
+  ...[...window.document.querySelectorAll('.sheet .ln')]
+    .map((e) => e.textContent.replace(/\u00a0/g, ' ').replace(/\s+$/, '').length));
+
+await check('the switch is on screen in every mode, and survives the change',
+  async () => {
+    // Landscape is a property of the paper, not of where the motif came
+    // from: you feed the sheet in sideways, and the sheet does not know
+    // whether a photograph, a word or pasted art is going to land on it.
+    // So it lives in "the paper" and must not be hidden or cleared by a
+    // change of mode - the paper has not changed.
+    await setLandscape(true);
+    for (const tab of ['image', 'text', 'paste']) {
+      [...window.document.querySelectorAll('.tab')]
+        .find((t) => t.dataset.tab === tab).click();
+      await wait(350);
+      assert(whyHidden('landscape') === 'VISIBLE',
+        `the switch is not reachable in the ${tab} tab: ${whyHidden('landscape')}`);
+      assert($('landscape').checked,
+        `switching to the ${tab} tab cleared the switch`);
+    }
+    // And it sits with the sheet size and the position, not in a tab panel.
+    const fieldset = $('landscape').closest('fieldset');
+    assert(fieldset && fieldset.contains($('paper')) && fieldset.contains($('align')),
+      'the switch is not in the same block as the sheet size and position');
+    await setLandscape(false);
+  });
+
+await check('a word turns the sheet', async () => {
+  await setLandscape(false);
+  await typeWord('LORENZ', 'relief');   // 95 columns; upright A4 holds 82
+  assert(Math.abs(paperRatio(window.document.querySelector('.paper-view'))
+    - 210 / 297) < 0.01, 'the sheet started turned');
+
+  await setLandscape(true);
+  assert(Math.abs(paperRatio(window.document.querySelector('.paper-view'))
+    - 297 / 210) < 0.01, 'the sheet did not turn for a word');
+  assert(/sideways/i.test($('instructions').textContent),
+    'no instruction to feed it sideways');
+});
+
+await check('pasted art turns the sheet', async () => {
+  // Nothing about pasted art is special, which is the point: the switch
+  // belongs to the paper and applies wherever the motif came from.
+  await setLandscape(false);
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'paste').click();
+  await wait(350);
+  $('pasted').value = (`${'x'.repeat(100)}\n`).repeat(6).trim();
+  $('pasted').dispatchEvent(new window.Event('input'));
+  await wait(450);
+
+  const view = window.document.querySelector('.paper-view');
+  assert(Math.abs(paperRatio(view) - 210 / 297) < 0.01,
+    'the sheet started turned');
+  assert(/warn stop/.test($('warnings').innerHTML),
+    `100 columns was not refused on upright A4: ${$('warnings').textContent}`);
+
+  await setLandscape(true);
+  assert(Math.abs(paperRatio(view) - 297 / 210) < 0.01,
+    `the sheet did not turn for pasted art: ${paperRatio(view).toFixed(3)}`);
+  assert(!/warn stop/.test($('warnings').innerHTML),
+    'still refused after turning the sheet');
+  assert(/sideways/i.test($('instructions').textContent),
+    'no instruction to feed it sideways');
+  assert(/sideways/i.test($('facts').textContent),
+    `the facts still call it upright: ${$('facts').textContent}`);
+  await setLandscape(false);
+});
+
+await check('a picture turns the sheet, and gains the columns', async () => {
+  // The mode that was never covered: the canvas stub used to return a blank
+  // field, so the picture path ran with nothing to convert.
+  await setLandscape(false);
+  await loadPicture();
+  assert(motifCols() > 0, 'the stub photograph produced no motif at all');
+
+  const view = window.document.querySelector('.paper-view');
+  const upright = +$('width').max;
+  assert(upright === 66, `upright A4 offered ${upright} columns, expected 66`);
+
+  await setLandscape(true);
+  assert(+$('width').max > upright,
+    `the ceiling did not rise: still ${$('width').max}`);
+
+  // A picture takes its size from the slider, and turning the sheet raises
+  // only the ceiling - so the sheet stays upright until the width is
+  // actually used. That is deliberate: raising it automatically would more
+  // than double the keystrokes without being asked.
+  assert(Math.abs(paperRatio(view) - 210 / 297) < 0.01,
+    'the sheet turned before the extra width was used');
+
+  $('width').value = '95';
+  $('width').dispatchEvent(new window.Event('change'));
+  await wait(600);
+
+  assert(motifCols() > upright,
+    `the picture is still ${motifCols()} columns, no wider than upright`);
+  assert(Math.abs(paperRatio(view) - 297 / 210) < 0.01,
+    `the sheet did not turn for a picture: ${paperRatio(view).toFixed(3)}`);
+  assert(/sideways/i.test($('instructions').textContent),
+    'no instruction to feed it sideways');
+  assert(/sideways/i.test($('facts').textContent),
+    `the facts still call it upright: ${$('facts').textContent}`);
+});
+
+await check('the hint says what to do when the switch is waiting on the width',
+  async () => {
+    // "This fits as it is" is a true answer to a question nobody asked. On a
+    // picture the user wants to know why ticking the box did nothing.
+    $('width').value = '60';
+    $('width').dispatchEvent(new window.Event('change'));
+    await wait(600);
+    const t = $('landscapeHint').textContent;
+    assert(/how wide/i.test(t) && /66/.test(t),
+      `the hint does not say what to do next: "${t}"`);
+
+    $('width').value = '95';
+    $('width').dispatchEvent(new window.Event('change'));
+    await wait(600);
+    assert(/long edge/i.test($('landscapeHint').textContent),
+      `the hint did not follow the sheet: "${$('landscapeHint').textContent}"`);
+    await setLandscape(false);
+  });
 
 console.log('several lines of lettering');
 

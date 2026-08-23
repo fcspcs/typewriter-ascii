@@ -576,9 +576,34 @@ function syncLandscapeHint() {
       `over ${across.rows} lines instead of ${up.rows}.`;
     return;
   }
-  el.textContent = app.sheet.landscape
-    ? `Turned: ${across.cols} columns across ${across.rows} lines. Feed the ` +
-      `sheet in on its long edge.`
+  if (app.sheet.landscape) {
+    el.textContent =
+      `Turned: ${across.cols} columns across ${across.rows} lines. Feed the ` +
+      `sheet in on its long edge.`;
+    return;
+  }
+
+  /*
+   * On, but doing nothing — and for a picture that needs saying differently.
+   *
+   * A picture's size comes from the width slider, and turning the sheet only
+   * raises that slider's ceiling: the value stays where the user left it, so
+   * the motif still fits upright and the sheet stays upright with it. That
+   * is correct, and consistent with what changing the paper size does, but
+   * "this fits as it is" is a true answer to a question nobody asked. What
+   * the user wants to know is what to do next.
+   *
+   * The width is deliberately not raised automatically. It would more than
+   * double the keystroke count without being asked - measured on a wide
+   * photograph, 420 strikes at 60 columns against 950 at 95 - and a paper
+   * setting has no business rewriting how much work the job is.
+   */
+  const wide = currentTab() === 'image' && across.cols > up.cols
+    && +$('width').value <= up.cols;
+
+  el.textContent = wide
+    ? `Nothing to turn for yet — ${$('width').value} columns still fits ` +
+      `upright. Drag “how wide” past ${up.cols} to use the extra room.`
     : `Upright — this fits as it is. The sheet turns only when the motif ` +
       `will not go on it otherwise.`;
 }
