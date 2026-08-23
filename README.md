@@ -35,40 +35,68 @@ A generator that ignores the machine produces art that cannot be typed:
 - **Setup instructions** → paper guide, margin stops, how far to wind on
 - **A sheet you can follow** → the current line opens in place and shows what
   to type; the rest stays as motif so you always see where you are
-- **Listening** → it counts your keystrokes by ear and advances on its own
+- **Listening** → it counts your keystrokes by ear, and resets at every
+  carriage return
 
-## Listening: how it works, and why not machine learning
+## Keeping your hands on the machine
 
-A keystroke is not one sound. The type bar hits the platen, then falls back;
-the space bar clicks going down and coming up. A detector that only asks "was
-that loud enough" counts every keystroke twice. That was the first version's
-bug.
+The whole point is that you never reach for the screen. Two ways:
 
-What it does instead, in three stages:
+**A Bluetooth camera shutter remote**, the ten-euro kind sold for phone
+selfies. It enumerates as a keyboard, and the app already advances the line on
+Space, Enter or ↓. Pair it, tape it where your wrist rests or put a foot
+switch under the desk, press it at the end of each line. Nothing to install.
+This is the reliable option, and it is worth using even alongside the
+microphone.
 
-1. **Onset detection, not level detection.** Spectral flux over the upper
-   spectrum — the sum of *positive* frame-to-frame energy changes. A strike is
-   a sudden broadband rise. Hum, voices and the carriage sliding produce very
-   little flux.
-2. **Adaptive threshold.** Compared against a running median of recent flux,
-   so a quiet room and a noisy café both work.
-3. **Peak picking with a refractory window.** Do not fire on crossing the
-   threshold — wait for the burst to actually peak, then stay deaf for ~85 ms.
-   The rebound is always quieter and lands inside that window.
+**Listening**, described below, which counts the strikes within a line.
 
-A **slope test** keeps the carriage return out: it swells over hundreds of
-milliseconds, where a strike jumps within one or two frames.
+## Listening: how it works, and what it is worth
+
+A keystroke is not one sound: the type bar hits the platen and then falls
+back. A detector that only asks "was that loud enough" counts every keystroke
+twice.
+
+1. **A fixed 10 ms hop on the audio clock.** An `AudioWorklet` hands over
+   every block of samples in order and the detector frames them itself, so
+   nothing is skipped and the spacing never varies. Event times are counted
+   from the samples, not read off the wall clock. The first version analysed
+   from `requestAnimationFrame`, and the same recording counted 9–19%
+   differently depending on nothing but where the frames happened to land.
+2. **Spectral flux on linear magnitudes, 500 Hz to 12 kHz.** The sum of
+   *positive* frame-to-frame changes in magnitude. A strike is a sudden
+   broadband rise; hum, voices and the carriage sliding produce very little.
+   The band follows Zhuang et al. 2005 and is stated in hertz, so it means
+   the same thing on a device that records at 44.1 kHz and one that records
+   at 48 kHz.
+3. **A threshold relative to the room.** Flux is scored against a running
+   median and a running median absolute deviation, so a quiet room and a
+   noisy café both work and the recording level does not matter.
+4. **The carriage return resets the count.** This matters more than any of
+   the above. A counter accumulates its own errors, so even a very good one
+   is wrong about the column by the end of a page; resetting at each line end
+   confines a mistake to the line it happened on.
+5. **It says when it is lost.** If the count at a line end disagrees with
+   what the line holds, it says so and asks you to click where you are,
+   instead of showing a column it cannot stand behind. You are looking at the
+   paper, not the screen, and the machine has no undo — a display that is
+   quietly one column out is worse than no display at all.
 
 **Machine learning would work, and it is the wrong tool here.** It would need
 labelled recordings from every make of typewriter, ship megabytes of model,
 drain the battery, and when it miscounts nobody could say why. Onset detection
-is the standard approach for percussive events in audio, it is a few dozen
-lines, it runs anywhere, and every parameter means something you can explain.
+is the standard approach for percussive events in audio, it runs anywhere, and
+every parameter means something you can explain.
 
 If the defaults do not suit your machine, **calibrate** measures it: type
-twenty characters and it fits the refractory window to the rebound delay of
+twenty characters and it fits the minimum interval to the rebound delay of
 that particular typewriter. That is the honest version of "learning from
 data" — a few numbers you can read, not a black box.
+
+The reasoning, the measurements and the sources are written up in
+**[docs/listening-research.md](docs/listening-research.md)**, including what
+remains unproven. Everything above was fitted against public recordings of
+*other* manual typewriters; nobody has yet pointed it at an Olympia SM7.
 
 ## Adding your own machine
 

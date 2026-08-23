@@ -696,8 +696,12 @@ export class StrikeListener {
   /** The intended path: samples arrive from the audio thread, gap-free. */
   async _viaWorklet(src) {
     if (!this.ctx.audioWorklet) throw new Error('no AudioWorklet');
+    // Resolved against this module rather than against the page, so the
+    // worklet is found wherever the app is deployed. `addModule` is
+    // specified to take a string, so the URL is stringified here rather
+    // than relying on every engine to do it.
     await this.ctx.audioWorklet.addModule(
-      new URL('./tap-worklet.js', import.meta.url));
+      new URL('./tap-worklet.js', import.meta.url).href);
     const node = new AudioWorkletNode(this.ctx, 'strike-tap', {
       numberOfInputs: 1,
       numberOfOutputs: 0,

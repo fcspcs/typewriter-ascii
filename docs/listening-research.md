@@ -1023,3 +1023,95 @@ Key scripts, for anyone repeating this:
 - `bell.py` — event feature distributions, bell vs strike (§4.3c)
 - `agc_noise.py` — gain invariance and noise sensitivity (§5.1)
 - `proposed.py` — the recommended chain, same phase sweep (§5.2)
+
+---
+
+## Appendix B: what happened when §8.1–8.7 were built
+
+Added after implementation. Items 1–7 and 12 are done; 8–11 are not, because
+they need Lorenz's recordings and guessing was not on offer.
+
+### The headline number held up
+
+Same phase sweep, now against the real `StrikeDetector` in the repo rather
+than a Python model of it (`/tmp/tw-research/sweep_new.mjs`, 20 phases over
+one hop, 60 s of each recording):
+
+| recording | before | after |
+|---|---|---|
+| Manual, medium typing | 8.7% | **3.0%** |
+| Manual, fast, close | 18.6% | **1.4%** |
+| Manual, 4 m away | (not run) | **1.7%** |
+
+[measured] Close to the 3.9% / 2.8% / 2.4% the `proposed.py` prototype
+predicted in §5.2. Two things the prototype did not test also came out
+exactly invariant — the count does not move at all across delivery block
+sizes from 128 to 4096 samples, nor across ±12 dB of recording level.
+
+The gain result is worth a note, because §5.1 credited the *old* detector's
+gain invariance to its dB-domain flux, and predicted that fixing the flux
+would cost it. It did not: scoring against a running median absolute
+deviation restores the invariance by a different route.
+
+### Noise sensitivity improved more than expected
+
+§9 measured the old chain losing 37% of its counts with broadband noise at
+−50 dBFS and 77% at −40 dBFS. The rebuilt chain, same recordings, same noise
+(`noise_new.mjs`): **+8%** at −50 dBFS and **+11%** at −40 dBFS on medium
+typing, +2% and +3% on fast typing [measured]. The sign flipped: it now gains
+a few false positives rather than losing most of its true ones. That is the
+better failure, but it is still a failure, and it is not a claim that a noisy
+room is solved.
+
+### One recommendation was wrong as written
+
+§4.3(d) proposes duration plus level to find the carriage return, on the
+strength of a 13 dB separation between events ≥250 ms and events ≤100 ms.
+That measurement is sound, but `find_cr.py` obtained it from a **5 ms RMS
+envelope**, and the obvious implementation — reusing the level of the
+analysis frame — does not reproduce it. A 2048-point window at 48 kHz is
+43 ms long, so it smears each strike across its own width; five quick strikes
+merge into one continuous 600 ms "event", and every burst of fast typing
+reads as a line end. The document does not say this, and it cost an hour.
+
+The working version runs the carriage-return test on its own 5 ms envelope,
+independent of the FFT grid. The parameter that actually separates typing
+from a return is not duration or level but the **maximum gap tolerated inside
+one loud stretch**: consecutive keystrokes have real silence between them,
+and a carriage return does not.
+
+The "loud" gate needed measuring too. At floor+10 dB the reverberant tail of
+one strike never falls back before the next arrives, and the detector reports
+a line end every two or three seconds — which no typist produces. At
+floor+14 dB the rate settles to roughly one per ten seconds, the same order
+as the count of ≥250 ms events found by the separate route in §2.5. At
+floor+18 dB it finds almost nothing. 14 dB was chosen on that basis.
+
+**This is a plausibility argument, not a hit rate.** None of the BBC
+recordings is labelled, so there is still no measurement of how many carriage
+returns are found and how many are invented. §6.3 recording 5 is what would
+settle it, and until then carriage-return detection is the least evidenced
+part of the implementation despite being the highest-value one.
+
+### Detail worth recording
+
+- Comparing a stretch against "an ordinary strike" requires having heard
+  ordinary strikes first. The detector therefore reports no line end until it
+  has measured a handful, rather than falling back on an absolute level that
+  would really be measuring how far away the phone is lying.
+- `calibrate()` now fits the minimum inter-onset interval only. The old
+  `reboundRatio` searched a second axis that the new peak picker does not
+  have, and fitting a parameter that no longer exists would have been theatre.
+- The synthetic carriage return in the old test file (`3 * Math.sin(...)`,
+  a smooth swell over 500 ms) was replaced by a train of clatter at 4x the
+  amplitude of a strike, per the 13 dB measurement. The first attempt made it
+  merely *as loud* as a keystroke, and the test failed — correctly. The
+  fixture was wrong, not the detector.
+
+### Still unproven
+
+Everything in §6.3 remains undone, and nothing here has met an Olympia SM7.
+The band edges, the 90 ms minimum interval, and every carriage-return
+threshold are the literature's numbers or numbers fitted to recordings of
+other machines. The phase-sweep result is the one claim that does not depend
+on any of that, because it compares the detector against itself.
