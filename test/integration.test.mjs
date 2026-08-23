@@ -707,6 +707,97 @@ await check('turning the sheet survives a reload', async () => {
   await setLandscape(false);
 });
 
+console.log('lettering wraps to the sheet');
+
+// The motif width, measured from the lines that are NOT open. The open line
+// is drawn with run labels above the characters, so its textContent is
+// longer than the line it represents.
+const motifCols = () => Math.max(0,
+  ...[...window.document.querySelectorAll('.sheet .ln')]
+    .filter((e) => !e.classList.contains('now'))
+    .map((e) => e.textContent.replace(/\u00a0/g, ' ').replace(/\s+$/, '').length));
+
+await check('a long sentence is broken instead of running off the paper',
+  async () => {
+    // Measured on an SM7 at pica: "GUTEN MORGEN LYON" in Block is 101
+    // columns against the 82 an upright A4 holds - 123% of the sheet. It
+    // overran the preview.
+    await setLandscape(false);
+    await typeWord('GUTEN MORGEN LYON', 'block');
+
+    const width = motifCols();
+    assert(width > 0, 'nothing was drawn');
+    assert(width <= 82,
+      `${width} columns, the upright A4 sheet holds 82`);
+    assert(window.document.querySelectorAll('.sheet .ln').length > 5,
+      'it still fits on one block, so nothing was wrapped');
+    assert(!/warn stop/.test($('warnings').innerHTML),
+      `refused after wrapping: ${$('warnings').textContent}`);
+  });
+
+await check('wrapping to the margins leaves nothing to complain about',
+  async () => {
+    // textArea rather than sheetGrid. Wrapped to the sheet's 82 columns the
+    // same sentence is 71 wide and setUp() answers "wider than the usual
+    // margins - 71 against 66"; wrapped to the margins it is 65 wide in the
+    // same eleven rows and setUp() says nothing. Same typing, one fewer
+    // thing to read past - and a note on every sentence trains people to
+    // ignore the one place the app warns them.
+    assert($('warnings').textContent.trim() === '',
+      `a warning survived wrapping: ${$('warnings').textContent}`);
+  });
+
+await check('turning the sheet takes fewer rows', async () => {
+  await setLandscape(false);
+  await typeWord('HALLO WELT WIE GEHT ES DIR', 'block');
+  const tall = window.document.querySelectorAll('.sheet .ln').length;
+
+  await setLandscape(true);
+  const wide = window.document.querySelectorAll('.sheet .ln').length;
+  assert(wide < tall, `${wide} rows across against ${tall} upright`);
+
+  const view = window.document.querySelector('.paper-view');
+  assert(Math.abs(paperRatio(view) - 297 / 210) < 0.01,
+    `the sheet did not turn: ${paperRatio(view).toFixed(3)}`);
+  assert(motifCols() <= 116,
+    `${motifCols()} columns, landscape A4 holds 116`);
+});
+
+await check('the sheet stays upright when turning it would save nothing',
+  async () => {
+    /*
+     * "GUTEN MORGEN LYON" takes eleven rows either way - the third word
+     * still will not join the first two - so there is nothing to gain and
+     * the sheet keeps the shape people expect.
+     *
+     * This is also what stops a subtler fault: the layout and the sheet must
+     * be decided together. Wrapping to the landscape width and then asking
+     * "does the result fit upright" said yes at 71 columns, so the sheet
+     * stayed upright carrying a motif laid out for margins of 100 against
+     * upright margins of 66.
+     */
+    await typeWord('GUTEN MORGEN LYON', 'block');
+    const view = window.document.querySelector('.paper-view');
+    assert(Math.abs(paperRatio(view) - 210 / 297) < 0.01,
+      `turned for no gain: ${paperRatio(view).toFixed(3)}`);
+    assert(motifCols() <= 66,
+      `laid out for a sheet it is not on: ${motifCols()} columns against ` +
+      `upright margins of 66`);
+    await setLandscape(false);
+  });
+
+await check('a word too wide to break is still refused, not mangled',
+  async () => {
+    // Wrapping can only break at spaces. Hyphenating would produce something
+    // nobody can read and would hide the one message that tells the user
+    // what to do about it.
+    await typeWord('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCD', 'block');
+    assert(/warn stop/.test($('warnings').innerHTML),
+      `239 columns was not refused: ${$('warnings').textContent}`);
+    assert(/smaller style|larger sheet/i.test($('warnings').textContent),
+      `the refusal does not say what to change: ${$('warnings').textContent}`);
+  });
+
 console.log('turning the sheet works in all three modes');
 
 /**
@@ -724,10 +815,6 @@ const loadPicture = async () => {
   $('file').dispatchEvent(new window.Event('change'));
   await wait(600);
 };
-
-const motifCols = () => Math.max(0,
-  ...[...window.document.querySelectorAll('.sheet .ln')]
-    .map((e) => e.textContent.replace(/\u00a0/g, ' ').replace(/\s+$/, '').length));
 
 await check('the switch is on screen in every mode, and survives the change',
   async () => {

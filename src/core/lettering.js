@@ -508,6 +508,68 @@ export function tonesOf(style) {
 const leadingFor = (h) => Math.max(1, Math.round(h / 4));
 
 /**
+ * How wide each letter comes out, after the style's transforms.
+ *
+ * Measuring the *input* string is useless here: one `M` is 5 columns in
+ * Block and 24 in Raised, big. Cached per call, because a transform chain
+ * that scales by three and floods a background is not something to run once
+ * per letter per candidate line.
+ */
+function glyphWidthsOf(spec, face) {
+  const seen = new Map();
+  return (ch) => {
+    const key = ch.toUpperCase();
+    if (!seen.has(key)) {
+      let rows = face[key] ?? face[' '];
+      for (const fn of spec.fns) rows = fn(rows);
+      seen.set(key, width(pad(rows)));
+    }
+    return seen.get(key);
+  };
+}
+
+/**
+ * Break a line of words to a column limit, at spaces.
+ *
+ * The measurement has to match renderRow() exactly, which lays glyphs side
+ * by side with `gap` blank columns between them: total = sum of the glyph
+ * widths + gap x (letters - 1). The space between two words is itself a
+ * glyph with a width, so measuring the whole candidate string is exact
+ * rather than approximate.
+ *
+ * A single word too wide to fit is left alone rather than split. Breaking a
+ * word mid-letter would produce something nobody can read and, worse, would
+ * hide the problem: setUp() already refuses a motif wider than the sheet and
+ * says what to change - a smaller style, a shorter word, a larger sheet.
+ * Silently hyphenating would turn that clear refusal into a mess.
+ */
+function wrapToWidth(text, maxCols, widthOf, gap) {
+  const measure = (s) => {
+    const chars = [...s];
+    if (!chars.length) return 0;
+    return chars.reduce((n, ch) => n + widthOf(ch), 0) + gap * (chars.length - 1);
+  };
+
+  const out = [];
+  let line = '';
+  for (const word of text.split(' ')) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (!line || measure(candidate) <= maxCols) {
+      line = candidate;
+      // A first word that is already too wide still starts the line: it
+      // cannot be broken, and it must not drag the next word along with it.
+      if (measure(line) > maxCols && line === word) { out.push(line); line = ''; }
+    } else {
+      out.push(line);
+      line = word;
+      if (measure(line) > maxCols) { out.push(line); line = ''; }
+    }
+  }
+  if (line) out.push(line);
+  return out.length ? out : [''];
+}
+
+/**
  * Render one line of a word into placeholder rows.
  * '#', '+', '~' are the three inks; '.' is paper.
  */
@@ -547,6 +609,11 @@ function renderRow(word, spec, face, spacing) {
  * what a caller gets from toneRamp() in ink.js. `fill` and `light` remain as
  * the one- and two-tone shorthand, so existing callers keep working.
  *
+ * `maxCols` wraps lines too wide for the paper, at spaces. Without it a
+ * sentence simply runs off the sheet: measured on an SM7 at pica, "GUTEN
+ * MORGEN LYON" in Block is 101 columns against the 82 an upright A4 holds,
+ * and forty characters of input reach 239 columns — 291% of the sheet.
+ *
  * @param {string} word
  * @param {Object} [opt]
  * @param {keyof STYLES} [opt.style='big']
@@ -554,6 +621,7 @@ function renderRow(word, spec, face, spacing) {
  * @param {string} [opt.fill='#']    heaviest character
  * @param {string} [opt.light='+']   second character, for shadow and relief
  * @param {number} [opt.spacing=1]   blank columns between letters
+ * @param {number} [opt.maxCols]     wrap to this many columns
  * @returns {string[]} lines
  */
 export function letter(word, opt = {}) {
@@ -562,6 +630,7 @@ export function letter(word, opt = {}) {
     fill = '#',
     light = '+',
     spacing = 1,
+    maxCols = 0,
   } = opt;
 
   const spec = STYLES[style] ?? STYLES.big;
@@ -582,8 +651,22 @@ export function letter(word, opt = {}) {
   const mid = ramp[1] ?? heavy;
   const faint = ramp[2] ?? mid;
 
-  const blocks = String(word).split('\n')
-    .map((row) => renderRow(row, spec, face, spacing));
+  /*
+   * Wrap first, then render. The break has to be decided on how wide the
+   * letters actually come out - one `M` is 5 columns in Block and 24 in
+   * Raised, big - so it cannot be done on the input string, and it cannot
+   * be done after rendering either, because by then the words have been
+   * flattened into rows of characters with no word boundaries left.
+   */
+  const gap = spacing * (spec.fns.includes(widen) ? 2 : 1);
+  const widthOf = glyphWidthsOf(spec, face);
+  const rowsIn = String(word).split('\n');
+  const wrapped = maxCols > 0
+    ? rowsIn.flatMap((row) =>
+        (row.trim() ? wrapToWidth(row, maxCols, widthOf, gap) : ['']))
+    : rowsIn;
+
+  const blocks = wrapped.map((row) => renderRow(row, spec, face, spacing));
 
   // Height of a rendered block, for the leading and for blank lines. Taken
   // from a block that has one rather than from the face itself, because the

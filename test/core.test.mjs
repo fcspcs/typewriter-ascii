@@ -753,6 +753,121 @@ check('a single line is unchanged by the multi-line support', () => {
   assert.ok(l.every((x) => x.trim()), 'a blank row crept into one line');
 });
 
+console.log('wrapping lettering to the paper');
+
+check('a sentence too wide for the sheet is broken at spaces', () => {
+  // Measured on an SM7 at pica: "GUTEN MORGEN LYON" in Block is 101 columns
+  // against the 82 an upright A4 holds - 123% of the sheet. It simply ran
+  // off the paper.
+  const cap = textArea(paperById('a4'), sm7).cols;
+  const loose = letter('GUTEN MORGEN LYON', { style: 'block', tones: ['B'] });
+  assert.strictEqual(Math.max(...loose.map((l) => l.length)), 101,
+    'the unwrapped width has moved; the rest of this test assumes it');
+
+  const wrapped = letter('GUTEN MORGEN LYON',
+    { style: 'block', tones: ['B'], maxCols: cap });
+  const width = Math.max(...wrapped.map((l) => l.length));
+  assert.ok(width <= cap, `wrapped to ${width} columns against a cap of ${cap}`);
+  assert.ok(wrapped.length > loose.length, 'it did not take more rows');
+});
+
+check('it fits, unless a single word cannot be broken', () => {
+  /*
+   * The guarantee, stated precisely, because "never wider than the sheet"
+   * is not achievable and pretending otherwise would mean hyphenating.
+   *
+   * Wrapping can only break at spaces. In a heavy face one word is already
+   * over the limit on its own - measured on an SM7 at pica, "MORGEN" in
+   * Hollow is 95 columns against 66 inside the margins - and no amount of
+   * wrapping helps. So: the result is within the cap whenever every word
+   * fits, and otherwise no wider than the widest single word needs.
+   */
+  const a4 = paperById('a4');
+  const cap = textArea(a4, sm7).cols;
+  const text = 'HALLO WELT WIE GEHT ES DIR HEUTE AM MORGEN';
+  for (const style of ['block', 'big', 'wide', 'hollow', 'relief', 'slab']) {
+    const tones = ['B', '2', '-'];
+    const art = letter(text, { style, tones, maxCols: cap });
+    const width = Math.max(...art.map((l) => l.length));
+
+    const widestWord = Math.max(...text.split(' ').map((w) =>
+      Math.max(...letter(w, { style, tones }).map((l) => l.length))));
+
+    assert.ok(width <= Math.max(cap, widestWord),
+      `${style}: ${width} columns, cap ${cap}, widest single word ` +
+      `${widestWord}`);
+    if (widestWord <= cap) {
+      assert.ok(width <= cap,
+        `${style}: every word fits in ${cap} yet the motif is ${width}`);
+    }
+  }
+});
+
+check('more room means fewer rows', () => {
+  // What turning the sheet actually buys. A4 landscape gives 100 columns
+  // inside the margins against 66 upright.
+  const a4 = paperById('a4');
+  const up = textArea(a4, sm7).cols;
+  const across = textArea(landscape(a4), sm7).cols;
+  const text = 'HALLO WELT WIE GEHT ES DIR';
+  const tall = letter(text, { style: 'block', tones: ['B'], maxCols: up });
+  const wide = letter(text, { style: 'block', tones: ['B'], maxCols: across });
+  assert.ok(wide.length < tall.length,
+    `${wide.length} rows across against ${tall.length} upright`);
+  assert.ok(Math.max(...wide.map((l) => l.length)) <= across);
+});
+
+check('a single word too wide to break is left whole', () => {
+  // Splitting a word mid-letter produces something nobody can read, and
+  // hides the problem: setUp() already refuses a motif wider than the sheet
+  // and says what to change. Silently hyphenating turns a clear refusal
+  // into a mess.
+  const cap = textArea(paperById('a4'), sm7).cols;
+  const word = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCD';
+  const art = letter(word, { style: 'block', tones: ['B'], maxCols: cap });
+  const plain = letter(word, { style: 'block', tones: ['B'] });
+  assert.deepStrictEqual(art, plain, 'the word was broken up');
+
+  // And the refusal is still raised, which is what tells the user to act.
+  const width = Math.max(...art.map((l) => l.length));
+  const stop = setUp(width, art.length, paperById('a4'), sm7).warnings
+    .some((w) => w.level === 'stop');
+  assert.ok(stop, 'no refusal for a motif 239 columns wide');
+});
+
+check('a long word does not drag the next one onto its line', () => {
+  const cap = textArea(paperById('a4'), sm7).cols;
+  const art = letter('ABCDEFGHIJKLMNOPQRSTUVWXYZ HI',
+    { style: 'block', tones: ['B'], maxCols: cap });
+  const alone = letter('HI', { style: 'block', tones: ['B'] });
+  // The short word ends up on a line of its own, so the last block is
+  // exactly as wide as 'HI' rendered by itself.
+  const lastRow = art[art.length - 1];
+  assert.strictEqual(lastRow.length, alone[alone.length - 1].length,
+    `the tail row is ${lastRow.length} wide, 'HI' alone is ` +
+    `${alone[alone.length - 1].length}`);
+});
+
+check('wrapping respects the line breaks already there', () => {
+  const cap = textArea(paperById('a4'), sm7).cols;
+  const art = letter('GUTEN MORGEN LYON\n\nHI',
+    { style: 'block', tones: ['B'], maxCols: cap });
+  assert.ok(Math.max(...art.map((l) => l.length)) <= cap);
+  // The deliberate blank line survives the wrapping.
+  assert.ok(art.some((l) => !l.trim()), 'the blank line was lost');
+});
+
+check('a word that fits is not touched', () => {
+  // Wrapping must be invisible when it has nothing to do.
+  for (const style of ['block', 'big', 'relief']) {
+    const tones = ['B', '2', '-'];
+    assert.deepStrictEqual(
+      letter('HI', { style, tones, maxCols: 66 }),
+      letter('HI', { style, tones }),
+      `${style}: a short word was altered`);
+  }
+});
+
 console.log('the raised face has a light direction');
 
 check('raised draws three distinct weights', () => {

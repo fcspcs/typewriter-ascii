@@ -18,7 +18,7 @@
 import fs from 'node:fs';
 import { PROFILES, profileById } from '../src/profiles/index.js';
 import {
-  makeTypeable, PAPERS, paperById, setUp, charset,
+  makeTypeable, PAPERS, paperById, setUp, charset, textArea,
 } from '../src/core/machine.js';
 import { colourMap, inkTally, parseRows, runsOf, runsToText } from '../src/core/runs.js';
 import { letter, tonesOf } from '../src/core/lettering.js';
@@ -101,7 +101,11 @@ if (cmd === 'file') {
   // a shell makes a real newline awkward to type.
   const tones = toneRamp(Math.max(1, tonesOf(style)),
     { allowed: charset(machine) });
-  lines = letter(word.replace(/\\n/g, '\n'), { style, tones });
+  // Wrapped to the margins of the chosen paper, like the page does. Without
+  // it "GUTEN MORGEN LYON" in Block is 101 columns on an A4 that holds 82,
+  // and the only output is a refusal.
+  lines = letter(word.replace(/\\n/g, '\n'),
+    { style, tones, maxCols: textArea(paper, machine).cols });
 } else {
   die(`Unknown command: ${cmd}`);
 }

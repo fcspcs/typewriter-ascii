@@ -140,6 +140,14 @@ size where it makes sense.
 A newline starts a second line of letters, so two short words can be stacked
 where one long one will not fit; a blank line leaves a gap.
 
+**Lines too wide for the sheet break at spaces**, to the margins of whatever
+paper is chosen — `GUTEN MORGEN LYON` in Block is 101 columns on an SM7 at
+pica, against the 82 an upright A4 holds. With landscape allowed the two
+layouts are compared and the sheet turns only when it saves rows. A single
+word too wide to break is left whole rather than hyphenated: the setup
+instructions then say what to change, which is more use than something
+unreadable.
+
 **Raised uses three weights, not two.** An outline drawn in one character
 with the interior in another is a hollow letter with a fill — an edge lit
 from every side at once has no light direction and nothing stands off the

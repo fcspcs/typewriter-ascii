@@ -349,7 +349,91 @@ dark bar across anything wider than a glyph cell, which is a motif with edges
 to crop to and tone to sample. Atlas cells stay white on purpose: feeding
 them a black bar would measure the bar instead of the character.
 
-### 14. Imports that nothing calls
+### 14. Lettering ran off the edge of the paper
+
+`src/core/lettering.js`, `src/ui/app.js:346`, `tools/cli.mjs:100`
+
+A line of lettering was rendered at whatever width it came to and never
+compared against the sheet. Measured on an SM7 at pica, upright A4 (82
+columns):
+
+| input | style | columns | of the sheet |
+|-------|-------|---------|--------------|
+| `GUTEN MORGEN LYON` | Block | 101 | 123% |
+| 40 characters | Block | 239 | 291% |
+| `GUTEN MORGEN LYON` | Hollow | 271 | 330% |
+
+The motif simply overran the preview. **Real fault.**
+
+**Done:** `letter()` takes `maxCols` and breaks lines at spaces. Three things
+about it are worth writing down.
+
+*It measures rendered columns, not input characters.* One `M` is 5 columns in
+Block and 24 in Raised, big, so the break has to be decided on the width each
+letter actually comes out at. The measurement matches `renderRow()` exactly
+— glyph widths plus `gap x (letters - 1)` — and glyph widths are cached per
+call, because a transform chain that scales by three and floods a background
+is not something to run once per letter per candidate line. It cannot be done
+after rendering either: by then the words are rows of characters with no word
+boundaries left.
+
+*It wraps to `textArea`, not `sheetGrid`.* Both "fit", so the choice needed a
+reason. Wrapped to the sheet's 82 columns, `GUTEN MORGEN LYON` comes out 71
+wide and `setUp()` answers *"wider than the usual margins — 71 against 66"*;
+wrapped to the margins' 66 it is 65 wide, in **the same eleven rows**, and
+`setUp()` says nothing. Identical amount of typing, one fewer thing to read
+past. Wrapping to the sheet edge would put that note on essentially every
+sentence, which trains people to ignore the one place the app warns them.
+
+*A single word too wide to break is left whole.* Hyphenating mid-letter
+produces something nobody can read and, worse, hides the problem — `setUp()`
+already refuses a motif wider than the sheet and says what to change. Checked
+that the refusal still appears for the 239-column case.
+
+### 14a. A bug introduced while fixing 14, caught by its own test
+
+Worth recording rather than quietly fixing, because the shape of it will
+recur.
+
+The first version wrapped to the larger of the two orientations and let
+`orient()` decide the sheet afterwards, the same way pictures work. That is
+wrong for lettering, and the failure is silent: wrapped to the landscape
+margins (100 columns) `GUTEN MORGEN` is 71 columns, which **fits** an upright
+sheet's 82 — so `orient()` left the sheet upright, carrying a motif laid out
+for margins of 100 against upright margins of 66.
+
+Laid out for one sheet, printed on another. Measured:
+
+```
+"GUTEN MORGEN"  upright  35 cols x 11 rows  ratio 0.707
+                landscape 71 cols x  5 rows  ratio 0.707  <-- wrong sheet
+```
+
+**Done:** the layout and the sheet are now decided together. Both layouts are
+rendered and compared, the wider one is kept **only if it saves rows**, and
+`useSheet()` takes a `prefer` flag so the sheet follows the layout instead of
+re-deciding from the finished size. On `GUTEN MORGEN LYON` the wider sheet
+buys nothing — eleven rows either way, because the third word still will not
+join the first two — so it stays upright and keeps the shape people expect.
+On `HALLO WELT WIE GEHT ES DIR` it goes 17 rows → 11, which is worth turning
+the paper for.
+
+The CLI had the same fault and the same fix; `--paper a6` now wraps to 35
+columns instead of refusing at 101.
+
+Tests: *wrapping lettering to the paper* in `test/core.test.mjs` (7 checks)
+and *lettering wraps to the sheet* in `test/integration.test.mjs` (5).
+Verified they bite by removing `maxCols`, which reproduces the reported
+symptom exactly: **"101 columns, the upright A4 sheet holds 82"**, plus the
+turned-for-no-gain case.
+
+One of those tests was wrong on first writing and the suite caught it: it
+asserted the motif is *never* wider than the sheet, which is not achievable
+— `MORGEN` in Hollow is 95 columns as a single unbreakable word. The
+guarantee is now stated precisely: within the cap whenever every word fits,
+and otherwise no wider than the widest single word needs.
+
+### 15. Imports that nothing calls
 
 `src/ui/app.js:16` — `edges` and `keystrokes` imported from `convert.js`,
 never called. `keystrokes` appears in the file only inside strings and

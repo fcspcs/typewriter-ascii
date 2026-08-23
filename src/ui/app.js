@@ -284,9 +284,31 @@ function syncWidthControl() {
  * about the shape of the sheet — which would be the worst possible fault
  * here, because the person is looking at the paper and not at the screen.
  */
-function useSheet(motifW, motifH) {
-  app.sheet = orient(app.paper, app.machine, motifW, motifH,
-                     $('landscape').checked);
+function useSheet(motifW, motifH, prefer = false) {
+  /*
+   * `prefer` is for a motif that was *laid out* for a turned sheet.
+   *
+   * Lettering wraps to a column limit, and that limit is the width of a
+   * particular orientation. Deciding the orientation afterwards by asking
+   * "does this fit upright" gets it wrong the moment wrapping succeeds:
+   * measured on "GUTEN MORGEN" in Block, wrapped to the landscape margins it
+   * is 71 columns, which fits an upright sheet's 82 - so the sheet stayed
+   * upright carrying a motif 71 wide against upright margins of 66. Laid out
+   * for one sheet, printed on another.
+   *
+   * So when the caller has already chosen a landscape layout, it says so,
+   * and the sheet follows the layout rather than re-deciding.
+   */
+  const allow = $('landscape').checked;
+  if (allow && prefer) {
+    const across = landscape(app.paper);
+    const g = sheetGrid(across, app.machine);
+    if (motifW <= g.cols && motifH <= g.rows) {
+      app.sheet = across;
+      return app.sheet;
+    }
+  }
+  app.sheet = orient(app.paper, app.machine, motifW, motifH, allow);
   return app.sheet;
 }
 
@@ -334,6 +356,9 @@ function convert() {
   const maxCols = Math.min(+$('width').value, room.cols);
 
   let lines = [];
+  // Set when lettering has laid itself out for a turned sheet, so the sheet
+  // follows the layout instead of re-deciding from the finished size.
+  let wantWide = false;
 
   if (tab === 'text') {
     // Only the ends are trimmed. A blank line in the middle is a gap the
@@ -343,7 +368,36 @@ function convert() {
       .join('\n').replace(/^\n+|\n+$/g, '');
     if (word.trim()) {
       const style = $('letterStyle').value;
-      lines = letter(word, { style, tones: letterTones(style) });
+      /*
+       * Wrapped to the margins, not to the edge of the paper.
+       *
+       * `textArea` rather than `sheetGrid`, and it is worth saying why,
+       * because both "fit". Measured on an SM7 at pica, "GUTEN MORGEN LYON"
+       * in Block: wrapped to the sheet's 82 columns it comes out 71 wide and
+       * setUp() answers "wider than the usual margins - 71 against 66";
+       * wrapped to the margins' 66 it is 65 wide, in the same eleven rows,
+       * and setUp() says nothing at all. Same amount of typing, one fewer
+       * thing to read past. Wrapping to the sheet edge would put that note
+       * on essentially every sentence, which trains people to ignore the one
+       * place the app warns them.
+       */
+      const opt = { style, tones: letterTones(style) };
+      lines = letter(word, { ...opt, maxCols: upright.cols });
+
+      /*
+       * Turning the sheet is only worth it if it saves the typist rows.
+       *
+       * Both layouts are rendered and compared, rather than turning whenever
+       * the motif is wide. On "GUTEN MORGEN LYON" the wider sheet buys
+       * nothing - eleven rows either way, because the third word still will
+       * not join the first two - so the sheet stays upright and keeps the
+       * shape people expect. On "HALLO WELT WIE GEHT ES DIR" it goes from
+       * seventeen rows to eleven, which is worth turning the paper for.
+       */
+      if (allow && across.cols > upright.cols) {
+        const wide = letter(word, { ...opt, maxCols: across.cols });
+        if (wide.length < lines.length) { lines = wide; wantWide = true; }
+      }
     }
   } else if (tab === 'paste') {
     const raw = $('pasted').value.replace(/\t/g, '    ');
@@ -401,7 +455,8 @@ function convert() {
   });
   syncInkControls();
 
-  app.setup = setUp(width, app.lines.length, useSheet(width, app.lines.length),
+  app.setup = setUp(width, app.lines.length,
+                    useSheet(width, app.lines.length, wantWide),
                     app.machine, $('align').value);
 
   app.at = Math.min(app.at, Math.max(0, app.lines.length - 1));
