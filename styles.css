@@ -1,60 +1,62 @@
 /*
  * One typeface, one ink, one paper. Everything else is spacing.
  *
- * Rules kept deliberately: no rounded corners, no shadows, no gradients,
- * no coloured panels. A typewriter has none of those and neither does a
- * sheet of paper. Structure comes from whitespace and single hairlines.
+ * No rounded corners, no shadows, no gradients, no coloured panels. A
+ * typewriter has none of those and neither does a sheet of paper. Structure
+ * comes from whitespace and single hairlines.
  */
 
 :root {
+  /* Tells the browser to render native controls — dropdown lists,
+     scrollbars, focus rings — in the matching theme. Without it the option
+     list stays white with near-white text in dark mode, which is
+     unreadable. */
+  color-scheme: light dark;
+
   --paper:  #faf9f6;
+  --raised: #ffffff;
   --ink:    #171614;
   --red:    #a8322a;
-  --faint:  #8b8880;
-  --rule:   #d9d6ce;
-  --hair:   #ebe8e1;
-  --mark:   #f0ead6;   /* current line */
+  --faint:  #6b6961;
+  --rule:   #cfccc4;
+  --hair:   #e7e4dd;
+  --mark:   #f4ecd8;
+  --space:  #cdd6e2;   /* the space marker */
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono",
           Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #14140f;
-    --ink:   #e8e5dc;
-    --red:   #d9645a;
-    --faint: #85817a;
-    --rule:  #33322c;
-    --hair:  #24241f;
-    --mark:  #2a2820;
+    --paper:  #15140f;
+    --raised: #1d1c16;
+    --ink:    #eae7dd;
+    --red:    #e0776c;
+    --faint:  #918c81;
+    --rule:   #3b3931;
+    --hair:   #262520;
+    --mark:   #322d1e;
+    --space:  #3f4a58;
   }
 }
 
 * { box-sizing: border-box; }
-
 html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font: 14px/1.65 var(--mono);
-  letter-spacing: 0.01em;
+  font: 14px/1.6 var(--mono);
   padding-bottom: 4rem;
 }
 
-/* ── skeleton ────────────────────────────────────────────────── */
+/* ── page frame ──────────────────────────────────────────────── */
 
 .bar {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-  padding: 1.6rem clamp(1rem, 4vw, 3rem) 1.2rem;
+  padding: 1.7rem clamp(1rem, 4vw, 3rem) 1.3rem;
   border-bottom: 1px solid var(--ink);
 }
-
 h1 {
   margin: 0;
   font-size: 15px;
@@ -62,15 +64,13 @@ h1 {
   letter-spacing: 0.22em;
   text-transform: uppercase;
 }
+.lede { margin: 0.5rem 0 0; color: var(--faint); font-size: 13px; }
+.lede-sm { margin: -0.6rem 0 1.4rem; color: var(--faint); font-size: 12.5px;
+           max-width: 52rem; }
 
-.bar nav { display: flex; gap: 1.2rem; align-items: baseline; }
+main { padding: 0 clamp(1rem, 4vw, 3rem); max-width: 82rem; margin: 0 auto; }
 
-main { padding: 0 clamp(1rem, 4vw, 3rem); max-width: 78rem; margin: 0 auto; }
-
-section {
-  padding: 2.4rem 0;
-  border-bottom: 1px solid var(--hair);
-}
+section { padding: 2.4rem 0; border-bottom: 1px solid var(--hair); }
 section:last-of-type { border-bottom: 0; }
 
 h2 {
@@ -87,18 +87,77 @@ h2 {
 h2 .tools { margin-left: auto; display: flex; gap: 1.2rem; }
 
 footer {
-  max-width: 78rem;
-  margin: 3rem auto 0;
-  padding: 1.6rem clamp(1rem, 4vw, 3rem);
+  max-width: 82rem;
+  margin: 2.5rem auto 0;
+  padding: 1.4rem clamp(1rem, 4vw, 3rem);
   border-top: 1px solid var(--hair);
   color: var(--faint);
   font-size: 12px;
 }
-footer p { margin: 0.3rem 0; }
-
+footer p { margin: 0; }
 a { color: inherit; text-underline-offset: 3px; }
 
-/* ── controls ────────────────────────────────────────────────── */
+/* ── compose: settings beside the paper ──────────────────────── */
+/*
+ * The point: change a setting and see the sheet react, without scrolling.
+ * Anything else and you are editing blind.
+ */
+
+.compose {
+  display: grid;
+  grid-template-columns: minmax(0, 20rem) minmax(0, 1fr);
+  gap: 2.6rem;
+  align-items: start;
+  padding-top: 2rem;
+}
+@media (max-width: 900px) {
+  .compose { grid-template-columns: 1fr; gap: 1.8rem; }
+  .paper-col { order: -1; }         /* see it before you tune it */
+}
+
+.controls-col { display: flex; flex-direction: column; gap: 1.9rem; }
+
+fieldset { border: 0; border-top: 1px solid var(--ink); margin: 0; padding: 1rem 0 0; }
+legend {
+  padding: 0 0.7rem 0 0;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.field { margin-bottom: 1.1rem; }
+.field:last-child { margin-bottom: 0; }
+.field > label {
+  display: block;
+  font-size: 11.5px;
+  letter-spacing: 0.05em;
+  color: var(--faint);
+  margin-bottom: 0.35rem;
+}
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; }
+
+.hint  { color: var(--faint); font-size: 11.5px; line-height: 1.5;
+         margin: 0.4rem 0 0; }
+.note  { color: var(--faint); font-size: 11.5px; margin: 0.7rem 0 1.1rem; }
+.muted { color: var(--faint); font-size: 12px; }
+
+details { margin-top: 1.2rem; }
+summary {
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 0.4rem 0;
+  list-style: none;
+}
+summary::-webkit-details-marker { display: none; }
+summary::before { content: '+ '; }
+details[open] summary::before { content: '\2212 '; }
+details[open] summary { margin-bottom: 0.9rem; }
+
+/* ── form controls ───────────────────────────────────────────── */
 
 button, select, input, textarea, output {
   font: inherit;
@@ -108,19 +167,19 @@ button, select, input, textarea, output {
   border-radius: 0;
   padding: 0.45rem 0.6rem;
 }
+select, input[type=text], textarea { width: 100%; background: var(--raised); }
+select { padding-right: 1.8rem; }
+textarea { resize: vertical; line-height: 1.4; }
 
-button {
-  cursor: pointer;
-  padding: 0.45rem 1rem;
-  -webkit-tap-highlight-color: transparent;
-}
+button { cursor: pointer; padding: 0.45rem 1rem;
+         -webkit-tap-highlight-color: transparent; }
 button:hover { border-color: var(--ink); }
 button:active { transform: translateY(1px); }
 
-/* Text-only actions. A link is a link; it does not need a box. */
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+
 button.link {
-  border: 0;
-  padding: 0;
+  border: 0; padding: 0; background: none;
   color: var(--faint);
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -129,105 +188,88 @@ button.link {
 button.link:hover { color: var(--ink); }
 button.link.on { color: var(--ink); }
 
-label {
-  display: block;
-  font-size: 12px;
-  color: var(--faint);
-  letter-spacing: 0.06em;
-}
-label > select,
-label > input[type=text] { margin-top: 0.35rem; width: 100%; }
+.wide-btn { width: 100%; text-align: left; display: flex;
+            justify-content: space-between; gap: 1rem; }
+.wide-btn span { color: var(--faint); }
 
-output { border: 0; padding: 0; color: var(--ink); }
+output { border: 0; padding: 0; color: var(--ink); float: right; }
 
 input[type=range] {
-  -webkit-appearance: none;
-  appearance: none;
-  border: 0;
-  padding: 0;
-  width: 100%;
-  margin-top: 0.7rem;
-  height: 1px;
-  background: var(--rule);
+  -webkit-appearance: none; appearance: none;
+  border: 0; padding: 0; width: 100%;
+  margin: 0.6rem 0 0; height: 1px; background: var(--rule);
 }
 input[type=range]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 11px; height: 11px;
-  background: var(--ink);
-  border-radius: 50%;
-  cursor: pointer;
+  width: 11px; height: 11px; background: var(--ink);
+  border-radius: 50%; cursor: pointer;
 }
 input[type=range]::-moz-range-thumb {
-  width: 11px; height: 11px;
-  background: var(--ink);
-  border: 0; border-radius: 50%;
-  cursor: pointer;
+  width: 11px; height: 11px; background: var(--ink);
+  border: 0; border-radius: 50%; cursor: pointer;
 }
 
-.row  { display: flex; gap: 1.2rem; align-items: center; flex-wrap: wrap;
-        margin-top: 0.9rem; }
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-  gap: 1.4rem 1.6rem;
-}
-.grid + .grid { margin-top: 1.4rem; }
-.wide { grid-column: 1 / -1; }
-
-.note { color: var(--faint); font-size: 12px; margin: 0.9rem 0 0;
-        max-width: 46rem; }
+.row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;
+       margin-top: 0.9rem; }
+.row label { font-size: 11.5px; color: var(--faint); }
 
 /* ── tabs ────────────────────────────────────────────────────── */
 
-.tabs { display: flex; gap: 1.6rem; margin-bottom: 1.5rem; }
-.tab {
-  border: 0; padding: 0 0 0.4rem;
-  color: var(--faint);
-  border-bottom: 1px solid transparent;
-  letter-spacing: 0.04em;
-}
+.tabs { display: flex; gap: 1.4rem; margin-bottom: 1.3rem; }
+.tab { border: 0; padding: 0 0 0.35rem; background: none;
+       color: var(--faint); border-bottom: 1px solid transparent; }
 .tab.on { color: var(--ink); border-bottom-color: var(--ink); }
 .tab:hover { border-color: transparent; color: var(--ink); }
-
+.tab.on:hover { border-bottom-color: var(--ink); }
 .panel { display: none; }
 .panel.on { display: block; }
 
-textarea, #letterText { width: 100%; }
-textarea { resize: vertical; line-height: 1.4; }
-
-/* ── image drop ──────────────────────────────────────────────── */
+/* ── picture drop ────────────────────────────────────────────── */
 
 #drop {
-  display: block;
-  border: 1px dashed var(--rule);
-  padding: 2.6rem 1rem;
-  text-align: center;
-  color: var(--faint);
-  cursor: pointer;
+  display: block; border: 1px dashed var(--rule);
+  padding: 2.2rem 1rem; text-align: center;
+  color: var(--faint); cursor: pointer; font-size: 12px;
 }
 #drop:hover, #drop.over { border-color: var(--ink); color: var(--ink); }
-#drop.has { padding: 1rem; border-style: solid; }
-#preview { max-width: 100%; max-height: 15rem; display: block; margin: 0 auto; }
+#drop.has { padding: 0.7rem; border-style: solid; }
+#preview { max-width: 100%; max-height: 11rem; display: block; margin: 0 auto; }
 
-/* ── facts, warnings, setup list ─────────────────────────────── */
+/* ── the live paper ──────────────────────────────────────────── */
 
-.facts {
-  display: flex; flex-wrap: wrap; gap: 0 2.4rem;
-  margin: 0 0 1.4rem; font-size: 12px;
+.paper-stick { position: sticky; top: 1rem; }
+.paper-view {
+  background: var(--raised);
+  border: 1px solid var(--hair);
+  padding: 1.4rem 1rem;
+  overflow: auto;
+  max-height: 68vh;
 }
-.facts div { display: flex; gap: 0.5rem; }
+.paper-view pre {
+  margin: 0;
+  font: 400 var(--mini-size, 10px)/1.16 var(--mono);
+  white-space: pre;
+  color: var(--ink);
+}
+.paper-view .r { color: var(--red); font-style: normal; }
+
+.facts { display: flex; flex-wrap: wrap; gap: 0 2rem; margin: 0 0 0.9rem;
+         font-size: 11.5px; }
+.facts div { display: flex; gap: 0.45rem; }
 .facts dt { color: var(--faint); margin: 0; }
 .facts dd { margin: 0; }
 
 .warn {
   border-left: 2px solid var(--red);
-  padding: 0.5rem 0 0.5rem 0.9rem;
-  margin: 0 0 0.9rem;
-  font-size: 13px;
+  padding: 0.45rem 0 0.45rem 0.85rem;
+  margin: 0.9rem 0 0;
+  font-size: 12px;
 }
 
-ol.setup { margin: 0 0 1.8rem; padding-left: 1.4rem; max-width: 46rem; }
-ol.setup li { margin-bottom: 0.7rem; }
+/* ── setup list ──────────────────────────────────────────────── */
+
+ol.setup { margin: 0; padding-left: 1.5rem; max-width: 50rem; }
+ol.setup li { margin-bottom: 0.9rem; }
 ol.setup b { font-weight: 600; }
 ol.setup span { display: block; color: var(--faint); font-size: 12px; }
 
@@ -236,22 +278,25 @@ ol.setup span { display: block; color: var(--faint); font-size: 12px; }
 .progress { height: 1px; background: var(--rule); margin: 0 0 1rem; }
 .progress i { display: block; height: 1px; background: var(--ink); width: 0;
               transition: width .18s linear; }
-
 .controls { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;
-            margin-bottom: 1.6rem; }
-.count { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+            margin-bottom: 1.5rem; }
+.count { color: var(--faint); font-size: 12px;
+         font-variant-numeric: tabular-nums; }
+
+.key-legend { white-space: nowrap; }
+.sp-demo {
+  display: inline-block; background: var(--space); color: var(--ink);
+  padding: 0 0.25em; margin: 0 0.15em;
+}
 
 /* ── listening ───────────────────────────────────────────────── */
 
-#ear { border-left: 1px solid var(--rule); padding-left: 1rem;
-       margin: 0 0 1.6rem; }
+#ear { border-left: 1px solid var(--rule); padding-left: 1rem; margin: 0 0 1.5rem; }
 #ear .row:first-child { margin-top: 0; }
-#ear label { display: flex; align-items: center; gap: 0.8rem; flex: 1 1 14rem; }
-
+#ear input[type=range] { flex: 1 1 9rem; min-width: 7rem; margin-top: 0; }
 .lamp { width: 7px; height: 7px; background: var(--rule); flex: none;
         border-radius: 50%; transition: background .04s; }
 .lamp.on { background: var(--red); }
-
 .meter { position: relative; flex: 1 1 8rem; height: 3px;
          background: var(--hair); min-width: 6rem; }
 .meter i { display: block; height: 3px; background: var(--ink); width: 0; }
@@ -259,13 +304,10 @@ ol.setup span { display: block; color: var(--faint); font-size: 12px; }
            background: var(--red); left: 50%; }
 
 /* ── the sheet ───────────────────────────────────────────────── */
-/*
- * The sheet is the main view. Lines that are done are inked; the line you
- * are on opens up in place and shows its runs; everything ahead stays pale.
- */
 
 .sheet {
   border: 1px solid var(--hair);
+  background: var(--raised);
   padding: 1.2rem 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -274,44 +316,54 @@ ol.setup span { display: block; color: var(--faint); font-size: 12px; }
 }
 
 .ln {
-  display: block;
-  white-space: pre;
-  padding: 0 1.2rem;
-  color: var(--faint);
-  opacity: 0.4;
-  cursor: pointer;
+  display: block; white-space: pre; padding: 0 1.2rem;
+  color: var(--faint); opacity: 0.38; cursor: pointer;
 }
 .ln .r { font-style: normal; }
 .ln.done { color: var(--ink); opacity: 1; }
 .ln.done .r { color: var(--red); }
 
-/* the open line */
 .ln.now {
-  opacity: 1;
-  color: var(--ink);
-  background: var(--mark);
-  padding-top: 1.5rem;
-  padding-bottom: 0.5rem;
-  margin: 0.5rem 0;
-  cursor: default;
+  opacity: 1; color: var(--ink); background: var(--mark);
+  padding-top: 1.6rem; padding-bottom: 0.6rem;
+  margin: 0.6rem 0; cursor: default;
 }
 .ln.now .r { color: var(--red); }
 
-/* runs drawn inside the open line */
+/* runs inside the open line */
 .run { position: relative; display: inline-block; }
 .run .n {
   position: absolute; top: -1.35em; left: 50%;
   transform: translateX(-50%);
-  font-size: 0.8em; letter-spacing: 0;
-  color: var(--faint);
-  white-space: nowrap;
+  font-size: 0.78em; color: var(--faint); white-space: nowrap;
 }
-.run.gap  { border-bottom: 1px solid var(--rule); }
-.run.rep  { border-bottom: 1px solid var(--ink); }
+.run.gap { border-bottom: 1px solid var(--space); }
+.run.rep { border-bottom: 1px solid var(--ink); }
 .run .c { display: inline-block; }
-.run .c.five { box-shadow: inset 1px 0 0 var(--rule); }
-.run .c.hit  { background: var(--ink); color: var(--paper); }
-.run .c.past { opacity: 0.35; }
+
+/* A space you must type. Shown as a tinted cell with a faint middle dot,
+   because an empty box reads as "nothing here" — the exact misreading that
+   makes people lose count. */
+.run.gap .c {
+  background: var(--space);
+  position: relative;
+}
+.run.gap .c::after {
+  content: '\00b7';
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  opacity: 0.45;
+}
+.run .c.five { box-shadow: inset 1px 0 0 var(--ink); }
+.run .c.past { opacity: 0.3; }
+
+/* The typing cursor only appears while something is actually counting
+   keystrokes. Showing it otherwise implies progress that is not being
+   tracked. */
+body.counting .run .c.hit {
+  background: var(--ink); color: var(--paper);
+}
+body.counting .run.gap .c.hit::after { opacity: 0.5; }
 
 /* ── table ───────────────────────────────────────────────────── */
 
@@ -322,52 +374,45 @@ tr { border-bottom: 1px solid var(--hair); cursor: pointer; }
 tr.now { background: var(--mark); }
 tr.done td { opacity: 0.4; }
 td { padding: 0.5rem 0.9rem 0.5rem 0; vertical-align: baseline; }
-td.n { color: var(--faint); text-align: right; width: 3.5rem;
+td.n { color: var(--faint); text-align: right; width: 3.4rem;
        font-variant-numeric: tabular-nums; position: sticky; left: 0;
-       background: var(--paper); padding-right: 1.1rem; }
+       background: var(--paper); padding-right: 1rem; }
 tr.now td.n { background: var(--mark); color: var(--ink); }
 td.rn { white-space: pre; }
 td.rn .red { color: var(--red); }
+td.rn .sp { background: var(--space); }
 
 /* ── full screen ─────────────────────────────────────────────── */
 
 body.full > header,
-body.full #stepSource,
+body.full .compose,
 body.full #stepSetup,
 body.full #stepTable,
 body.full footer,
-body.full .facts,
-body.full ol.setup,
-body.full #warnings { display: none; }
-
+body.full .lede-sm { display: none; }
 body.full main { max-width: none; padding: 0; }
 body.full #stepSheet { padding: 0.8rem clamp(0.6rem, 2vw, 2rem); border: 0; }
 body.full h2 { margin-bottom: 0.9rem; }
 body.full .sheet { border: 0; font-size: var(--sheet-full, 15px); }
 
-/* ── charset dialog ──────────────────────────────────────────── */
+/* ── characters dialog ───────────────────────────────────────── */
 
 dialog {
-  border: 1px solid var(--ink);
-  background: var(--paper);
-  color: var(--ink);
-  padding: 1.8rem;
-  max-width: 40rem;
-  width: calc(100% - 2rem);
+  border: 1px solid var(--ink); background: var(--paper); color: var(--ink);
+  padding: 1.7rem; max-width: 40rem; width: calc(100% - 2rem);
 }
-dialog::backdrop { background: rgba(0,0,0,.35); }
-dialog h2 { margin-bottom: 0.6rem; }
-dialog menu { display: flex; justify-content: flex-end; gap: 1.4rem;
-              margin: 1.6rem 0 0; padding: 0; align-items: center; }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+dialog h2 { margin-bottom: 0.5rem; }
+dialog menu { display: flex; justify-content: flex-end; gap: 1.3rem;
+              margin: 1.5rem 0 0; padding: 0; align-items: center; }
 
-#keyboard { margin: 1.2rem 0 0; }
+#keyboard { margin: 1.1rem 0 0; }
 .krow { display: flex; gap: 3px; margin-bottom: 3px; flex-wrap: wrap; }
-.krow.ind { padding-left: 1.1rem; }
+.krow.ind { padding-left: 1rem; }
 .key {
   width: 1.9rem; height: 1.9rem; padding: 0;
-  border: 1px solid var(--rule);
-  color: var(--faint);
-  font-size: 12px;
+  border: 1px solid var(--hair); background: var(--raised);
+  color: var(--faint); font-size: 12px;
   display: grid; place-items: center;
 }
 .key.on { border-color: var(--ink); color: var(--ink); }
@@ -377,12 +422,13 @@ dialog menu { display: flex; justify-content: flex-end; gap: 1.4rem;
   body { font-size: 13px; }
   section { padding: 1.8rem 0; }
   td.n { width: 2.6rem; }
-  .key { width: 1.6rem; height: 1.6rem; font-size: 11px; }
+  .key { width: 1.7rem; height: 1.7rem; font-size: 11px; }
+  .paper-view { max-height: 42vh; }
 }
 
 @media print {
-  .bar, footer, .tabs, .controls, .progress, #ear, h2 .tools,
-  #stepSource, #stepSetup { display: none; }
+  .bar, footer, .compose, .controls, .progress, #ear, h2 .tools,
+  .lede-sm { display: none; }
   .ln, .ln.now { opacity: 1; color: #000; background: none; }
   .sheet { border: 0; }
 }

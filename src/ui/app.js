@@ -183,6 +183,53 @@ function note(text) {
 
 /* ── drawing ─────────────────────────────────────────────────── */
 
+/** Escape for the little live preview. */
+const esc = (t) => String(t).replace(/[&<>]/g,
+  (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+/**
+ * The live sheet beside the controls.
+ *
+ * Whole motif, tiny, so a change to any setting is visible without
+ * scrolling. Sized to fit its column rather than to a fixed value.
+ */
+function drawMini() {
+  const { lines, colours } = app;
+  const host = $('mini');
+  if (!lines.length) { host.textContent = ''; return; }
+
+  const width = Math.max(...lines.map((l) => l.length));
+  const box = host.parentElement.clientWidth - 34;
+  const size = clamp(Math.floor(box / Math.max(width, 1) * 1.68), 4, 13);
+  document.documentElement.style.setProperty('--mini-size', `${size}px`);
+
+  host.innerHTML = lines.map((line, r) => {
+    const text = line.replace(/\s+$/, '');
+    if (!text) return '';
+    let out = '';
+    let i = 0;
+    while (i < text.length) {
+      const red = colours?.[r]?.[i] === 'red';
+      let j = i;
+      while (j + 1 < text.length && (colours?.[r]?.[j + 1] === 'red') === red) j++;
+      const chunk = esc(text.slice(i, j + 1));
+      out += red ? `<i class="r">${chunk}</i>` : chunk;
+      i = j + 1;
+    }
+    return out;
+  }).join('\n');
+}
+
+/** Short plain-English note under each picture style. */
+const MODE_HINTS = {
+  shape: 'Each character is chosen because its shape matches that part of ' +
+         'the picture, not just its darkness.',
+  tone: 'Characters are chosen purely by how dark they are. Simpler, and ' +
+        'it looks more like a halftone than a drawing.',
+  outline: 'Only the edges are typed. Far fewer keystrokes.',
+  sentence: 'The picture is spelled out using your sentence.',
+};
+
 function draw() {
   const { lines, colours } = app;
   const tally = inkTally(lines, colours);
@@ -198,6 +245,22 @@ function draw() {
 
   $('warnings').innerHTML = (app.setup?.warnings ?? [])
     .map((w) => `<p class="warn">${w}</p>`).join('');
+
+  $('modeHint').textContent = MODE_HINTS[$('mode').value] ?? '';
+  $('charCount').textContent = `${app.chosen.size} on`;
+
+  const m = app.machine;
+  $('machineHint').textContent =
+    `${m.cpi} characters per inch, ${m.lpi} lines per inch` +
+    (m.twoColour ? ', black and red ribbon' : '') +
+    (m.notes ? `. ${m.notes}` : '');
+
+  const area = textArea(app.paper, app.machine);
+  $('paperHint').textContent =
+    `${app.paper.name} holds ${area.cols} characters across and ` +
+    `${area.rows} lines inside the margins.`;
+
+  drawMini();
 
   $('instructions').innerHTML = instructions().map(
     ([a, b]) => `<li><b>${a}</b><span>${b}</span></li>`).join('');
@@ -443,6 +506,7 @@ async function toggleListen() {
   if (app.listener) {
     app.listener.stop();
     app.listener = null;
+    document.body.classList.remove('counting');
     $('ear').hidden = true;
     $('listen').textContent = 'listen';
     $('listen').classList.remove('on');
@@ -472,6 +536,7 @@ async function toggleListen() {
     return;
   }
   app.listener = l;
+  document.body.classList.add('counting');
   $('ear').hidden = false;
   $('listen').textContent = 'stop listening';
   $('listen').classList.add('on');

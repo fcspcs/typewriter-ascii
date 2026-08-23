@@ -5,122 +5,193 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Typewriter ASCII</title>
 <meta name="description" content="Turn images and text into ASCII art you can actually type on a mechanical typewriter.">
+<meta name="color-scheme" content="light dark">
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
 
 <header class="bar">
   <h1>Typewriter&nbsp;ASCII</h1>
-  <nav>
-    <select id="machine" aria-label="Machine"></select>
-    <button id="editCharset" class="link">characters</button>
-  </nav>
+  <p class="lede">Art you type by hand. Every space is a keystroke.</p>
 </header>
 
 <main>
 
-<!-- ── source ─────────────────────────────────────────────────── -->
-<section id="stepSource">
-  <h2>1 &nbsp; Source</h2>
+<!-- ══ compose: controls left, paper right ═══════════════════ -->
+<section class="compose">
 
-  <div class="tabs" role="tablist">
-    <button class="tab on" data-tab="image" role="tab">Image</button>
-    <button class="tab"    data-tab="text"  role="tab">Lettering</button>
-    <button class="tab"    data-tab="paste" role="tab">Existing art</button>
+  <div class="controls-col">
+
+    <!-- ── what to make ──────────────────────────────────── -->
+    <fieldset>
+      <legend>What to type</legend>
+
+      <div class="tabs" role="tablist">
+        <button class="tab on" data-tab="image" role="tab">Picture</button>
+        <button class="tab"    data-tab="text"  role="tab">A word</button>
+        <button class="tab"    data-tab="paste" role="tab">Paste art</button>
+      </div>
+
+      <div class="panel on" data-panel="image">
+        <label id="drop" for="file">
+          <input type="file" id="file" accept="image/*" hidden>
+          <span id="dropText">Drop a picture, or click to choose</span>
+          <canvas id="preview" hidden></canvas>
+        </label>
+        <p class="note">
+          Silhouettes and line drawings survive the trip to a typewriter.
+          Group photos do not.
+        </p>
+
+        <div class="field">
+          <label for="mode">Style</label>
+          <select id="mode">
+            <option value="shape">Follow the shapes</option>
+            <option value="tone">Match light and dark</option>
+            <option value="outline">Outline only</option>
+            <option value="sentence">Write it in words</option>
+          </select>
+          <p class="hint" id="modeHint"></p>
+        </div>
+
+        <div class="field" id="sentenceRow" hidden>
+          <label for="sentence">The sentence</label>
+          <input type="text" id="sentence" value="she loved him and he loved her">
+          <p class="hint">
+            The picture is spelled out with this sentence, repeating over and
+            over. It reads straight through, line after line, so someone can
+            actually read your picture.
+          </p>
+        </div>
+      </div>
+
+      <div class="panel" data-panel="text">
+        <div class="field">
+          <label for="letterText">The word</label>
+          <input type="text" id="letterText" placeholder="HELLO" maxlength="40">
+        </div>
+        <div class="field">
+          <label for="letterStyle">Letters</label>
+          <select id="letterStyle">
+            <option value="block">Solid</option>
+            <option value="outline">Hollow</option>
+            <option value="shadow">With a shadow</option>
+            <option value="slab">Ruled above and below</option>
+          </select>
+          <p class="hint">Hollow letters take about half the keystrokes.</p>
+        </div>
+      </div>
+
+      <div class="panel" data-panel="paste">
+        <textarea id="pasted" rows="7" spellcheck="false"
+          placeholder="Paste ASCII art here."></textarea>
+        <p class="hint">
+          Spacing is kept exactly as given. Characters your machine cannot
+          type are swapped for the nearest shape it has, and you will be told
+          which.
+        </p>
+      </div>
+    </fieldset>
+
+    <!-- ── the machine ───────────────────────────────────── -->
+    <fieldset>
+      <legend>Your machine</legend>
+
+      <div class="field">
+        <select id="machine"></select>
+        <p class="hint" id="machineHint"></p>
+      </div>
+
+      <div class="field">
+        <button id="editCharset" type="button" class="wide-btn">
+          Choose characters<span id="charCount"></span>
+        </button>
+        <p class="hint">
+          Switch off anything your machine lacks, or that you would rather
+          not use. Fewer characters means a calmer picture.
+        </p>
+      </div>
+    </fieldset>
+
+    <!-- ── the paper ─────────────────────────────────────── -->
+    <fieldset>
+      <legend>The paper</legend>
+
+      <div class="two">
+        <div class="field">
+          <label for="paper">Sheet</label>
+          <select id="paper"></select>
+        </div>
+        <div class="field">
+          <label for="align">Position</label>
+          <select id="align">
+            <option value="centre">Centred</option>
+            <option value="topleft">Top left</option>
+          </select>
+        </div>
+      </div>
+      <p class="hint" id="paperHint"></p>
+
+      <div class="field">
+        <label for="width">How wide <output id="widthOut"></output></label>
+        <input type="range" id="width" min="10" max="120" value="60">
+        <p class="hint">Wider means more detail and a great many more keystrokes.</p>
+      </div>
+
+      <details>
+        <summary>Fine tuning</summary>
+
+        <div class="field">
+          <label for="contrast">Contrast <output id="contrastOut"></output></label>
+          <input type="range" id="contrast" min="50" max="300" value="130">
+        </div>
+
+        <div class="field">
+          <label for="detail">Detail <output id="detailOut"></output></label>
+          <input type="range" id="detail" min="0" max="100" value="45">
+          <p class="hint">
+            Lower smooths the picture down before it is turned into
+            characters. Texture cannot survive a cell this size, and leaving
+            it in reads as dirt.
+          </p>
+        </div>
+
+        <div class="field">
+          <label for="redRows">Red ribbon</label>
+          <input type="text" id="redRows" placeholder="lines, e.g. 0-15">
+          <p class="hint">
+            These lines go on the red half of the ribbon. Type all the black
+            first, then switch.
+          </p>
+        </div>
+      </details>
+    </fieldset>
   </div>
 
-  <div class="panel on" data-panel="image">
-    <label id="drop" for="file">
-      <input type="file" id="file" accept="image/*" hidden>
-      <span id="dropText">Drop an image, or click to choose</span>
-      <canvas id="preview" hidden></canvas>
-    </label>
-    <p class="note">
-      High contrast works best. Silhouettes and line drawings survive the
-      trip to a typewriter; group photos do not.
-    </p>
-  </div>
-
-  <div class="panel" data-panel="text">
-    <input type="text" id="letterText" placeholder="A word" maxlength="40">
-    <div class="row">
-      <label>Style
-        <select id="letterStyle">
-          <option value="block">Block</option>
-          <option value="outline">Outline</option>
-          <option value="shadow">Shadow</option>
-          <option value="slab">Slab</option>
-        </select>
-      </label>
+  <!-- ── live paper ──────────────────────────────────────── -->
+  <div class="paper-col">
+    <div class="paper-stick">
+      <h2>On the page</h2>
+      <dl class="facts" id="facts"></dl>
+      <div class="paper-view"><pre id="mini"></pre></div>
+      <div id="warnings"></div>
     </div>
   </div>
-
-  <div class="panel" data-panel="paste">
-    <textarea id="pasted" rows="8" spellcheck="false"
-      placeholder="Paste ASCII art here. Spacing is kept exactly as given."></textarea>
-    <p class="note">
-      Characters your machine cannot type are swapped for the nearest shape
-      it has. You will be told what changed.
-    </p>
-  </div>
 </section>
 
-<!-- ── settings ───────────────────────────────────────────────── -->
+<!-- ══ set the machine up ════════════════════════════════════ -->
 <section id="stepSetup">
-  <h2>2 &nbsp; Setup</h2>
-
-  <div class="grid">
-    <label>Paper
-      <select id="paper"></select>
-    </label>
-
-    <label>Placement
-      <select id="align">
-        <option value="centre">Centred</option>
-        <option value="topleft">Top left</option>
-      </select>
-    </label>
-
-    <label>Rendering
-      <select id="mode">
-        <option value="shape">Follow shapes</option>
-        <option value="tone">Match tone</option>
-        <option value="outline">Outline only</option>
-        <option value="sentence">Repeat a sentence</option>
-      </select>
-    </label>
-
-    <label>Width <output id="widthOut"></output>
-      <input type="range" id="width" min="10" max="120" value="60">
-    </label>
-
-    <label>Contrast <output id="contrastOut"></output>
-      <input type="range" id="contrast" min="50" max="300" value="130">
-    </label>
-
-    <label>Detail <output id="detailOut"></output>
-      <input type="range" id="detail" min="0" max="100" value="45">
-    </label>
-  </div>
-
-  <div class="grid" id="sentenceRow" hidden>
-    <label class="wide">Sentence
-      <input type="text" id="sentence" value="she loved him and he loved her">
-    </label>
-  </div>
-
-  <div class="grid">
-    <label class="wide">Red ribbon
-      <input type="text" id="redRows" placeholder="lines, e.g. 0-15,20">
-    </label>
-  </div>
-
-  <p class="note" id="setupNote"></p>
+  <h2>Before you start</h2>
+  <p class="lede-sm">
+    Set these once, then you never think about them again. The margin stop
+    does the centring for you — that is why you never type leading spaces.
+  </p>
+  <ol class="setup" id="instructions"></ol>
 </section>
 
-<!-- ── result ─────────────────────────────────────────────────── -->
+<!-- ══ type it ═══════════════════════════════════════════════ -->
 <section id="stepSheet">
-  <h2>3 &nbsp; Type it
+  <h2>Type it
     <span class="tools">
       <button id="full" class="link">full screen</button>
       <button id="listen" class="link">listen</button>
@@ -128,10 +199,11 @@
     </span>
   </h2>
 
-  <dl class="facts" id="facts"></dl>
-  <div id="warnings"></div>
-
-  <ol class="setup" id="instructions"></ol>
+  <p class="lede-sm">
+    The line you are on opens up and shows what to strike.
+    <span class="key-legend"><span class="sp-demo">␣</span> is a space — type it.</span>
+    A number means repeat that many times.
+  </p>
 
   <div class="progress"><i id="bar"></i></div>
   <div class="controls">
@@ -144,17 +216,17 @@
   <div id="ear" hidden>
     <div class="row">
       <span class="lamp" id="lamp"></span>
+      <span class="muted">Level</span>
       <div class="meter"><i id="level"></i><u id="markTh"></u></div>
       <span class="count" id="strikes"></span>
     </div>
     <div class="row">
-      <label>Sensitivity
-        <input type="range" id="sens" min="1" max="99" value="55">
-      </label>
+      <label for="sens">Sensitivity</label>
+      <input type="range" id="sens" min="1" max="99" value="55">
       <button id="back1" class="link">&minus;1</button>
       <button id="calibrate" class="link">calibrate</button>
     </div>
-    <p class="note" id="earNote">
+    <p class="hint" id="earNote">
       The red mark is the trigger level. It should sit above the room noise
       and below your strikes.
     </p>
@@ -163,31 +235,27 @@
   <div class="sheet" id="sheet"></div>
 </section>
 
-<!-- ── full table ─────────────────────────────────────────────── -->
+<!-- ══ reference ═════════════════════════════════════════════ -->
 <section id="stepTable">
-  <h2>All lines</h2>
+  <h2>Every line at once</h2>
+  <p class="lede-sm">For looking things up. You should not need it while typing.</p>
   <div class="scroll"><table id="table"></table></div>
 </section>
 
 </main>
 
 <footer>
-  <p>
-    Every space is a keystroke. Counting them is the whole job.
-  </p>
-  <p>
-    <a href="https://github.com/fcspcs/typewriter-ascii">Source</a> ·
-    MIT · runs entirely in your browser
-  </p>
+  <p><a href="https://github.com/fcspcs/typewriter-ascii">Source</a> ·
+     MIT · runs entirely in your browser</p>
 </footer>
 
-<!-- ── charset editor ─────────────────────────────────────────── -->
+<!-- ── characters ────────────────────────────────────────── -->
 <dialog id="charsetDialog">
   <form method="dialog">
     <h2>Characters</h2>
-    <p class="note">
-      Switch off anything your machine lacks or you would rather not use.
-      Fewer characters means a coarser picture but a calmer one.
+    <p class="hint">
+      Click a key to switch it off. The picture is built only from what is
+      left.
     </p>
     <div id="keyboard"></div>
     <div class="row">
@@ -196,12 +264,13 @@
       <button type="button" class="link" data-pick="letters">letters</button>
       <button type="button" class="link" data-pick="marks">marks only</button>
     </div>
-    <label class="wide">Or type them
+    <div class="field">
+      <label for="charsetText">Or type them</label>
       <input type="text" id="charsetText" spellcheck="false">
-    </label>
+    </div>
     <div class="row">
       <button type="button" id="learn" class="link">learn from typing</button>
-      <span class="note" id="learnNote"></span>
+      <span class="hint" id="learnNote"></span>
     </div>
     <menu>
       <button value="cancel" class="link">cancel</button>

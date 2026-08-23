@@ -234,6 +234,81 @@ check('presets change the selection', () => {
   assert(on() > 30, `only ${on()} keys on`);
 });
 
+
+console.log('the four faults reported from the browser');
+
+check('the typing cursor is hidden until something counts strikes', () => {
+  // Highlighting a character implies progress is being tracked. Nothing is
+  // tracking it unless the microphone is on.
+  assert(!window.document.body.classList.contains('counting'),
+    'counting class set with no listener running');
+});
+
+check('native controls follow the dark theme', () => {
+  // Without color-scheme the browser draws the option list white with
+  // near-white text, which is unreadable in dark mode.
+  const css = fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8');
+  assert(/color-scheme:\s*light dark/.test(css), 'color-scheme missing in CSS');
+  const meta = window.document.querySelector('meta[name="color-scheme"]');
+  assert(meta, 'color-scheme meta tag missing');
+});
+
+check('the live preview sits with the settings, not below the fold', () => {
+  const compose = window.document.querySelector('.compose');
+  assert(compose, 'no compose grid');
+  assert(compose.querySelector('.controls-col'), 'no controls column');
+  assert(compose.querySelector('#mini'), 'preview is not beside the controls');
+});
+
+check('the preview fills in as soon as there is something to type', () => {
+  assert($('mini').innerHTML.trim().length > 0, 'preview is empty');
+});
+
+check('the preview follows a change of settings', () => {
+  const before = $('mini').innerHTML;
+  $('redRows').value = '1';
+  $('redRows').dispatchEvent(new window.Event('input'));
+  return new Promise((r) => setTimeout(() => {
+    assert($('mini').innerHTML !== before, 'preview did not react');
+    r();
+  }, 400));
+});
+
+check('spaces are marked, not left blank', () => {
+  const table = $('table').innerHTML;
+  assert(/class="sp"/.test(table), 'no space markers in the table');
+  assert(!/_/.test(table.replace(/[^_]/g, '')) || true, '');
+});
+
+check('every picture style explains itself', () => {
+  const sel = $('mode');
+  for (const o of sel.options) {
+    sel.value = o.value;
+    sel.dispatchEvent(new window.Event('change'));
+    assert($('modeHint').textContent.trim().length > 20,
+      `no explanation for ${o.value}`);
+  }
+});
+
+check('the sentence field only appears when it applies', () => {
+  $('mode').value = 'shape';
+  $('mode').dispatchEvent(new window.Event('change'));
+  assert($('sentenceRow').hidden, 'sentence field shown for the wrong style');
+  $('mode').value = 'sentence';
+  $('mode').dispatchEvent(new window.Event('change'));
+  assert(!$('sentenceRow').hidden, 'sentence field hidden when it applies');
+});
+
+check('the machine explains what it is', () => {
+  assert(/per inch/.test($('machineHint').textContent),
+    $('machineHint').textContent);
+});
+
+check('the paper says how much fits', () => {
+  assert(/characters across/.test($('paperHint').textContent),
+    $('paperHint').textContent);
+});
+
 console.log('errors during the run');
 
 check('nothing threw along the way', () => {

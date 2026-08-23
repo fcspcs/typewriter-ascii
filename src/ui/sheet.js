@@ -124,8 +124,11 @@ export function renderTable(host, lines, colours, startLine = 0) {
     const runs = runsOf(line, colours?.[i]);
     const text = runs.length
       ? runs.map((r) => {
-          const sym = r.space ? '_' : esc(r.ch);
-          const t = r.n > 1 ? `${r.n}${sym}` : sym;
+          // Spaces get a tinted marker, not an underscore: an underscore is
+          // also a character you can type, so using it for "space" is one
+          // more thing to misread.
+          if (r.space) return `<span class="sp">${'\u00b7'.repeat(r.n)}</span>`;
+          const t = r.n > 1 ? `${r.n}${esc(r.ch)}` : esc(r.ch);
           return r.red ? `<span class="red">${t}</span>` : t;
         }).join('  ')
       : '<span style="opacity:.4">empty</span>';
