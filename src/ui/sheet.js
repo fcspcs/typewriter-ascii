@@ -118,8 +118,13 @@ export function paintStrike(els, lines, colours, at, strike) {
 
 /**
  * The reference table. Same information, all lines at once.
+ *
+ * Numbered from the motif, like the sheet above it, the progress counter and
+ * the typing sheet in the PDF. It used to add the paper feed on top, so the
+ * first line of a word centred on A4 was called line 32 here and line 1
+ * everywhere else — in the one panel headed "for looking things up".
  */
-export function renderTable(host, lines, colours, startLine = 0) {
+export function renderTable(host, lines, colours) {
   host.innerHTML = lines.map((line, i) => {
     const runs = runsOf(line, colours?.[i]);
     const text = runs.length
@@ -132,7 +137,7 @@ export function renderTable(host, lines, colours, startLine = 0) {
           return r.red ? `<span class="red">${t}</span>` : t;
         }).join('  ')
       : '<span style="opacity:.4">empty</span>';
-    return `<tr data-i="${i}"><td class="n">${i + 1 + startLine}</td>` +
+    return `<tr data-i="${i}"><td class="n">${i + 1}</td>` +
            `<td class="rn">${text}</td></tr>`;
   }).join('');
   return [...host.querySelectorAll('tr')];

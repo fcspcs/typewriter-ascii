@@ -13,8 +13,8 @@ import {
 } from '../core/machine.js';
 import { buildAtlas } from '../core/glyphs.js';
 import {
-  toInk, blur, contrast, edges, outline, cropToContent, normalise,
-  fitGrid, toCharacters, toSentence, cellAspect, keystrokes,
+  toInk, blur, contrast, outline, cropToContent, normalise,
+  fitGrid, toCharacters, toSentence, cellAspect,
 } from '../core/convert.js';
 import {
   inkPlan, INK_SCHEMES, inkTally, inkLevels, parseRows, strikesInLine, runsOf,
@@ -119,6 +119,17 @@ function fillSelects(saved) {
   if (saved.invert) $('invert').value = saved.invert;
   if (saved.sentence) $('sentence').value = saved.sentence;
   if (saved.landscape) $('landscape').checked = true;
+
+  /*
+   * Where you had got to, restored once at startup.
+   *
+   * It used to be re-read from storage at the end of every single redraw,
+   * which made a stored number outrank the running one on any path that had
+   * not written to storage yet. convert() clamps it to the motif, so a saved
+   * line past the end of a shorter one lands on the last line rather than
+   * nowhere.
+   */
+  if (Number.isInteger(saved.at) && saved.at >= 0) app.at = saved.at;
 }
 
 /**
@@ -716,11 +727,22 @@ function draw() {
     };
   });
 
-  app.rows = renderTable($('table'), lines, colours, app.setup?.advance ?? 0);
+  /*
+   * The table numbers the lines of the *motif*, the same as everywhere else.
+   *
+   * It used to add the paper feed, so line one of a word centred on A4 was
+   * called line 32 - while the sheet above it, the progress counter and the
+   * typing sheet in the PDF all called it line one. Four places, two
+   * different numbering schemes, and the one that disagreed was the one
+   * headed "for looking things up".
+   *
+   * Motif numbering is the right one because it is the only one you can
+   * check: the paper feed is done once, before typing, and after that
+   * nothing on the page or the machine tells you which absolute line of the
+   * sheet you are on.
+   */
+  app.rows = renderTable($('table'), lines, colours);
   app.rows.forEach((tr, i) => { tr.onclick = () => go(i); });
-
-  const saved = load();
-  if (saved.at != null && saved.at < lines.length) app.at = saved.at;
 
   paint();
 }
@@ -976,6 +998,11 @@ function wire() {
     app.strike = Math.max(0, app.strike - 1);
     app.tracker?.strike(-1);
     paintStrike(app.els, app.lines, app.colours, app.at, app.strike);
+    // The readout is the only thing that says where the count now is. It
+    // was left showing the number before the correction, so pressing -1
+    // appeared to do nothing at all.
+    $('strikes').textContent =
+      `${app.strike} / ${strikesInLine(app.lines[app.at] ?? '')}`;
   };
   $('sens').oninput = () => {
     if (app.listener) app.listener.sensitivity = +$('sens').value / 100;
@@ -1291,9 +1318,13 @@ function openCharset() {
       return;
     }
     app.chosen.clear();
-    repaint();
+    // Both views of the same set, or they contradict each other. Learning
+    // used to clear the keyboard and leave the text field listing all 88
+    // characters of the old machine, so the dialog showed "nothing
+    // selected" and "everything selected" side by side.
+    repaint(); sync();
     $('learn').textContent = 'stop learning';
-    learning = learnByTyping(app.chosen, repaint, (n) => {
+    learning = learnByTyping(app.chosen, () => { repaint(); sync(); }, (n) => {
       $('learnNote').textContent = `${n} characters`;
     });
     $('learnNote').textContent = 'Press every key your machine has.';

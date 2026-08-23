@@ -877,6 +877,102 @@ await check('clicking a character in the open line moves the count there', async
     `the count reads "${$('strikes').textContent}"`);
 });
 
+console.log('the app disagreeing with itself');
+
+await check('every panel numbers the lines the same way', async () => {
+  // The table used to add the paper feed, so line one of a word centred on
+  // A4 was called line 32 there and line 1 in the sheet, the progress
+  // counter and the typing sheet in the PDF. Four places, two schemes, and
+  // the odd one out was the panel headed "for looking things up".
+  //
+  // Motif numbering is the checkable one: the paper feed happens once,
+  // before typing, and afterwards nothing on the page or the machine says
+  // which absolute line of the sheet you are on.
+  await typeWord('HI', 'block');
+  const nums = [...window.document.querySelectorAll('#table tr td.n')]
+    .map((e) => +e.textContent);
+  const lines = window.document.querySelectorAll('.sheet .ln').length;
+  assert(nums[0] === 1, `the table starts at line ${nums[0]}, not 1`);
+  assert(nums[nums.length - 1] === lines,
+    `the table ends at ${nums[nums.length - 1]} for ${lines} lines`);
+  assert($('count').textContent.includes(`/ ${lines} lines`),
+    `the counter says "${$('count').textContent}" for ${lines} lines`);
+});
+
+await check('the line you are on is not re-read from storage on every redraw',
+  async () => {
+    // draw() ended by reloading `at` from localStorage, which made a stored
+    // number outrank the running one on any path that had not written to
+    // storage yet. A resize is the plain case.
+    await typeWord('HELLO', 'block');
+    $('restart').click();
+    await wait(60);
+    $('next').click();
+    $('next').click();
+    await wait(60);
+    const at = () => [...window.document.querySelectorAll('.sheet .ln')]
+      .findIndex((e) => e.classList.contains('now'));
+    const before = at();
+    assert(before === 2, `walked to ${before}, expected 2`);
+
+    window.dispatchEvent(new window.Event('resize'));
+    await wait(80);
+    assert(at() === before, `a redraw moved the line from ${before} to ${at()}`);
+  });
+
+await check('minus one moves the readout, not just the highlight', async () => {
+  // The readout is the only thing that says where the count is. It was left
+  // showing the number from before the correction, so the button looked
+  // like it did nothing.
+  await typeWord('HELLO', 'block');
+  $('restart').click();
+  await wait(60);
+  const open = window.document.querySelector('.sheet .ln.now');
+  [...open.querySelectorAll('.c')][4].click();
+  await wait(40);
+  assert(/^4 \//.test($('strikes').textContent),
+    `expected to be at 4, reads "${$('strikes').textContent}"`);
+
+  $('back1').click();
+  await wait(40);
+  assert(/^3 \//.test($('strikes').textContent),
+    `after -1 the readout still says "${$('strikes').textContent}"`);
+});
+
+await check('learning from typing clears both views of the character set',
+  async () => {
+    // It cleared the keyboard and left the text field listing all 88
+    // characters of the old machine, so the dialog showed "nothing chosen"
+    // and "everything chosen" side by side.
+    $('editCharset').click();
+    await wait(40);
+    const keysOn = () =>
+      window.document.querySelectorAll('#keyboard .key.on').length;
+
+    $('learn').click();
+    await wait(40);
+    assert(keysOn() === 0, `${keysOn()} keys still lit after clearing`);
+    assert($('charsetText').value === '',
+      `the text field still lists ${$('charsetText').value.length} characters`);
+
+    window.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'q', bubbles: true }));
+    window.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'w', bubbles: true }));
+    await wait(40);
+    assert(keysOn() === 2, `${keysOn()} keys lit after two keystrokes`);
+    assert($('charsetText').value === 'qw',
+      `the text field says "${$('charsetText').value}" while learning`);
+
+    $('learn').click();
+    await wait(40);
+    // Leave the machine as it was for the tests that follow.
+    window.document.querySelector('[data-pick="all"]').click();
+    $('charsetDialog').close?.();
+    $('charsetDialog').dispatchEvent(new window.Event('close'));
+    await wait(300);
+  });
+
 console.log('errors during the run');
 
 await check('nothing threw along the way', () => {
