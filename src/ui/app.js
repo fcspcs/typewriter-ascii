@@ -17,7 +17,7 @@ import {
   fitGrid, toCharacters, toSentence, cellAspect, keystrokes,
 } from '../core/convert.js';
 import {
-  inkPlan, INK_SCHEMES, inkTally, parseRows, strikesInLine, runsOf,
+  inkPlan, INK_SCHEMES, inkTally, inkLevels, parseRows, strikesInLine, runsOf,
 } from '../core/runs.js';
 import { letter, STYLES, usesTwo } from '../core/lettering.js';
 import { StrikeListener, LineTracker, METER_FULL_SCALE } from '../core/listen.js';
@@ -188,8 +188,13 @@ function syncInkControls() {
   }
 
   const twoSurface = currentTab() === 'text' && usesTwo($('letterStyle').value);
-  const offered = INK_SCHEMES.filter(
-    (s) => s.id !== 'none' && (s.id !== 'shadow' || twoSurface));
+  // Depth and accent grade a motif from faint to heavy. With a single ink
+  // level there is nothing to grade: the slider would travel its whole
+  // length and either do nothing or turn everything red. Leave them out.
+  const graded = inkLevels(app.lines, app.atlas) > 1;
+  const offered = INK_SCHEMES.filter((s) => s.id !== 'none'
+    && (s.id !== 'shadow' || twoSurface)
+    && (!['depth', 'accent'].includes(s.id) || graded));
 
   const wanted = $('ink').value;
   const ids = offered.map((s) => s.id).join(',');

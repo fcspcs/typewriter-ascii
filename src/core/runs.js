@@ -141,6 +141,27 @@ export function inkPlan(lines, { scheme = 'none', atlas = null, amount = 0.5,
    * the schemes still do something sensible in tests and on paper. */
   const weight = inkWeights(atlas);
 
+  /*
+   * The tonal schemes take their cut from the motif, not from an abstract
+   * scale.
+   *
+   * The first version compared each character's ink against the slider
+   * directly. On a photograph that is fine — there are sixty different
+   * characters and the range is full. On lettering there are two, `#` and
+   * `+`, sitting at 0.98 and 0.33: the slider then did nothing at all for
+   * its first third, jumped to 43% red, and did nothing for the rest. On a
+   * hollow or block face, with a single character, it did nothing anywhere
+   * across its whole travel.
+   *
+   * So the amount now means what it says — *this fraction of the strikes
+   * turns red* — and the cut is placed at whichever ink level comes closest
+   * to that fraction. On a photograph it is smooth; on two-character
+   * lettering it snaps, because there is nothing in between to snap to.
+   */
+  const cut = (scheme === 'depth' || scheme === 'accent')
+    ? tonalCut(lines, weight, amount, scheme)
+    : 0;
+
   const map = lines.map((line, r) => {
     const out = [];
     for (let c = 0; c < width; c++) {
@@ -162,14 +183,14 @@ export function inkPlan(lines, { scheme = 'none', atlas = null, amount = 0.5,
        * tonal range goes red and the picture gains a background.
        */
       case 'depth':
-        return w < amount;
+        return w <= cut;
 
       /*
        * The opposite, and the more theatrical one: the heaviest strikes go
        * red, so the picture keeps its drawing in black and the accents burn.
        */
       case 'accent':
-        return w > 1 - amount * 0.7;
+        return w >= cut;
 
       /*
        * Lettering styles that already produce two kinds of cell — a face and
@@ -208,6 +229,50 @@ export function inkPlan(lines, { scheme = 'none', atlas = null, amount = 0.5,
         return false;
     }
   }
+}
+
+/**
+ * How many distinct ink levels a motif actually contains.
+ *
+ * The tonal schemes grade a motif from faint to heavy. With a single level
+ * there is nothing to grade and they cannot do anything at all, so the
+ * interface uses this to leave them out rather than offer a control that
+ * does nothing.
+ */
+export function inkLevels(lines, atlas = null) {
+  const weight = inkWeights(atlas);
+  const seen = new Set();
+  for (const line of lines) {
+    for (const ch of line) if (ch !== ' ') seen.add(weight(ch));
+  }
+  return seen.size;
+}
+
+/**
+ * Find the ink level that splits the strikes closest to the wanted fraction.
+ *
+ * Never returns a cut that colours nothing: the scheme has been chosen, so
+ * some red is the whole point, and "you asked for red and got none" is the
+ * exact fault this is here to prevent.
+ */
+function tonalCut(lines, weight, amount, scheme) {
+  const all = [];
+  for (const line of lines) {
+    for (const ch of line) if (ch !== ' ') all.push(weight(ch));
+  }
+  if (!all.length) return scheme === 'depth' ? -1 : Infinity;
+
+  const levels = [...new Set(all)].sort((a, b) => a - b);
+  let best = levels[scheme === 'depth' ? 0 : levels.length - 1];
+  let bestErr = Infinity;
+  for (const lv of levels) {
+    const hit = scheme === 'depth'
+      ? all.filter((v) => v <= lv).length
+      : all.filter((v) => v >= lv).length;
+    const err = Math.abs(hit / all.length - amount);
+    if (err < bestErr) { bestErr = err; best = lv; }
+  }
+  return best;
 }
 
 /**

@@ -418,6 +418,68 @@ check('the recent error is reported, so the user can be told', () => {
   assert.strictEqual(t.drift, -2, `drift reads ${t.drift}`);
 });
 
+/* ── mechanism noise ─────────────────────────────────────────── */
+
+console.log('telling a strike from the machine coming back to rest');
+
+check('a rebound 8 dB below its own strike is not a second strike', () => {
+  /*
+   * Measured on a real Olympia SM7: 22 keystrokes typed deliberately slowly,
+   * 61 acoustic events in the recording, 56 counted. The 39 extras sat 6-20
+   * dB below the strike that caused them, 15-190 ms later.
+   *
+   * Spectral flux cannot tell them apart, because a key returning starts a
+   * sound just as definitely as a key being struck. Only loudness can.
+   */
+  const sr = 48000;
+  const d = new StrikeDetector(sr, { sensitivity: 0.6 });
+  let n = 0;
+  d.onStrike = () => n++;
+
+  const x = new Float32Array(sr * 6);
+  const burst = (atMs, amp) => {
+    const at = Math.round((atMs / 1000) * sr);
+    for (let i = 0; i < sr * 0.06; i++) {
+      // noise burst with a fast decay: broadband, like a key hitting paper
+      x[at + i] += amp * (Math.random() * 2 - 1) * Math.exp(-i / (sr * 0.012));
+    }
+  };
+
+  // eight strikes, each followed by its own rebound 120 ms later at -8 dB
+  for (let k = 0; k < 8; k++) {
+    burst(1000 + k * 600, 0.5);
+    burst(1120 + k * 600, 0.5 * 10 ** (-9 / 20));
+  }
+  for (let i = 0; i + 480 <= x.length; i += 480) d.push(x.subarray(i, i + 480));
+
+  assert.ok(n <= 10, `counted ${n} for 8 strikes: rebounds are being counted`);
+  assert.ok(n >= 6, `counted ${n} for 8 strikes: real strikes are being lost`);
+});
+
+check('a softer strike still counts, so easing off is not silence', () => {
+  // The reference decays, otherwise the hardest strike ever heard sets the
+  // bar and a typist easing off goes unheard. Measured without decay: 19 of
+  // 22 on the labelled recording.
+  const sr = 48000;
+  const d = new StrikeDetector(sr, { sensitivity: 0.6 });
+  let n = 0;
+  d.onStrike = () => n++;
+
+  const x = new Float32Array(sr * 8);
+  const burst = (atMs, amp) => {
+    const at = Math.round((atMs / 1000) * sr);
+    for (let i = 0; i < sr * 0.06; i++) {
+      x[at + i] += amp * (Math.random() * 2 - 1) * Math.exp(-i / (sr * 0.012));
+    }
+  };
+  // one hard strike, then six progressively softer ones a second apart
+  burst(800, 0.8);
+  for (let k = 0; k < 6; k++) burst(1800 + k * 1000, 0.8 * 10 ** (-(k + 2) / 20));
+  for (let i = 0; i + 480 <= x.length; i += 480) d.push(x.subarray(i, i + 480));
+
+  assert.ok(n >= 6, `only ${n} of 7 strikes heard as the typist eased off`);
+});
+
 /* ── calibration ─────────────────────────────────────────────── */
 
 console.log('calibration');

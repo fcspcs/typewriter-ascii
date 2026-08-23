@@ -103,6 +103,36 @@ export const DEFAULTS = {
    */
   minIntervalMs: 90,
   /**
+   * How far below the recent strike level a sound may fall and still count,
+   * dB. Above this it is a strike; below it, mechanism noise.
+   *
+   * This is the parameter that fixes the 2.5x over-count measured on a real
+   * Olympia SM7 recording (22 strikes typed, 56 counted). Deliberately slow
+   * typing, so every key had time to rebound before the next: 61 acoustic
+   * events for 22 keystrokes. The 39 extras sat 6-20 dB below the strike
+   * that caused them, 15-190 ms later - key returning, type bar falling
+   * back, carriage advancing.
+   *
+   * A refractory window cannot separate those: measured on the same
+   * recording, even 450 ms only reached 25, and 450 ms would make ordinary
+   * typing impossible. Loudness can, because the mechanism is driven by the
+   * strike and is always the quieter of the two.
+   *
+   * Honest caveat: fitted to ONE labelled recording. It is the only labelled
+   * recording in existence for this project.
+   */
+  reboundDb: 8,
+  /**
+   * Half-life of the strike-level reference, seconds.
+   *
+   * Without decay the reference is set by the hardest strike ever heard and
+   * everything softer is thrown away; measured, that gave 19 of 22. Decaying
+   * it lets the detector follow a typist easing off, or the microphone being
+   * moved, without opening the gate to mechanism noise inside a single
+   * keystroke.
+   */
+  strikeRefHalfLifeS: 5,
+  /**
    * How much history the running floor and spread are computed over, ms.
    *
    * Too short and the floor climbs into the typing itself: during sustained
@@ -366,6 +396,16 @@ export class StrikeDetector {
     this.quiet = -200;
     this.quietDue = 0;
 
+    // Reference level of a real strike, and when it was last updated.
+    // null until the first strike has been heard.
+    this.strikeRef = null;
+    this.strikeRefAt = 0;
+    // Short peak-hold of the envelope, so the level compared against the
+    // reference is the strike's own peak and not whatever the envelope
+    // happened to read on the exact frame the flux peaked.
+    this.peakHold = -200;
+    this.peakHoldAt = -1e9;
+
     // the loud stretch currently open, if any
     this.loudSince = null;
     this.loudLast = 0;
@@ -400,6 +440,13 @@ export class StrikeDetector {
         this.level = 10 * Math.log10(this.envSum / this.envN + 1e-20);
         this.envSum = 0;
         this.envN = 0;
+        // Peak-hold over the last 40 ms. The onset test runs one frame
+        // behind the audio, so by the time a strike is judged its true peak
+        // has already passed through here.
+        if (this.level > this.peakHold || at - this.peakHoldAt > 40) {
+          this.peakHold = this.level;
+          this.peakHoldAt = at;
+        }
         this._carriage(this.level, at);
       }
 
@@ -473,6 +520,26 @@ export class StrikeDetector {
     if (prev <= prevThr) return;
     if (!(prev > before && prev >= score)) return;
     if (prevAt - this.lastStrikeAt < this.opt.minIntervalMs) return;
+
+    /*
+     * Is this a strike, or the machine coming back to rest?
+     *
+     * Spectral flux answers "did something start here", and a key returning
+     * starts a sound just as definitely as a key being struck. Only loudness
+     * tells them apart: the mechanism is driven by the strike and is always
+     * the quieter of the two.
+     */
+    const peak = Math.max(this.peakHold, this.level);
+    if (this.strikeRef !== null) {
+      const elapsed = (prevAt - this.strikeRefAt) / 1000;
+      const ref = this.strikeRef
+        - (6 * elapsed) / this.opt.strikeRefHalfLifeS;
+      if (peak < ref - this.opt.reboundDb) return;
+      this.strikeRef = Math.max(ref, peak);
+    } else {
+      this.strikeRef = peak;
+    }
+    this.strikeRefAt = prevAt;
 
     this.lastStrikeAt = prevAt;
     if (this.loudSince !== null) this.loudStrikes++;
