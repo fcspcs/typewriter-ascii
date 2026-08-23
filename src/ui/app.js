@@ -15,9 +15,12 @@ import {
   toInk, blur, contrast, edges, outline, cropToContent,
   fitGrid, toCharacters, toSentence, cellAspect, keystrokes,
 } from '../core/convert.js';
-import { colourMap, inkTally, parseRows, strikesInLine } from '../core/runs.js';
+import {
+  colourMap, inkTally, parseRows, strikesInLine, runsOf,
+} from '../core/runs.js';
 import { letter } from '../core/lettering.js';
 import { StrikeListener } from '../core/listen.js';
+import { buildSheetPdf, downloadPdf } from '../core/pdf.js';
 import {
   renderSheet, paintSheet, paintStrike, renderTable, paintTable, keepInView,
 } from './sheet.js';
@@ -370,6 +373,7 @@ function wire() {
   });
 
   $('full').onclick = toggleFull;
+  $('pdf').onclick = savePdf;
   $('listen').onclick = toggleListen;
   $('back1').onclick = () => {
     app.strike = Math.max(0, app.strike - 1);
@@ -414,6 +418,23 @@ function toggleFull() {
   $('full').textContent = on ? 'exit full screen' : 'full screen';
   draw();
   keepInView(app.els[app.at], headerHeight());
+}
+
+/** A printable version: the sheet at true size, then what to type. */
+function savePdf() {
+  if (!app.lines.length) return;
+  const text = buildSheetPdf({
+    lines: app.lines,
+    colours: app.colours,
+    paper: app.paper,
+    machine: app.machine,
+    setup: app.setup,
+    instructions: instructions(),
+    tally: inkTally(app.lines, app.colours),
+    runsOf,
+    title: 'Typewriter ASCII',
+  });
+  downloadPdf(text, 'typewriter-ascii.pdf');
 }
 
 /* ── listening ───────────────────────────────────────────────── */
