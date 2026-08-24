@@ -122,6 +122,15 @@ export const DEFAULTS = {
    * recording in existence for this project.
    */
   reboundDb: 8,
+  /*
+   * A time *window* on the gate above — reject quiet only shortly after a
+   * strike — was tried against the labelled SM7 takes and made things
+   * worse (total miscount 39 → 64). The mechanism noise does not stop at
+   * any window a fast typist would tolerate: key releases arrive up to
+   * half a second after their strike. Recorded here so the idea is not
+   * re-invented; the decay of the reference below is the surviving
+   * mechanism for letting a typist ease off.
+   */
   /**
    * Half-life of the strike-level reference, seconds.
    *
@@ -163,12 +172,13 @@ export const DEFAULTS = {
   /**
    * Longest quiet gap tolerated inside one loud stretch, ms.
    *
-   * Small on purpose. A carriage return is genuinely continuous — lever,
-   * travel, margin stop — whereas consecutive keystrokes have real silence
-   * between them even at speed. This is the number that decides whether the
-   * two are told apart, so it is kept below the shortest gap typing leaves.
+   * Originally 25, on the theory that a return is continuous and typing is
+   * not. The real SM7 recordings (2026-08-24) said otherwise on both ends:
+   * its return *stretches* carry short internal lulls, and typing is kept
+   * out by the level test rather than by this gap. Fitted against seven
+   * labelled takes, 80 sat in the middle of the winning plateau.
    */
-  returnGapMs: 25,
+  returnGapMs: 80,
   /**
    * How far above the room counts as "loud", dB.
    *
@@ -193,6 +203,41 @@ export const DEFAULTS = {
    * a chair moving. Fast typing is rejected by the gap rule above.
    */
   returnLevelDb: 4,
+  /**
+   * Longest quiet spell between the parts of one carriage return, ms.
+   *
+   * A return is not one sound but a train of them, and not a continuous
+   * one either. Measured on the real Olympia SM7 (ten labelled returns,
+   * 2026-08-24): each produced *two* separate loud stretches — one short,
+   * around 300 ms, and one long, 700–1200 ms — between 0.7 and 2.3 seconds
+   * apart. A gap rule tuned to typing can never span that, so treating
+   * each stretch alone counted most returns twice. Return-grade stretches
+   * closer together than this are therefore the same return, and the event
+   * is reported once, when the train has been over for this long.
+   *
+   * The cost is honesty about the delay: the report arrives this much
+   * after the last clatter. The reset it triggers still lands before the
+   * next line's typing is far along, which is what the count needs.
+   *
+   * Fitted at 1800 against the labelled SM7 takes (18-neighbour plateau).
+   * The one pair of return components measured 2.3 s apart still splits;
+   * merging it needed 2400+, which cost more elsewhere.
+   */
+  returnClusterMs: 1800,
+  /**
+   * Longest a whole carriage-return train may span, ms.
+   *
+   * A return has a mechanical end: the measured SM7 trains fit inside
+   * 3.6 s including the pause between their parts. This cap is not tuning,
+   * it is a safety wall: if the loudness reference below ever goes stale —
+   * speech before typing starts once set it far too low — every stretch of
+   * ordinary typing grades as "louder than a strike" and the cluster grows
+   * without bound, swallowing half a recording as one giant "return".
+   * Measured before the cap existed: 47 keystrokes typed, 4 reported,
+   * the rest attributed to a 30-second return no machine can make.
+   * A cluster that outgrows this is discarded, not reported.
+   */
+  returnMaxMs: 4000,
   /** A loud stretch this short is taken as an ordinary strike, for scale. */
   strikeMaxMs: 150,
   /**
@@ -411,6 +456,8 @@ export class StrikeDetector {
     this.loudLast = 0;
     this.loudPeak = -Infinity;
     this.loudStrikes = 0;
+    // the carriage-return train currently being gathered, if any
+    this.cluster = null;
   }
 
   get sensitivity() { return this.opt.sensitivity; }
@@ -543,17 +590,46 @@ export class StrikeDetector {
 
     this.lastStrikeAt = prevAt;
     if (this.loudSince !== null) this.loudStrikes++;
+    // A strike heard in the lull *between* the parts of a return train is
+    // almost certainly the train's own clatter — but only if another part
+    // follows. Remember it; _closeCluster keeps the ones the train's final
+    // extent covers and releases the rest, which were the next line
+    // starting while the cluster still waited.
+    else if (this.cluster) this.cluster.pending.push(prevAt);
+    // An accepted strike is the best available measure of what a strike
+    // sounds like here, so it feeds the reference the carriage-return test
+    // compares against. Accepted strikes rather than loud envelope blips,
+    // because blips include speech and rustle: measured on a real take,
+    // twenty seconds of talk before the typing set the reference so low
+    // that the typing itself graded as carriage returns. Two exclusions,
+    // both because a return's clatter is not a keystroke: nothing while a
+    // return is being gathered, and nothing from deep inside a loud
+    // stretch already too long to be a strike — a real strike is accepted
+    // moments after its own stretch opens, so this costs it nothing, but
+    // it stops a lone carriage return from certifying itself.
+    if (this.cluster === null
+      && (this.loudSince === null || prevAt - this.loudSince <= this.opt.strikeMaxMs)) {
+      this.strikePeaks.push(peak);
+    }
     this.onStrike({ strength: prev, at: prevAt, level });
     return prev;
   }
 
   /**
-   * Carriage return: a stretch of loud that is far too long to be a strike.
+   * Carriage return: a *train* of loud stretches, gathered into one event.
    *
-   * Reported when the stretch *ends*, which is also when the carriage has
-   * arrived and the next line is ready — so the delay is honest rather than
-   * awkward. `strikesInside` lets the caller undo whatever the clatter of
-   * the return added to the count before resetting it.
+   * The first version reported each loud stretch by itself, and on the real
+   * SM7 that counted most returns twice: a return there is two separate
+   * loud stretches, 0.7–2.3 s apart, with genuine quiet between them — see
+   * `returnClusterMs`. So stretches that are return-grade (long for a
+   * strike, and louder than one) open a cluster, later return-grade
+   * stretches join it, and the return is reported once the train has been
+   * over for `returnClusterMs`. Ordinary typing neither opens nor extends
+   * a cluster, so a return followed promptly by the next line does not
+   * swallow it.
+   *
+   * `strikesInside` lets the caller undo whatever the clatter of the
+   * return added to the count before resetting it.
    */
   _carriage(level, at) {
     const o = this.opt;
@@ -568,6 +644,12 @@ export class StrikeDetector {
       this.quiet = this.envWindow.quantile(0.2);
     }
     const quiet = this.quiet;
+
+    // A cluster that has waited long enough for another part is complete.
+    if (this.cluster && this.loudSince === null
+        && at - this.cluster.lastEnd > o.returnClusterMs) {
+      this._closeCluster();
+    }
 
     if (level > quiet + o.returnLoudDb) {
       if (this.loudSince === null) {
@@ -585,23 +667,76 @@ export class StrikeDetector {
 
     const durationMs = this.loudLast - this.loudSince;
     const start = this.loudSince;
+    const end = this.loudLast;
     const strikes = this.loudStrikes;
     const peak = this.loudPeak;
     this.loudSince = null;
+    this._stretchEnd(start, end, durationMs, strikes, peak);
+  }
 
-    // Short stretches are what an ordinary keystroke looks like on this
-    // envelope. Remembering how loud they are gives the long-stretch test
-    // something to be measured against that is specific to this machine, this
-    // microphone and this distance — none of which we can know in advance.
-    if (durationMs <= o.strikeMaxMs) {
-      if (peak > quiet + o.returnLoudDb) this.strikePeaks.push(peak);
-      return;
+  /**
+   * One loud stretch has ended: possibly part of a carriage return.
+   * Separate from `_carriage` so `flush()` can close a stretch that was
+   * still open when the audio stopped.
+   */
+  _stretchEnd(start, end, durationMs, strikes, peak) {
+    const o = this.opt;
+
+    // Return-grade: long for a strike, and louder than one. The measured
+    // SM7 returns peak 10–15 dB above the typing around them; nothing an
+    // ordinary keystroke produces passes both tests at once.
+    const grade = durationMs > o.strikeMaxMs
+      && this.strikePeaks.n >= o.strikesBeforeReturn
+      && peak >= this.strikePeaks.median + o.returnLevelDb;
+
+    // Too late to be part of the open train, whatever this stretch is.
+    if (this.cluster && start - this.cluster.lastEnd > o.returnClusterMs) {
+      this._closeCluster();
     }
-    if (durationMs < o.returnMinMs) return;
-    if (this.strikePeaks.n < o.strikesBeforeReturn) return;
-    if (peak < this.strikePeaks.median + o.returnLevelDb) return;
 
-    this.onReturn({ at: start, durationMs, level: peak, strikesInside: strikes });
+    if (grade) {
+      if (this.cluster) {
+        this.cluster.lastEnd = end;
+        this.cluster.peak = Math.max(this.cluster.peak, peak);
+        this.cluster.strikes += strikes;
+        // Longer than any return the machine can make: whatever this is,
+        // it is not one, and holding it open would only let it grow.
+        if (end - this.cluster.start > o.returnMaxMs) this.cluster = null;
+      } else {
+        this.cluster = { start, lastEnd: end, peak, strikes, pending: [] };
+      }
+    }
+  }
+
+  /** The train is over; report it if it amounted to a carriage return. */
+  _closeCluster() {
+    const c = this.cluster;
+    this.cluster = null;
+    const span = c.lastEnd - c.start;
+    if (span < this.opt.returnMinMs || span > this.opt.returnMaxMs) return;
+    const inside = c.strikes + c.pending.filter((t) => t <= c.lastEnd).length;
+    this.onReturn({
+      at: c.start, durationMs: span, level: c.peak, strikesInside: inside,
+    });
+  }
+
+  /**
+   * The audio has ended — a recording ran out, or listening stopped. What
+   * follows is silence forever, so anything still open can be judged now.
+   * Without this, a return in the last two seconds of a recording would
+   * simply vanish, and a test fixture would be measuring the tail length.
+   */
+  flush() {
+    if (this.loudSince !== null) {
+      const durationMs = this.loudLast - this.loudSince;
+      const start = this.loudSince;
+      const end = this.loudLast;
+      const strikes = this.loudStrikes;
+      const peak = this.loudPeak;
+      this.loudSince = null;
+      this._stretchEnd(start, end, durationMs, strikes, peak);
+    }
+    if (this.cluster) this._closeCluster();
   }
 }
 
@@ -803,6 +938,9 @@ export class StrikeListener {
 
   stop() {
     this.running = false;
+    // Judge anything still open before the stream goes away — a return in
+    // the last moments before stopping should still be reported.
+    this.detector?.flush();
     if (this.node) {
       this.node.onaudioprocess = null;
       if (this.node.port) this.node.port.onmessage = null;

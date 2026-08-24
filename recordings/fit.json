@@ -1,0 +1,14 @@
+{
+  "sensitivity": 0.75,
+  "minIntervalMs": 120,
+  "reboundDb": 13,
+  "returnMinMs": 250,
+  "returnGapMs": 80,
+  "returnLoudDb": 14,
+  "returnLevelDb": 4,
+  "returnClusterMs": 1800,
+  "strikeError": 39,
+  "returnError": 2,
+  "fittedAt": "2026-08-24",
+  "notes": "Fitted against the seven labelled takes of 2026-08-24 (Olympia SM7, phone ~30 cm). The return values are also the code defaults now. The strike values are this machine's tuning: the five typing takes verify at -1/+2/+1/+2/0 of 276 strikes. The residual error is the space bar's release click (+11 on the spaces-only take) and return clatter on the returns-only take (+22). See docs/listening-research.md Appendix C."
+}

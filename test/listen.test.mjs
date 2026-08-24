@@ -115,6 +115,10 @@ function run(x, phase = 0, opt = {}, block = 480) {
   });
   const y = x.subarray(phase);
   for (let i = 0; i < y.length; i += block) d.push(y.subarray(i, i + block));
+  // The recording is over. A carriage return is reported only once its
+  // train of clatter has clearly ended, and a fixture must not have to
+  // carry seconds of trailing silence to prove that.
+  d.flush();
   return { strikes, returns, detector: d };
 }
 

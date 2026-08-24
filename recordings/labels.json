@@ -1,0 +1,37 @@
+{
+  "Recording0001.wav": {
+    "strikes": 76,
+    "returns": [1, 2],
+    "notes": "Satz 1, zwei Zeilen: 63 + 13 Anschläge, ein Return sicher mitten im Satz (nach 'Himmel'), evtl. einer am Ende."
+  },
+  "Recording0002.wav": {
+    "strikes": 51,
+    "returns": [0, 1],
+    "notes": "Satz 2. Evtl. ein Return am Ende."
+  },
+  "Recording0003.wav": {
+    "strikes": 44,
+    "returns": [0, 1],
+    "notes": "Satz 3, bricht nach 'und k' ab. Evtl. ein Return am Ende."
+  },
+  "Recording0004.wav": {
+    "strikes": 58,
+    "returns": [0, 1],
+    "notes": "Satz 4 ('Nach einem Gewitter...'). Evtl. ein Return am Ende."
+  },
+  "Recording0005.wav": {
+    "strikes": 47,
+    "returns": [0, 1],
+    "notes": "Satz 5. Evtl. ein Return am Ende."
+  },
+  "Recording0006.wav": {
+    "strikes": 10,
+    "returns": 0,
+    "notes": "Zehnmal Leertaste, mal langsamer, mal schneller. Kein Return."
+  },
+  "Recording0007.wav": {
+    "strikes": 0,
+    "returns": 10,
+    "notes": "Zehnmal Wagenrücklauf komplett durchgezogen, keine Anschläge."
+  }
+}

@@ -3,3 +3,12 @@ dist/
 .vercel/
 .DS_Store
 *.log
+
+# Recordings stay local: audio is large and some sources (BBC) must not be
+# redistributed. labels.json and README.md in recordings/ remain tracked.
+recordings/*.wav
+recordings/*.m4a
+recordings/*.mp3
+recordings/*.flac
+recordings/*.ogg
+recordings/*.aac

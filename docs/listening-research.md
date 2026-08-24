@@ -1115,3 +1115,73 @@ The band edges, the 90 ms minimum interval, and every carriage-return
 threshold are the literature's numbers or numbers fitted to recordings of
 other machines. The phase-sweep result is the one claim that does not depend
 on any of that, because it compares the detector against itself.
+
+---
+
+## Appendix C: the SM7 finally speaks (2026-08-24)
+
+Lorenz recorded seven labelled takes on the actual machine, phone ~30 cm
+away: five sentences typed normally — 276 keystrokes over six typed lines,
+with one carriage return mid-sentence where line one wrapped — plus ten
+space-bar presses alone, and ten carriage returns alone. Ground truth is a
+photograph of the typed sheet, counted character by character. The fitting
+harness is `tools/listen-lab.mjs`; labels sit next to the audio in
+`recordings/`. This appendix records what those takes settled, in the order
+the guesses were made above.
+
+### The space bar, §4.3(b), still open
+
+Take 6 gives 22 events for 10 presses: the space bar produces a press and
+a release, the release 4.5–9 dB quieter and 90–500 ms later [measured].
+Neither loudness nor interval separates them — the release sits inside
+the range of a genuinely soft strike, and a time-window on the rebound
+gate was tried and made everything worse (39 → 64), which is recorded at
+`reboundDb` in the source so it is not re-invented. Whether the spectrum
+separates them is the next thing to measure.
+
+### The carriage return, §4.3(a), was two sounds all along
+
+Ten labelled returns each produced a short loud stretch (~300 ms) and a
+long one (700–1200 ms), **0.7–2.3 s apart**, peaking 10–15 dB above the
+typing [measured, take 7]. The single-stretch model counted most of them
+twice — or, mid-typing, not at all. The detector now gathers return-grade
+stretches (long for a strike, louder than one) into a *cluster* and
+reports once, when `returnClusterMs` has passed without another part.
+Three hard lessons from the same take:
+
+- The loudness reference must come from **accepted strikes**, not from
+  loud envelope blips: twenty seconds of speech before one take set the
+  blip-fed reference so low that the typing itself graded as returns, and
+  the cluster swallowed half the recording as one thirty-second "return".
+  `returnMaxMs` is the safety wall against any recurrence.
+- A return's clatter trips the onset detector; strikes heard *between*
+  the parts of a train are attributed to it only if another part follows.
+- A recording that ends, or listening that stops, must `flush()` — a
+  return in the last two seconds otherwise never reports.
+
+### The fitted numbers, and what they verify to
+
+Returns fitted to a 26-neighbour plateau; the winning values are now the
+defaults (`returnGapMs` 25 → 80, `returnClusterMs` 1800). Strikes fitted
+to `sensitivity 0.75, minIntervalMs 120, reboundDb 13` — kept in
+`recordings/fit.json` as this machine's tuning rather than as defaults,
+because the winner sat alone in the grid and 13 dB all but disarms the
+gate that the 22-strike take of Appendix B motivated. Verified through
+the untouched detector, typing takes: **−1, +2, +1, +2, 0** of 63+13, 51,
+44, 58, 47 expected; every return in the typing takes found, including
+the mid-sentence one. The two mechanism-only takes carry the rest: +11 on
+spaces (releases), +22 on returns-only (clatter outside reported
+windows), and returns-only cold-starts by design — nothing can be louder
+than a strike before strikes exist (§"strikesBeforeReturn").
+
+### What the session did not settle
+
+- **Fast typing.** The "one line as fast as you can" take was never
+  recorded, so `minIntervalMs 120` is unproven against speed. It is the
+  first thing the next session should capture.
+- **Speech near the microphone.** Spoken labels cost little here but did
+  produce sub-threshold events; the app should expect the first seconds
+  after the button press to be unclean.
+- **Whether ±1 per line suffices in use.** The LineTracker forgives one;
+  the typing takes fit inside that per line, but only live use on the
+  sheet will say whether the resets land where the typist needs them.
