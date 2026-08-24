@@ -196,8 +196,9 @@
         <p class="hint" id="mExpect"></p>
 
         <p class="hint">
-          Optional: wind on 40 lines, measure first baseline to last.<span
-            class="why" title="Line spacing is six to the inch on very nearly every machine ever built, so this rarely tells you anything new.">?</span>
+          Optional: type <b>40 lines</b> of capital M. Measure the
+          <b>top of the first</b> to the <b>top of the last</b>.<span
+            class="why" title="Top to top, not top to bottom: the same edge on both lines cancels the height of the letter itself and leaves pure paper feed. Measuring to the bottom of the last line adds one capital, which on a typewriter is very nearly a whole line — the reading comes out about a line too long. Line spacing is six to the inch on very nearly every machine ever built, so this rarely tells you anything new.">?</span>
         </p>
 
         <div class="measure-row">
@@ -208,8 +209,9 @@
           </div>
           <div class="field">
             <label for="lMm">First to last, in mm</label>
+            <!-- 39 steps at six lines to the inch: 39 × 25.4 / 6. -->
             <input type="number" id="lMm" min="1" step="0.5"
-                   inputmode="decimal" placeholder="169">
+                   inputmode="decimal" placeholder="165">
           </div>
         </div>
 
@@ -255,19 +257,37 @@
         changes - the paper has not changed.
       -->
       <div class="field">
-        <label class="check">
-          <input type="checkbox" id="landscape">
-          <span>Turn the sheet sideways if it helps</span>
-        </label>
-        <p class="hint" id="landscapeHint"></p>
+        <label for="orientation">Which way the sheet goes</label>
+        <!--
+          A stated choice, not a condition.
+
+          This was "Turn the sheet sideways if it helps", and the app decided
+          afterwards by comparing layouts. That reads well and works badly:
+          the same settings gave an upright sheet or a turned one depending
+          on the motif, so the width slider's ceiling moved on its own and
+          nobody could tell what the sheet would be until after the fact.
+          You are holding the paper. You know which way you put it in.
+        -->
+        <select id="orientation">
+          <option value="upright">Upright (portrait)</option>
+          <option value="sideways">Sideways (landscape)</option>
+        </select>
+        <p class="hint" id="orientationHint"></p>
       </div>
 
       <p class="hint" id="paperHint"></p>
 
       <div class="field" id="widthRow">
         <label for="width">How wide <output id="widthOut"></output></label>
-        <!-- The ceiling is set from the paper at runtime; 66 is A4 at pica. -->
-        <input type="range" id="width" min="10" max="66" value="60">
+        <!--
+          The ceiling is the whole sheet, set at runtime, not the margins.
+
+          It used to stop at the usable area — 66 on an upright A4 — which
+          made a perfectly typeable 80-column motif unreachable because the
+          slider would not go there. Past the margins is a note from setUp(),
+          not a wall; past the edge of the paper is the only real limit.
+        -->
+        <input type="range" id="width" min="10" max="82" value="60">
         <p class="hint" id="widthHint">
           Wider means more detail and a great many more keystrokes.
         </p>

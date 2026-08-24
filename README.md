@@ -140,13 +140,14 @@ size where it makes sense.
 A newline starts a second line of letters, so two short words can be stacked
 where one long one will not fit; a blank line leaves a gap.
 
-**Lines too wide for the sheet break at spaces**, to the margins of whatever
-paper is chosen — `GUTEN MORGEN LYON` in Block is 101 columns on an SM7 at
-pica, against the 82 an upright A4 holds. With landscape allowed the two
-layouts are compared and the sheet turns only when it saves rows. A single
-word too wide to break is left whole rather than hyphenated: the setup
-instructions then say what to change, which is more use than something
-unreadable.
+**Lines too wide for the sheet break at spaces**, to the margins of whichever
+way round the sheet goes in — `GUTEN MORGEN LYON` in Block is 101 columns on
+an SM7 at pica, against the 66 an upright A4 holds inside its margins and the
+100 it holds sideways. The orientation is chosen, not worked out: it used to
+turn the sheet by itself whenever that saved rows, which meant the same
+settings produced different paper depending on the word. A single word too
+wide to break is left whole rather than hyphenated: the setup instructions
+then say what to change, which is more use than something unreadable.
 
 **Raised uses three weights, not two.** An outline drawn in one character
 with the interior in another is a hollow letter with a fill — an edge lit
@@ -221,23 +222,81 @@ here.
 
 ## From the command line
 
-Same modules, no browser:
+Same modules, no browser, no dependencies:
 
 ```sh
 node tools/cli.mjs machines
 node tools/cli.mjs text "HELLO" --style relief
 node tools/cli.mjs text 'PIANO\nSTIMMER' --style block
 node tools/cli.mjs file rose.txt --paper a4 --red 0-15 --pdf out.pdf
+node tools/cli.mjs image drawing.png --mode tone --pdf out.pdf
 ```
 
-Picture conversion is web-only: measuring glyph shapes needs a canvas, and
-faking one on the command line would mean maintaining a second version of
-the part that matters most.
+`--json` on any command puts the whole result on stdout as one object —
+size, keystrokes, margin stops, warnings, and the lines themselves — so a
+script or an agent never has to parse the human output. Failures use the
+same shape (`{"ok": false, "error": …}`) and exit non-zero, rather than a
+stack trace where the answer should be. Full reference, including the JSON
+shapes: [docs/command-line.md](docs/command-line.md).
+
+Pictures are PNG only. Silhouettes and line drawings are what survives the
+trip to a typewriter, and that material is already PNG; a JPEG decoder would
+be several hundred lines of DCT earning its keep on photographs, which do
+not survive the trip anyway. Anything else is turned away by name, with the
+conversion command in the message.
+
+### Why did my picture come out like that?
+
+```sh
+node tools/cli.mjs inspect drawing.png
+```
+
+`inspect` reports what each step of the pipeline did to the ink, and says
+what it makes of the result:
+
+```
+strokes 2.2 px across 1.6% of the frame — a drawing, so the blur is held to 1.1 px
+
+stage       size        strongest   average   inked
+ink         900×900         1.000    0.0089    1.63%
+blur        900×900         0.612    0.0089    4.10%
+normalise   900×900         1.000    0.0325    4.83%
+contrast    900×900         1.000    0.0316    3.91%
+crop        721×664         1.000    0.0535    6.62%
+
+grid 60 × 33, 482 of 1980 cells inked, 536 keystrokes
+```
+
+**strongest** is the darkest single pixel; under `0.04` nothing is typed at
+all, so a value below that means an empty sheet and the finding will name the
+step that caused it. **average** should stay roughly level across the blur —
+a drop there means ink was destroyed rather than spread. Too *much* ink is
+reported as well, because a sheet that is 97% inked is a negative nobody
+turned round, and that one looks like it worked until you sit down to type it.
+
+`--preview out.png` writes the prepared image, which answers the other half
+of the question: the numbers say the ink survived, the picture says whether
+it still looks like the drawing.
+
+### Shapes on the command line
+
+"Follow the shapes" compares each cell against a *rendered* copy of every
+character, and rendering needs a canvas. Without one the command line matches
+by tone instead and says so — it does not quietly hand back a shape match
+that is really a tone match. Three of the four styles are unaffected.
+
+To get the real thing, measure the glyphs once in a browser and pass them
+along:
+
+```sh
+python3 -m http.server 8000      # then open /tools/atlas.html
+node tools/cli.mjs image drawing.png --mode shape --atlas atlas-olympia-sm7.json
+```
 
 Tests:
 
 ```sh
-npm test          # core, sheet, pdf, strike detection
+npm test          # core, pictures, png, the cli itself, sheet, pdf, strikes
 npm run test:browser   # loads the real page in jsdom and drives it
 ```
 

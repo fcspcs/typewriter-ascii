@@ -11,8 +11,15 @@
  *         the left edge of the first to the left edge of the fortieth, and
  *         divide 39 × 25.4 by what you read. 99.1 mm → 10 (pica),
  *         82.6 mm → 12 (elite).
- *   lpi   Same idea downwards: forty lines, first baseline to last.
- *         169.3 mm → 6 lines per inch.
+ *   lpi   Same idea downwards: forty lines of capital M, top of the first to
+ *         the top of the fortieth — thirty-nine steps of paper feed.
+ *         165.1 mm → 6 lines per inch.
+ *
+ *         Top to *top*, not top to bottom. Measuring to the bottom of the
+ *         last line adds one capital's height, and a typewriter capital is
+ *         very nearly a whole line tall: ten lines measured that way read
+ *         about 42 mm where nine steps of feed is 38.1, which works out at
+ *         5.4 lines per inch and is not a spacing anyone ever built.
  *   scale Read the numbers printed on the carriage scale. Push each margin
  *         stop as far as it will go and note where it stops.
  *   rows  Type every key in order, unshifted, then shifted.

@@ -9,12 +9,11 @@
 import { PROFILES, profileById } from '../profiles/index.js';
 import {
   charset, makeTypeable, PAPERS, paperById, textArea, setUp, sheetGrid,
-  pitchFrom, expectedMm, PITCHES, LINE_PITCHES, landscape, orient,
+  pitchFrom, expectedMm, PITCHES, LINE_PITCHES, landscape,
 } from '../core/machine.js';
 import { buildAtlas } from '../core/glyphs.js';
 import {
-  toInk, blur, contrast, outline, cropToContent, normalise,
-  fitGrid, toCharacters, toSentence, cellAspect,
+  prepare, fitGrid, toCharacters, toSentence, cellAspect,
 } from '../core/convert.js';
 import {
   inkPlan, INK_SCHEMES, inkTally, inkLevels, parseRows, strikesInLine, runsOf,
@@ -77,7 +76,7 @@ const save = () => {
       inkAmount: $('inkAmount').value,
       invert: $('invert').value,
       sentence: $('sentence').value,
-      landscape: $('landscape').checked,
+      orientation: $('orientation').value,
     }));
   } catch { /* private mode */ }
 };
@@ -118,7 +117,10 @@ function fillSelects(saved) {
   if (saved.inkAmount) $('inkAmount').value = saved.inkAmount;
   if (saved.invert) $('invert').value = saved.invert;
   if (saved.sentence) $('sentence').value = saved.sentence;
-  if (saved.landscape) $('landscape').checked = true;
+  // `landscape` is what the old checkbox saved. Reading it keeps anyone who
+  // had turned the sheet on their last visit pointed the same way.
+  if (saved.orientation) $('orientation').value = saved.orientation;
+  else if (saved.landscape) $('orientation').value = 'sideways';
 
   /*
    * Where you had got to, restored once at startup.
@@ -250,30 +252,31 @@ function syncWidthControl() {
   if (!applies) return;
 
   /*
-   * The ceiling comes from the sheet the picture may end up on, not the one
-   * it is on now.
+   * The ceiling is the sheet, not the margins.
    *
-   * Capping at the portrait width first would make turning the sheet
-   * pointless: the picture would already have been cropped to 66 columns
-   * before anything got to ask whether 100 might fit sideways. So with
-   * landscape allowed the slider runs to whichever orientation holds more,
-   * and orient() then decides which one is actually used.
+   * It used to be the usable area — 66 columns on an upright A4 — so a motif
+   * that would have fitted the paper perfectly well at 80 could not be asked
+   * for, because the control refused to go there. But setUp() already knows
+   * the difference between the three cases: inside the margins, past the
+   * margins but on the paper, and off the paper altogether. Only the last is
+   * a real limit. The middle one is a note about where the stops end up, and
+   * a note is not a reason to take the choice away.
    */
-  const allow = $('landscape').checked;
-  const up = textArea(app.paper, app.machine).cols;
-  const across = textArea(landscape(app.paper), app.machine).cols;
-  const cap = allow ? Math.max(up, across) : up;
+  const sheet = sheetFor();
+  const cap = sheetGrid(sheet, app.machine).cols;
+  const area = textArea(sheet, app.machine).cols;
 
   const el = $('width');
   el.max = String(cap);
   if (+el.value > cap) el.value = String(cap);
 
+  const over = +el.value > area;
   $('widthOut').textContent = `${el.value} cols`;
   $('widthHint').textContent =
     `Wider means more detail and a great many more keystrokes. ` +
-    `${app.paper.name} holds ${up} inside the margins` +
-    (allow && across > up ? `, or ${across} turned sideways` : '') +
-    `, which is as far as this goes.`;
+    `${sheet.name}${sheet.landscape ? ' sideways' : ''} holds ${area} inside ` +
+    `the usual margins and ${cap} edge to edge` +
+    (over ? ' — past the margins now, so the stops move in less.' : '.');
 }
 
 /**
@@ -284,31 +287,27 @@ function syncWidthControl() {
  * about the shape of the sheet — which would be the worst possible fault
  * here, because the person is looking at the paper and not at the screen.
  */
-function useSheet(motifW, motifH, prefer = false) {
+function sheetFor() {
+  return $('orientation').value === 'sideways'
+    ? landscape(app.paper) : app.paper;
+}
+
+function useSheet() {
   /*
-   * `prefer` is for a motif that was *laid out* for a turned sheet.
+   * There used to be a decision here, and it was the wrong place for one.
    *
-   * Lettering wraps to a column limit, and that limit is the width of a
-   * particular orientation. Deciding the orientation afterwards by asking
-   * "does this fit upright" gets it wrong the moment wrapping succeeds:
-   * measured on "GUTEN MORGEN" in Block, wrapped to the landscape margins it
-   * is 71 columns, which fits an upright sheet's 82 - so the sheet stayed
-   * upright carrying a motif 71 wide against upright margins of 66. Laid out
-   * for one sheet, printed on another.
+   * The sheet was chosen by comparing how the motif came out each way round,
+   * which meant the orientation could change while nothing on screen had —
+   * type one more word and the paper silently turned. It also had to be told
+   * when lettering had already wrapped itself to a landscape width, because
+   * re-deciding afterwards would print a layout on a sheet it was not laid
+   * out for.
    *
-   * So when the caller has already chosen a landscape layout, it says so,
-   * and the sheet follows the layout rather than re-deciding.
+   * Now the orientation is stated, so every caller can simply read it, and
+   * none of that can happen. What is left of the old behaviour is a hint
+   * that says turning the sheet would save rows — advice, not an action.
    */
-  const allow = $('landscape').checked;
-  if (allow && prefer) {
-    const across = landscape(app.paper);
-    const g = sheetGrid(across, app.machine);
-    if (motifW <= g.cols && motifH <= g.rows) {
-      app.sheet = across;
-      return app.sheet;
-    }
-  }
-  app.sheet = orient(app.paper, app.machine, motifW, motifH, allow);
+  app.sheet = sheetFor();
   return app.sheet;
 }
 
@@ -338,27 +337,19 @@ function convert() {
   syncWidthControl();
 
   /*
-   * Sizing a picture is circular: the grid needs to know which way the sheet
-   * goes, and which way the sheet goes depends on how big the motif is.
-   *
-   * Broken by measuring against the larger of the two orientations. If the
-   * result fits portrait, orient() leaves the sheet alone and nothing has
-   * been lost; if it does not, the sheet turns and the room was there all
-   * along. One pass, no guessing, and the same rule for both.
+   * Sizing used to be circular — the grid needed the sheet, the sheet was
+   * decided from the finished motif — and it was broken by measuring against
+   * whichever orientation held more. With the orientation stated outright
+   * there is no circle left: the sheet is known before anything is laid out.
    */
-  const allow = $('landscape').checked;
-  const upright = textArea(app.paper, app.machine);
-  const across = textArea(landscape(app.paper), app.machine);
-  const room = allow
-    ? { cols: Math.max(upright.cols, across.cols),
-        rows: Math.max(upright.rows, across.rows) }
-    : upright;
-  const maxCols = Math.min(+$('width').value, room.cols);
+  const sheet = useSheet();
+  const room = textArea(sheet, app.machine);
+  const paperGrid = sheetGrid(sheet, app.machine);
+  // The slider is already bounded by the sheet; the margins are a note from
+  // setUp(), not a ceiling.
+  const maxCols = Math.min(+$('width').value, paperGrid.cols);
 
   let lines = [];
-  // Set when lettering has laid itself out for a turned sheet, so the sheet
-  // follows the layout instead of re-deciding from the finished size.
-  let wantWide = false;
 
   if (tab === 'text') {
     // Only the ends are trimmed. A blank line in the middle is a gap the
@@ -381,23 +372,9 @@ function convert() {
        * on essentially every sentence, which trains people to ignore the one
        * place the app warns them.
        */
-      const opt = { style, tones: letterTones(style) };
-      lines = letter(word, { ...opt, maxCols: upright.cols });
-
-      /*
-       * Turning the sheet is only worth it if it saves the typist rows.
-       *
-       * Both layouts are rendered and compared, rather than turning whenever
-       * the motif is wide. On "GUTEN MORGEN LYON" the wider sheet buys
-       * nothing - eleven rows either way, because the third word still will
-       * not join the first two - so the sheet stays upright and keeps the
-       * shape people expect. On "HALLO WELT WIE GEHT ES DIR" it goes from
-       * seventeen rows to eleven, which is worth turning the paper for.
-       */
-      if (allow && across.cols > upright.cols) {
-        const wide = letter(word, { ...opt, maxCols: across.cols });
-        if (wide.length < lines.length) { lines = wide; wantWide = true; }
-      }
+      lines = letter(word, {
+        style, tones: letterTones(style), maxCols: room.cols,
+      });
     }
   } else if (tab === 'paste') {
     const raw = $('pasted').value.replace(/\t/g, '    ');
@@ -411,24 +388,18 @@ function convert() {
     }
   } else if (app.image) {
     const want = $('invert').value;           // auto | no | yes
-    let field = toInk(app.image, {
-      invert: want === 'auto' ? 'auto' : want === 'yes',
-    });
-    app.inverted = field.inverted;
-
-    const detail = +$('detail').value / 100;
     const mode = $('mode').value;
 
-    // Smooth before sampling: texture cannot survive a 2.5 mm cell, and
-    // leaving it in produces noise that reads as dirt.
-    field = blur(field, Math.max(0, (1 - detail) * (field.w / maxCols) * 0.9));
-    field = contrast(field, +$('contrast').value / 100);
-    // Use the whole range of characters, not just the band the source
-    // happens to occupy.
-    field = normalise(field);
-
-    if (mode === 'outline') field = outline(field, 0.45);
-    field = cropToContent(field);
+    // The same call the command line makes — see convert.js. Keeping the
+    // order in one place is what stops the two from drifting apart.
+    const { field, inverted } = prepare(app.image, {
+      invert: want === 'auto' ? 'auto' : want === 'yes',
+      detail: +$('detail').value / 100,
+      contrast: +$('contrast').value / 100,
+      mode,
+      maxCols,
+    });
+    app.inverted = inverted;
 
     const grid = fitGrid(maxCols, room.rows, field.w, field.h,
                          cellAspect(app.machine));
@@ -455,9 +426,8 @@ function convert() {
   });
   syncInkControls();
 
-  app.setup = setUp(width, app.lines.length,
-                    useSheet(width, app.lines.length, wantWide),
-                    app.machine, $('align').value);
+  app.setup = setUp(width, app.lines.length, sheet, app.machine,
+                    $('align').value);
 
   app.at = Math.min(app.at, Math.max(0, app.lines.length - 1));
   app.strike = 0;
@@ -612,55 +582,32 @@ function syncLetterHint() {
 }
 
 /**
- * Say what turning the sheet is currently doing — including nothing.
+ * Say what the chosen orientation gives you, and what the other one would.
  *
- * A switch that is on but has no effect is exactly the fault this pass is
- * clearing out elsewhere, and here it is unavoidable: turning the sheet is
- * only worth doing for a motif that needs it. So it says which case it is in
- * rather than leaving the switch looking broken.
+ * This used to have a third job: explaining that the switch was on but had
+ * done nothing, because the sheet only turned when the motif demanded it.
+ * That case is gone — the orientation is now whatever you asked for — so
+ * what is left is the comparison, which is the part that was useful.
+ *
+ * The width is deliberately not raised when the sheet turns. It would more
+ * than double the keystroke count without being asked — measured on a wide
+ * photograph, 420 strikes at 60 columns against 950 at 95 — and a paper
+ * setting has no business rewriting how much work the job is.
  */
-function syncLandscapeHint() {
-  const el = $('landscapeHint');
+function syncOrientationHint() {
+  const el = $('orientationHint');
   if (!el) return;
   const across = textArea(landscape(app.paper), app.machine);
   const up = textArea(app.paper, app.machine);
+  const sideways = $('orientation').value === 'sideways';
+  const here = sideways ? across : up;
+  const there = sideways ? up : across;
 
-  if (!$('landscape').checked) {
-    el.textContent =
-      `Upright, ${up.cols} columns. Turned it would hold ${across.cols}, ` +
-      `over ${across.rows} lines instead of ${up.rows}.`;
-    return;
-  }
-  if (app.sheet.landscape) {
-    el.textContent =
-      `Turned: ${across.cols} columns across ${across.rows} lines. Feed the ` +
-      `sheet in on its long edge.`;
-    return;
-  }
-
-  /*
-   * On, but doing nothing — and for a picture that needs saying differently.
-   *
-   * A picture's size comes from the width slider, and turning the sheet only
-   * raises that slider's ceiling: the value stays where the user left it, so
-   * the motif still fits upright and the sheet stays upright with it. That
-   * is correct, and consistent with what changing the paper size does, but
-   * "this fits as it is" is a true answer to a question nobody asked. What
-   * the user wants to know is what to do next.
-   *
-   * The width is deliberately not raised automatically. It would more than
-   * double the keystroke count without being asked - measured on a wide
-   * photograph, 420 strikes at 60 columns against 950 at 95 - and a paper
-   * setting has no business rewriting how much work the job is.
-   */
-  const wide = currentTab() === 'image' && across.cols > up.cols
-    && +$('width').value <= up.cols;
-
-  el.textContent = wide
-    ? `Nothing to turn for yet — ${$('width').value} columns still fits ` +
-      `upright. Drag “how wide” past ${up.cols} to use the extra room.`
-    : `Upright — this fits as it is. The sheet turns only when the motif ` +
-      `will not go on it otherwise.`;
+  el.textContent =
+    `${sideways ? 'Sideways' : 'Upright'}: ${here.cols} columns across ` +
+    `${here.rows} lines inside the margins` +
+    (sideways ? ', fed in on the long edge' : '') + `. ` +
+    `${sideways ? 'Upright' : 'Sideways'} would be ${there.cols} × ${there.rows}.`;
 }
 
 /** Short plain-English note under each picture style. */
@@ -732,7 +679,7 @@ function draw() {
       + 'turned round. A typewriter cannot ink a whole sheet.'
     : '';
   $('charCount').textContent = `${app.chosen.size} on`;
-  syncLandscapeHint();
+  syncOrientationHint();
 
   /*
    * The character-swap warning belongs to the motif that produced it.
@@ -1017,7 +964,7 @@ function wire() {
 
   // settings that only need a redraw
   ['mode', 'align', 'paper', 'machine', 'letterStyle', 'invert',
-   'ink', 'useRed', 'landscape'].forEach((id) => {
+   'ink', 'useRed', 'orientation'].forEach((id) => {
     $(id).onchange = () => {
       if (id === 'machine') {
         useProfile($('machine').value);
@@ -1177,14 +1124,50 @@ function applyMeasurement() {
   const lSteps = +$('lCount').value - 1;
   const lMm = +$('lMm').value;
   if (lMm > 0) {
-    const lines = pitchFrom(lSteps, lMm, LINE_PITCHES);
+    let lines = pitchFrom(lSteps, lMm, LINE_PITCHES);
+    let extra = '';
+
+    /*
+     * The vertical version of the block-of-ink mistake, and worth correcting
+     * rather than only mentioning.
+     *
+     * Sideways, measuring the whole block instead of edge to edge costs about
+     * one character in forty — annoying, never decisive. Downwards it is far
+     * bigger: measuring to the *bottom* of the last line rather than the top
+     * adds the height of a capital, and a typewriter capital is very nearly a
+     * whole line tall. Ten lines measured that way read about one line too
+     * long, which comes out as 5.4 lines per inch — and the old code simply
+     * answered "not a spacing machines were built in" and threw a perfectly
+     * good measurement away.
+     *
+     * Reinterpreting the reading as one step longer is safe here in a way it
+     * would not be sideways: there is only one line pitch in the table, so
+     * the correction can confirm six lines to the inch or change nothing at
+     * all. It cannot land on the wrong answer, because there is no other
+     * answer to land on.
+     */
+    if (lines && !lines.confident && lines.offByOne) {
+      const asOneMore = pitchFrom(lSteps + 1, lMm, LINE_PITCHES);
+      if (asOneMore?.confident) {
+        lines = asOneMore;
+        extra =
+          ` The reading is about one line long, which is what measuring to ` +
+          `the bottom of the last capital does instead of to its top. Read ` +
+          `as ${lSteps + 1} steps it lands cleanly, so that is what it was.`;
+      }
+    }
+
     if (lines?.confident) {
       patch.lpi = lines.nearest.perInch;
-      parts.push(`Line spacing confirmed at ${lines.nearest.perInch} to the inch.`);
+      parts.push(
+        `Line spacing confirmed at ${lines.nearest.perInch} to the inch.${extra}`);
     } else if (lines) {
       parts.push(
         `The line measurement gives ${lines.perInch.toFixed(2)} lines per ` +
-        `inch, which is not a spacing machines were built in. Left alone.`);
+        `inch, which is not a spacing machines were built in. For ` +
+        `${lines.nearest.perInch} to the inch, ${lSteps} steps should read ` +
+        `about ${expectedMm(lSteps, lines.nearest.perInch).toFixed(0)} mm. ` +
+        `Left alone.`);
     }
   }
 

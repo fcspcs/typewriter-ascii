@@ -8,6 +8,7 @@
 import { JSDOM, VirtualConsole } from 'jsdom';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -91,7 +92,10 @@ Object.defineProperty(globalThis, 'window', {
 });
 
 // Import the app the way the browser would.
-await import(path.join(ROOT, 'src/ui/app.js'));
+// pathToFileURL, not the bare path: on Windows an absolute path starts with
+// a drive letter, and the ESM loader reads `C:` as a URL scheme it does not
+// know. The test could not run on Windows at all until this.
+await import(pathToFileURL(path.join(ROOT, 'src/ui/app.js')).href);
 await new Promise((r) => setTimeout(r, 60));
 
 const $ = (id) => window.document.getElementById(id);
@@ -578,17 +582,34 @@ await check('the instructions come back once there is something to type', async 
 
 console.log('the width slider tells the truth');
 
-await check('it cannot be dragged past what the paper holds', async () => {
-  // It used to run to 120 columns. A4 at pica holds 66 inside the margins,
-  // so the top half of its travel did nothing but crop the picture — you
-  // dragged and watched the preview refuse to change.
+await check('it cannot be dragged off the edge of the paper', async () => {
+  // It used to run to 120 columns, which did nothing but crop. Then it
+  // stopped at the margins — 66 on an upright A4 — which was the opposite
+  // mistake: a motif of 80 columns fits the sheet perfectly well, and the
+  // control simply would not go there. The sheet is the limit; the margins
+  // are a note from setUp().
   [...window.document.querySelectorAll('.tab')]
     .find((t) => t.dataset.tab === 'image').click();
   await wait(350);
 
-  assert(+$('width').max === 66, `slider still runs to ${$('width').max}`);
-  assert(/66 inside the margins/.test($('widthHint').textContent),
-    `the limit is not explained: "${$('widthHint').textContent}"`);
+  assert(+$('width').max === 82, `slider runs to ${$('width').max}, not 82`);
+  assert(/66 inside/.test($('widthHint').textContent)
+      && /82 edge to edge/.test($('widthHint').textContent),
+    `both limits are not explained: "${$('widthHint').textContent}"`);
+});
+
+await check('past the margins it says so rather than refusing', async () => {
+  // 'change', not 'input': the readout follows the thumb while dragging, the
+  // work happens when it is let go.
+  $('width').value = '78';
+  $('width').dispatchEvent(new window.Event('change'));
+  await wait(350);
+  assert(/past the margins/.test($('widthHint').textContent),
+    `no note about the margins: "${$('widthHint').textContent}"`);
+
+  $('width').value = '60';
+  $('width').dispatchEvent(new window.Event('input'));
+  await wait(350);
 });
 
 await check('it follows a change of paper', async () => {
@@ -597,7 +618,7 @@ await check('it follows a change of paper', async () => {
   await wait(350);
 
   const max = +$('width').max;
-  assert(max > 0 && max < 66, `postcard still allows ${max} columns`);
+  assert(max > 0 && max < 82, `postcard still allows ${max} columns`);
   assert(+$('width').value <= max, 'the value was left above the new ceiling');
 
   $('paper').value = 'a4';
@@ -634,15 +655,15 @@ const typeWord = async (text, style = 'block') => {
   await wait(420);
 };
 
-const setLandscape = async (on) => {
-  $('landscape').checked = on;
-  $('landscape').dispatchEvent(new window.Event('change'));
+const setOrientation = async (which) => {
+  $('orientation').value = which;
+  $('orientation').dispatchEvent(new window.Event('change'));
   await wait(420);
 };
 
 await check('a word too wide for A4 is refused while the sheet stays upright',
   async () => {
-    await setLandscape(false);
+    await setOrientation('upright');
     // 'LORENZ' raised is 95 columns; A4 at pica holds 82.
     await typeWord('LORENZ', 'relief');
     assert(/warn stop/.test($('warnings').innerHTML),
@@ -650,7 +671,7 @@ await check('a word too wide for A4 is refused while the sheet stays upright',
   });
 
 await check('turning the sheet makes the same word fit', async () => {
-  await setLandscape(true);
+  await setOrientation('sideways');
   assert(!/warn stop/.test($('warnings').innerHTML),
     `still refused sideways: ${$('warnings').textContent}`);
 });
@@ -680,31 +701,43 @@ await check('the facts and the paper hint agree that it is turned', () => {
     `the paper hint disagrees: ${$('paperHint').textContent}`);
 });
 
-await check('a word that fits upright is left upright', async () => {
-  // The switch says "if it helps". Turning a sheet that already holds the
-  // motif buys nothing and loses the shape people expect.
+await check('a small word stays sideways once sideways is chosen', async () => {
+  /*
+   * This is the change. The switch used to say "if it helps", so a motif
+   * that fitted upright quietly turned the sheet back — the same settings
+   * gave different paper depending on the word, and the width ceiling moved
+   * with it. Now the answer is whatever was asked for, and only that.
+   */
   await typeWord('HI', 'block');
   const r = paperRatio(window.document.querySelector('.paper-view'));
+  assert(Math.abs(r - 297 / 210) < 0.01,
+    `the sheet turned itself back upright: ${r.toFixed(3)}`);
+  assert(/sideways/i.test($('instructions').textContent),
+    'sideways was chosen but the instructions do not say so');
+});
+
+await check('choosing upright puts the same word back upright', async () => {
+  await setOrientation('upright');
+  const r = paperRatio(window.document.querySelector('.paper-view'));
   assert(Math.abs(r - 210 / 297) < 0.01,
-    `turned the sheet for a motif that fits: ${r.toFixed(3)}`);
-  assert(!/sideways/i.test($('instructions').textContent),
-    'told to feed it sideways for a motif that fits upright');
+    `still sideways: ${r.toFixed(3)}`);
 });
 
-await check('the switch explains itself in either state', async () => {
-  assert($('landscapeHint').textContent.trim().length > 20,
-    `nothing said while on: "${$('landscapeHint').textContent}"`);
-  await setLandscape(false);
-  assert($('landscapeHint').textContent.trim().length > 20,
-    `nothing said while off: "${$('landscapeHint').textContent}"`);
+await check('the choice explains what either way round holds', async () => {
+  const upright = $('orientationHint').textContent;
+  assert(/66/.test(upright) && /100/.test(upright),
+    `does not compare the two: "${upright}"`);
+  await setOrientation('sideways');
+  const sideways = $('orientationHint').textContent;
+  assert(/100/.test(sideways) && /long edge/i.test(sideways),
+    `nothing useful said while sideways: "${sideways}"`);
 });
 
-await check('turning the sheet survives a reload', async () => {
-  await setLandscape(true);
+await check('the orientation survives a reload', async () => {
   const saved = JSON.parse(window.localStorage.getItem('typewriter-ascii'));
-  assert(saved.landscape === true,
-    `not saved: ${JSON.stringify(saved.landscape)}`);
-  await setLandscape(false);
+  assert(saved.orientation === 'sideways',
+    `not saved: ${JSON.stringify(saved.orientation)}`);
+  await setOrientation('upright');
 });
 
 console.log('lettering wraps to the sheet');
@@ -722,7 +755,7 @@ await check('a long sentence is broken instead of running off the paper',
     // Measured on an SM7 at pica: "GUTEN MORGEN LYON" in Block is 101
     // columns against the 82 an upright A4 holds - 123% of the sheet. It
     // overran the preview.
-    await setLandscape(false);
+    await setOrientation('upright');
     await typeWord('GUTEN MORGEN LYON', 'block');
 
     const width = motifCols();
@@ -748,11 +781,11 @@ await check('wrapping to the margins leaves nothing to complain about',
   });
 
 await check('turning the sheet takes fewer rows', async () => {
-  await setLandscape(false);
+  await setOrientation('upright');
   await typeWord('HALLO WELT WIE GEHT ES DIR', 'block');
   const tall = window.document.querySelectorAll('.sheet .ln').length;
 
-  await setLandscape(true);
+  await setOrientation('sideways');
   const wide = window.document.querySelectorAll('.sheet .ln').length;
   assert(wide < tall, `${wide} rows across against ${tall} upright`);
 
@@ -763,27 +796,33 @@ await check('turning the sheet takes fewer rows', async () => {
     `${motifCols()} columns, landscape A4 holds 116`);
 });
 
-await check('the sheet stays upright when turning it would save nothing',
+await check('the layout is wrapped for the sheet it will be typed on',
   async () => {
     /*
-     * "GUTEN MORGEN LYON" takes eleven rows either way - the third word
-     * still will not join the first two - so there is nothing to gain and
-     * the sheet keeps the shape people expect.
+     * The fault this guards against used to be subtle and is now impossible,
+     * which is the reason for stating it. Deciding the orientation *after*
+     * laying the word out meant wrapping to the landscape width, asking
+     * "does 71 columns fit upright?", hearing yes, and printing a motif laid
+     * out for margins of 100 on a sheet with margins of 66.
      *
-     * This is also what stops a subtler fault: the layout and the sheet must
-     * be decided together. Wrapping to the landscape width and then asking
-     * "does the result fit upright" said yes at 71 columns, so the sheet
-     * stayed upright carrying a motif laid out for margins of 100 against
-     * upright margins of 66.
+     * With the sheet chosen first there is only ever one answer, so the test
+     * is simply that each orientation wraps to its own margins.
      */
+    await setOrientation('upright');
     await typeWord('GUTEN MORGEN LYON', 'block');
     const view = window.document.querySelector('.paper-view');
     assert(Math.abs(paperRatio(view) - 210 / 297) < 0.01,
-      `turned for no gain: ${paperRatio(view).toFixed(3)}`);
+      `upright was asked for, sheet is ${paperRatio(view).toFixed(3)}`);
     assert(motifCols() <= 66,
       `laid out for a sheet it is not on: ${motifCols()} columns against ` +
       `upright margins of 66`);
-    await setLandscape(false);
+
+    await setOrientation('sideways');
+    assert(Math.abs(paperRatio(view) - 297 / 210) < 0.01,
+      `sideways was asked for, sheet is ${paperRatio(view).toFixed(3)}`);
+    assert(motifCols() <= 100,
+      `${motifCols()} columns against landscape margins of 100`);
+    await setOrientation('upright');
   });
 
 await check('a word too wide to break is still refused, not mangled',
@@ -816,37 +855,37 @@ const loadPicture = async () => {
   await wait(600);
 };
 
-await check('the switch is on screen in every mode, and survives the change',
+await check('the choice is on screen in every mode, and survives the change',
   async () => {
-    // Landscape is a property of the paper, not of where the motif came
+    // Orientation is a property of the paper, not of where the motif came
     // from: you feed the sheet in sideways, and the sheet does not know
     // whether a photograph, a word or pasted art is going to land on it.
     // So it lives in "the paper" and must not be hidden or cleared by a
     // change of mode - the paper has not changed.
-    await setLandscape(true);
+    await setOrientation('sideways');
     for (const tab of ['image', 'text', 'paste']) {
       [...window.document.querySelectorAll('.tab')]
         .find((t) => t.dataset.tab === tab).click();
       await wait(350);
-      assert(whyHidden('landscape') === 'VISIBLE',
-        `the switch is not reachable in the ${tab} tab: ${whyHidden('landscape')}`);
-      assert($('landscape').checked,
-        `switching to the ${tab} tab cleared the switch`);
+      assert(whyHidden('orientation') === 'VISIBLE',
+        `not reachable in the ${tab} tab: ${whyHidden('orientation')}`);
+      assert($('orientation').value === 'sideways',
+        `switching to the ${tab} tab reset the choice`);
     }
     // And it sits with the sheet size and the position, not in a tab panel.
-    const fieldset = $('landscape').closest('fieldset');
+    const fieldset = $('orientation').closest('fieldset');
     assert(fieldset && fieldset.contains($('paper')) && fieldset.contains($('align')),
-      'the switch is not in the same block as the sheet size and position');
-    await setLandscape(false);
+      'the choice is not in the same block as the sheet size and position');
+    await setOrientation('upright');
   });
 
 await check('a word turns the sheet', async () => {
-  await setLandscape(false);
+  await setOrientation('upright');
   await typeWord('LORENZ', 'relief');   // 95 columns; upright A4 holds 82
   assert(Math.abs(paperRatio(window.document.querySelector('.paper-view'))
     - 210 / 297) < 0.01, 'the sheet started turned');
 
-  await setLandscape(true);
+  await setOrientation('sideways');
   assert(Math.abs(paperRatio(window.document.querySelector('.paper-view'))
     - 297 / 210) < 0.01, 'the sheet did not turn for a word');
   assert(/sideways/i.test($('instructions').textContent),
@@ -856,7 +895,7 @@ await check('a word turns the sheet', async () => {
 await check('pasted art turns the sheet', async () => {
   // Nothing about pasted art is special, which is the point: the switch
   // belongs to the paper and applies wherever the motif came from.
-  await setLandscape(false);
+  await setOrientation('upright');
   [...window.document.querySelectorAll('.tab')]
     .find((t) => t.dataset.tab === 'paste').click();
   await wait(350);
@@ -870,7 +909,7 @@ await check('pasted art turns the sheet', async () => {
   assert(/warn stop/.test($('warnings').innerHTML),
     `100 columns was not refused on upright A4: ${$('warnings').textContent}`);
 
-  await setLandscape(true);
+  await setOrientation('sideways');
   assert(Math.abs(paperRatio(view) - 297 / 210) < 0.01,
     `the sheet did not turn for pasted art: ${paperRatio(view).toFixed(3)}`);
   assert(!/warn stop/.test($('warnings').innerHTML),
@@ -879,63 +918,64 @@ await check('pasted art turns the sheet', async () => {
     'no instruction to feed it sideways');
   assert(/sideways/i.test($('facts').textContent),
     `the facts still call it upright: ${$('facts').textContent}`);
-  await setLandscape(false);
+  await setOrientation('upright');
 });
 
 await check('a picture turns the sheet, and gains the columns', async () => {
   // The mode that was never covered: the canvas stub used to return a blank
   // field, so the picture path ran with nothing to convert.
-  await setLandscape(false);
+  await setOrientation('upright');
   await loadPicture();
   assert(motifCols() > 0, 'the stub photograph produced no motif at all');
 
   const view = window.document.querySelector('.paper-view');
   const upright = +$('width').max;
-  assert(upright === 66, `upright A4 offered ${upright} columns, expected 66`);
+  assert(upright === 82,
+    `upright A4 offered ${upright} columns to the edge, expected 82`);
 
-  await setLandscape(true);
+  await setOrientation('sideways');
   assert(+$('width').max > upright,
     `the ceiling did not rise: still ${$('width').max}`);
 
-  // A picture takes its size from the slider, and turning the sheet raises
-  // only the ceiling - so the sheet stays upright until the width is
-  // actually used. That is deliberate: raising it automatically would more
-  // than double the keystrokes without being asked.
-  assert(Math.abs(paperRatio(view) - 210 / 297) < 0.01,
-    'the sheet turned before the extra width was used');
+  // The sheet turns because it was asked to, not because the motif grew.
+  // It used to wait for the width to be dragged up first, which meant
+  // ticking the box appeared to do nothing at all.
+  assert(Math.abs(paperRatio(view) - 297 / 210) < 0.01,
+    `the sheet did not turn when asked: ${paperRatio(view).toFixed(3)}`);
 
   $('width').value = '95';
   $('width').dispatchEvent(new window.Event('change'));
   await wait(600);
 
-  assert(motifCols() > upright,
-    `the picture is still ${motifCols()} columns, no wider than upright`);
-  assert(Math.abs(paperRatio(view) - 297 / 210) < 0.01,
-    `the sheet did not turn for a picture: ${paperRatio(view).toFixed(3)}`);
+  assert(motifCols() > 66,
+    `the picture is still ${motifCols()} columns, no wider than upright ` +
+    `margins allowed`);
   assert(/sideways/i.test($('instructions').textContent),
     'no instruction to feed it sideways');
   assert(/sideways/i.test($('facts').textContent),
     `the facts still call it upright: ${$('facts').textContent}`);
+  await setOrientation('upright');
 });
 
-await check('the hint says what to do when the switch is waiting on the width',
-  async () => {
-    // "This fits as it is" is a true answer to a question nobody asked. On a
-    // picture the user wants to know why ticking the box did nothing.
-    $('width').value = '60';
-    $('width').dispatchEvent(new window.Event('change'));
-    await wait(600);
-    const t = $('landscapeHint').textContent;
-    assert(/how wide/i.test(t) && /66/.test(t),
-      `the hint does not say what to do next: "${t}"`);
+await check('a picture can be made wider than the margins hold', async () => {
+  // The ceiling used to be the usable area, so 66 was the widest an upright
+  // A4 could be asked for even though the sheet takes 82. Past the margins
+  // is a note about where the stops end up, not a reason to refuse.
+  $('width').value = '78';
+  $('width').dispatchEvent(new window.Event('change'));
+  await wait(600);
 
-    $('width').value = '95';
-    $('width').dispatchEvent(new window.Event('change'));
-    await wait(600);
-    assert(/long edge/i.test($('landscapeHint').textContent),
-      `the hint did not follow the sheet: "${$('landscapeHint').textContent}"`);
-    await setLandscape(false);
-  });
+  assert(motifCols() > 66,
+    `still capped at the margins: ${motifCols()} columns`);
+  assert(!/warn stop/.test($('warnings').innerHTML),
+    `78 columns on an 82-column sheet was refused: ${$('warnings').textContent}`);
+  assert(/usual margins/i.test($('warnings').textContent),
+    `no note about the margins moving: "${$('warnings').textContent}"`);
+
+  $('width').value = '60';
+  $('width').dispatchEvent(new window.Event('change'));
+  await wait(600);
+});
 
 console.log('several lines of lettering');
 
