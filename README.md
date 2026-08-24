@@ -132,10 +132,10 @@ black when you have selected red: **[docs/machine-tricks.md](docs/machine-tricks
 
 ## Lettering
 
-Twenty-one styles, built from two hand-drawn faces and a set of transforms:
+Forty-one styles, built from five hand-drawn faces and a set of transforms:
 hollowing, shearing, stencil bridges, doubling, shadows, relief, oblique
-projection, draughted and rounded outlines — each in a compact and a large
-size where it makes sense.
+projection, draughted and rounded outlines, mark painting, half-tone screens
+and tonal bands — each in a compact and a large size where it makes sense.
 
 A newline starts a second line of letters, so two short words can be stacked
 where one long one will not fit; a blank line leaves a gap.
@@ -148,6 +148,51 @@ turn the sheet by itself whenever that saved rows, which meant the same
 settings produced different paper depending on the word. A single word too
 wide to break is left whole rather than hyphenated: the setup instructions
 then say what to change, which is more use than something unreadable.
+
+**The calligraphic hand is drawn to one rule.** Hold a broad nib at an angle
+and it draws a hairline exactly when it travels up and to the right, and a
+thick stroke everywhere else. That is the entire face: `##` for stems, bowls
+and down-strokes, `/` for the up-strokes of A, K, V, X, Y and Z, and for the
+flourishes that enter every letter at the cap and leave it below the
+baseline. `/` also happens to be the one diagonal a typewriter can be relied
+on to have, so the rule that makes the letters right is the rule that makes
+them typeable.
+
+The flourishes are derived rather than drawn into each glyph: a body is
+eleven rows of letter, and the face says which column the pen lifts from and
+which foot it sweeps away from. Thirty-eight hand-drawn swashes would be
+thirty-eight slightly different swashes, and a hand that varies its exit
+stroke at random does not read as a hand. It is a large face — sixteen rows,
+and `TYPE` is 59 columns of the 82 an upright A4 holds — and there is no
+compact version, because a flourish shortened until it fits is just a serif.
+
+**Most of a face is which characters it is drawn with.** A typewriter has no
+shading and no half tones, but it has ninety-odd shapes, and a great deal of
+typewriter art works by picking the shape that matches the *direction* of a
+stroke rather than its darkness: `_` where a stroke ends flat, `(` and `)`
+where it turns, `!` where it runs down the page, `8` and `o` for a body and
+its ends. One reading of each cell — which of its four sides are open — is
+handed to the face, and the face names its own marks. That is where the
+roman, ruled, bracketed and rounded-caps faces come from, and none of them
+costs a keystroke more than a solid one: a key is a key.
+
+**Graded faces take the ramp from the machine.** A letter shaded from `B`
+through `M` and `2` and `-` to `'` is the plainest demonstration of the whole
+idea — those five characters are read off an SM7 keyboard by rank, not
+wished for. Bands are cut across the whole block rather than per letter, so a
+word shades together instead of putting the dark end of an `O` beside the
+light end of a `T`. On a machine stripped to two keys it comes out in two
+bands rather than failing.
+
+**A face is only offered where the machine can strike it.** Tones never need
+checking — they are chosen from what the machine has. Fixed marks do: a
+bracketed face without brackets is not a paler bracketed face, it is a hole.
+So each style declares every mark it insists on, the picker greys out the
+ones this machine cannot type and says which key is missing, and the command
+line refuses outright. Switching a key off under Characters counts as the
+machine not having it. Two tests hold the declarations honest in both
+directions — every mark declared is struck, and every mark struck is
+declared.
 
 **Raised uses three weights, not two.** An outline drawn in one character
 with the interior in another is a hollow letter with a fill — an edge lit
@@ -184,8 +229,9 @@ roughly a third of what solid ones do, which matters when you are the printer.
 The letterforms are drawn from scratch and MIT-licensed like the rest of the
 project. They are *informed* by the classic FIGlet faces — anyone who has
 seen `banner` or `slant` will spot the family resemblance, because there are
-only so many ways to draw a capital A out of blocks — but no glyph data is
-copied.
+only so many ways to draw a capital A out of blocks, and the calligraphic
+hand is informed by `caligraphy` and `caligraphy2` in the same way — but no
+glyph data is copied.
 
 That is deliberate. The FIGlet collection has a patchwork of licences: some
 public domain, some free-but-no-redistribution, a few with no stated terms at
@@ -197,6 +243,32 @@ ours to ship.
 
 Credit where due: the FIGlet format and its font collection come from the
 FIGlet project (figlet.org) and decades of contributors.
+
+Several faces here answer a particular FIGlet one. They are redrawn, not
+converted, and where the original needs a key a typewriter has not got, the
+shape changed rather than the letter being dropped:
+
+| FIGlet          | Here                    | What changed |
+| --------------- | ----------------------- | ------------ |
+| Caligraphy2     | Calligraphic            | 20 rows down to 16, so a word fits a sheet |
+| NV Script       | Calligraphic, inked     | the same hand, painted in `8` `d` `b` `P` `Y` |
+| Fraktur         | Gothic                  | redrawn without `^ ~ * < >` |
+| Konto           | Miniature               | three rows rather than two, to stay legible |
+| O8              | Rings                   | — |
+| OS2             | Rings on a rule         | — |
+| Roman           | Roman                   | — |
+| Georgia11       | Roman, heavy            | — |
+| Rowan Cap       | Rounded caps            | — |
+| Kban            | Ruled                   | `\|` is `!`, the feet are `,` — no pipe, and `.` means paper |
+| Henry 3D        | Bracketed               | `[` `]` `\|` become `)` `(` `!` |
+| Catwalk         | Catwalk                 | — |
+| Peaks           | Peaks                   | `^` is `´`, which the SM7 does have |
+| Lean            | Leaning strokes         | — |
+| Italic          | Italic outline          | — |
+| Gradient        | Graded                  | the ramp comes from your machine, not from `@ # % &` |
+| Poison          | Corroded                | likewise, and the corrosion is deterministic |
+| S Blood         | Running ink             | likewise; the drips are decided by column, so it types the same twice |
+| Filter          | Screened                | a real two-weight checker instead of a fixed mark set |
 
 ## Prior art
 

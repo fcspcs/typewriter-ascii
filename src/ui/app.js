@@ -19,7 +19,7 @@ import {
   inkPlan, INK_SCHEMES, inkTally, inkLevels, parseRows, strikesInLine, runsOf,
 } from '../core/runs.js';
 import {
-  letter, STYLES, usesTwo, tonesOf, charsUsed,
+  letter, STYLES, usesTwo, tonesOf, charsUsed, marksMissing,
 } from '../core/lettering.js';
 import { toneRamp } from '../core/ink.js';
 import { StrikeListener, LineTracker, METER_FULL_SCALE } from '../core/listen.js';
@@ -567,8 +567,36 @@ function drawMini() {
  */
 function syncLetterHint() {
   const el = $('letterStyleHint');
-  if (!el) return;
-  const style = $('letterStyle').value;
+  const sel = $('letterStyle');
+  if (!el || !sel) return;
+
+  /*
+   * Which faces are possible is checked here, on every redraw, rather than
+   * once when the picker is built — because it depends on two things that
+   * both move: the machine, and which of its keys are switched on in the
+   * characters dialog. A face drawn with `/` is not available on a machine
+   * without one, and offering it anyway produces a sheet that cannot be
+   * typed, which is the single thing this program exists to prevent.
+   *
+   * Disabled rather than hidden. A face that vanished would look like a bug;
+   * one that is there and says which key it wants tells you what to change.
+   */
+  for (const opt of sel.options) {
+    const short = marksMissing(opt.value, app.chosen);
+    const name = STYLES[opt.value]?.name ?? opt.value;
+    opt.disabled = short.length > 0;
+    opt.textContent = short.length ? `${name} — needs ${short.join(' ')}` : name;
+  }
+
+  const style = sel.value;
+  const short = marksMissing(style, app.chosen);
+  if (short.length) {
+    el.textContent = `${STYLES[style]?.name ?? style} strikes ` +
+      `${short.join(' ')}, which this machine does not have. Choose another ` +
+      `face, or switch those keys back on under Characters.`;
+    return;
+  }
+
   const used = charsUsed(style, letterTones(style));
   const n = tonesOf(style);
   const weight = n === 0 ? 'Drawn with fixed marks, not tones'

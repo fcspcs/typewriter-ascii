@@ -17,7 +17,7 @@ import {
   columnOfStrike, inkPlan, INK_SCHEMES,
 } from '../src/core/runs.js';
 import {
-  letter, STYLES, charsUsed, tonesOf, usesTwo,
+  letter, STYLES, charsUsed, tonesOf, usesTwo, marksMissing,
 } from '../src/core/lettering.js';
 import { toneRamp, inkLadder, inkWeights } from '../src/core/ink.js';
 import { fitGrid, sentenceReads, keystrokes } from '../src/core/convert.js';
@@ -479,15 +479,20 @@ check('a style uses exactly the number of inks it declares', () => {
   // `tones` is what the interface asks the machine for. A style that
   // declares three and draws two gets a character it never uses; one that
   // declares two and draws three emits a placeholder as a literal `~`.
-  const TONES = ['1', '2', '3'];
+  const TONES = ['1', '2', '3', '4', '5'];
   for (const key of Object.keys(STYLES)) {
-    const art = letter('ABO', { style: key, tones: TONES }).join('');
-    const used = TONES.filter((t) => art.includes(t));
+    // As long a ramp as the style asks for. Handing every style three and
+    // expecting five back tests the degradation path, not the declaration -
+    // a five-band face given three tones is *supposed* to come out in three.
+    const ramp = TONES.slice(0, Math.max(1, STYLES[key].tones));
+    const art = letter('ABO', { style: key, tones: ramp }).join('');
+    const used = ramp.filter((t) => art.includes(t));
     assert.strictEqual(used.length, STYLES[key].tones,
       `${key}: drew ${used.length} inks, declares ${STYLES[key].tones}`);
-    assert.ok(!art.includes('~'), `${key} leaked a tone placeholder`);
-    assert.ok(!art.includes('#'), `${key} leaked an ink placeholder`);
-    assert.ok(!art.includes('+'), `${key} leaked an ink placeholder`);
+    for (const ph of '#+~%*') {
+      assert.ok(!art.includes(ph),
+        `${key} leaked the ink placeholder ${ph}`);
+    }
   }
 });
 
@@ -499,6 +504,32 @@ check('styles have no blank rows top or bottom', () => {
   }
 });
 
+
+check('every letter of the calligraphic hand is entered and left', () => {
+  // The flourishes are derived once rather than drawn into all thirty-eight
+  // glyphs (see penned), which is the only way they come out the same - but
+  // it also means one wrong default strips them from every glyph at once
+  // and leaves a face that is Block again, only three times as tall.
+  for (const ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') {
+    const art = letter(ch, { style: 'script', fill: '#' });
+    assert.strictEqual(art[0].trim(), '/', `${ch} is not entered`);
+    assert.ok(art[art.length - 1].trimStart().startsWith('##'),
+      `${ch} has no terminal: ${JSON.stringify(art[art.length - 1])}`);
+  }
+});
+
+check('the calligraphic hand leans without falling over', () => {
+  // slant() shears half a column per row, which on a sixteen-row face is
+  // eight columns and takes a four-letter word past the width of an upright
+  // A4 line. `lean` is half of that; if it ever goes back to the full slant
+  // this fails rather than quietly wrapping every word onto two lines.
+  const upright = letter('TYPE', { style: 'script', fill: '#' });
+  const leaning = letter('TYPE', { style: 'scriptLean', fill: '#' });
+  const cols = (art) => Math.max(...art.map((r) => r.length));
+  assert.ok(cols(leaning) > cols(upright), 'the leaning face did not lean');
+  assert.ok(cols(leaning) <= 82,
+    `${cols(leaning)} columns will not fit an upright A4 line`);
+});
 
 check('every lettering style is typeable on the SM7', () => {
   // The whole point. The classic isometric and relief FIGlet faces all
@@ -513,6 +544,50 @@ check('every lettering style is typeable on the SM7', () => {
       if (ch === '#' || ch === '+') continue;      // the two ink slots
       assert.ok(have.has(ch),
         `${key} needs ${JSON.stringify(ch)}, which the SM7 lacks`);
+    }
+  }
+});
+
+check('a style declares every mark it strikes', () => {
+  // The other direction from the test below, and the one the picker relies
+  // on: `uses` is what marksMissing() compares against the machine, so a
+  // mark that gets struck without being declared is a key the picker
+  // promises is not needed - and then the sheet asks for it anyway.
+  const TONES = ['1', '2', '3', '4', '5'];
+  for (const [key, spec] of Object.entries(STYLES)) {
+    const ramp = TONES.slice(0, Math.max(1, spec.tones));
+    const art = letter('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,-:?!',
+      { style: key, tones: ramp });
+    const declared = new Set([...(spec.uses ?? ''), ...ramp]);
+    for (const ch of new Set(art.join('').replace(/ /g, ''))) {
+      assert.ok(declared.has(ch),
+        `${key} strikes ${JSON.stringify(ch)} without declaring it`);
+    }
+  }
+});
+
+check('no style is offered that the SM7 cannot strike', () => {
+  const have = new Set(charset(sm7));
+  for (const key of Object.keys(STYLES)) {
+    assert.deepStrictEqual(marksMissing(key, have), [],
+      `${key} wants ${marksMissing(key, have).join(' ')}`);
+  }
+  // And the check has to be capable of finding something, or it is a test
+  // that passes because it looks nowhere.
+  assert.ok(marksMissing('script', new Set('AB')).includes('/'),
+    'marksMissing found nothing on a machine with two keys');
+});
+
+check('no face draws with a character reserved for a tone', () => {
+  // `#`, `+`, `~`, `%` and `*` are the ramp's placeholders. A face that
+  // draws a literal one of them gets the machine's fourth tone printed where
+  // it wanted a per-cent sign - silently, and only on the styles that ask
+  // for that many tones.
+  for (const key of Object.keys(STYLES)) {
+    const art = letter('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+      { style: key, tones: ['1', '2', '3', '4', '5'] }).join('');
+    for (const ph of '#+~%*') {
+      assert.ok(!art.includes(ph), `${key} drew a literal ${ph}`);
     }
   }
 });

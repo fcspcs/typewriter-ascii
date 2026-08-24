@@ -27,7 +27,7 @@ import {
   sheetGrid,
 } from '../src/core/machine.js';
 import { colourMap, inkTally, parseRows, runsOf, runsToText } from '../src/core/runs.js';
-import { letter, tonesOf } from '../src/core/lettering.js';
+import { letter, tonesOf, marksMissing, STYLES } from '../src/core/lettering.js';
 import { toneRamp } from '../src/core/ink.js';
 import { buildSheetPdf } from '../src/core/pdf.js';
 import { tableAtlas } from '../src/core/glyphs.js';
@@ -552,6 +552,16 @@ if (cmd === 'image') {
   const word = args[1];
   if (!word) die('Which word?');
   const style = opt('style', 'block');
+  if (!STYLES[style]) {
+    die(`Unknown style: ${style}. One of: ${Object.keys(STYLES).join(' ')}`);
+  }
+  // Refused rather than typed and swapped: a face is drawn out of specific
+  // marks, and the nearest available shape is a different face.
+  const lacking = marksMissing(style, charset(machine));
+  if (lacking.length) {
+    die(`--style ${style} strikes ${lacking.join(' ')}, which the ` +
+      `${machine.name} does not have. Try --style block.`);
+  }
   // Same ramp the page uses, taken from the machine rather than wished for.
   // A literal \n in the argument starts a second line of lettering, because
   // a shell makes a real newline awkward to type.
