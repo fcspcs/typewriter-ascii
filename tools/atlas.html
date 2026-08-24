@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Export a glyph atlas</title>
+<!--
+  Measure the characters and write them out as JSON, for `cli.mjs --atlas`.
+
+  "Follow the shapes" compares a log-polar histogram of each cell against the
+  same histogram taken from every character the machine has. Those histograms
+  come from rendering the glyphs, which needs a canvas, which Node has not
+  got. The command line falls back to matching by tone and says so — but the
+  shape match is the good one, and it should not be locked behind a browser.
+
+  So: measure here, once, where the canvas is, and hand the result to the
+  command line. Same buildAtlas() the app itself uses, no second measurement
+  to drift.
+
+  Needs to be served rather than opened from disk, because it loads ES
+  modules:  npx serve .   then open /tools/atlas.html
+-->
+<style>
+  body { font: 15px/1.6 ui-monospace, monospace; max-width: 46rem;
+         margin: 3rem auto; padding: 0 1.5rem; }
+  select, button { font: inherit; padding: .4rem .6rem; }
+  button { cursor: pointer; }
+  pre { background: #f4f4f4; padding: .8rem; overflow-x: auto; }
+  .note { color: #555; }
+</style>
+
+<h1>Export a glyph atlas</h1>
+<p class="note">
+  For <code>tools/cli.mjs --mode shape</code>, which needs the characters
+  measured rather than ranked.
+</p>
+
+<p>
+  <label>Machine <select id="machine"></select></label>
+  <button id="go">Measure and download</button>
+</p>
+
+<p id="out" class="note"></p>
+
+<pre id="how">node tools/cli.mjs image drawing.png --mode shape --atlas atlas.json</pre>
+
+<script type="module">
+import { PROFILES, profileById } from '../src/profiles/index.js';
+import { charset } from '../src/core/machine.js';
+import { buildAtlas } from '../src/core/glyphs.js';
+
+const pick = document.getElementById('machine');
+for (const p of PROFILES) {
+  pick.append(new Option(`${p.name} — ${charset(p).length} characters`, p.id));
+}
+
+document.getElementById('go').addEventListener('click', () => {
+  const machine = profileById(pick.value);
+  const atlas = buildAtlas(charset(machine), 'monospace');
+  const out = document.getElementById('out');
+
+  if (!atlas.hasShapes) {
+    out.textContent =
+      'This browser rendered nothing measurable — no shapes to export. ' +
+      'A blocked font or a canvas that will not draw.';
+    return;
+  }
+
+  // Float32Array does not survive JSON, so the histograms go out as plain
+  // arrays and the command line turns them back.
+  const blob = new Blob([JSON.stringify({
+    machine: machine.id,
+    font: 'monospace',
+    cellW: atlas.cellW,
+    cellH: atlas.cellH,
+    maxCoverage: atlas.maxCoverage,
+    glyphs: atlas.glyphs.map((g) => ({
+      ch: g.ch,
+      coverage: g.coverage,
+      ink: g.ink,
+      centre: g.centre,
+      shape: [...g.shape],
+    })),
+  })], { type: 'application/json' });
+
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `atlas-${machine.id}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+
+  out.textContent =
+    `Measured ${atlas.glyphs.length - 1} characters on ${machine.name}.`;
+});
+</script>
+</html>
