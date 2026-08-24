@@ -246,14 +246,18 @@ function cmdCount(file, flags) {
   console.log(`${file}: ${seconds.toFixed(1)} s at ${sampleRate} Hz`);
   if (flags.events) {
     for (const s of strikes) {
-      console.log(`  strike ${fmtMs(s.at)}  score ${s.strength.toFixed(1).padStart(6)}`
-        + `  level ${s.level.toFixed(1)} dB`);
+      console.log(`  ${s.space ? 'SPACE ' : 'strike'} ${fmtMs(s.at)}`
+        + `  score ${s.strength.toFixed(1).padStart(6)}`
+        + `  level ${s.level.toFixed(1).padStart(6)} dB`
+        + `  low ${s.lowShare.toFixed(2)}`);
     }
     for (const r of returns) {
       console.log(`  RETURN ${fmtMs(r.at)}  ${r.durationMs.toFixed(0)} ms, ${r.strikesInside} strikes inside`);
     }
   }
+  const spaces = strikes.filter((s) => s.space).length;
   console.log(`  strikes counted:   ${strikes.length}${eff !== strikes.length ? ` (${eff} outside carriage returns)` : ''}`);
+  console.log(`  of those, low:     ${spaces}  (space-like: below ${DEFAULTS.bandSplitHz} Hz carries at least ${DEFAULTS.spaceShare} of the energy)`);
   console.log(`  carriage returns:  ${returns.length}`);
 
   if (flags.expect != null) {
@@ -287,12 +291,13 @@ function cmdEval(dir, flags) {
     ? `With ${named}; everything else as it stands in listen.js.\n`
     : 'With the values as they stand in listen.js.\n');
 
-  console.log('file                              expected   heard   error   returns');
+  console.log('file                              expected   heard   error   returns   low');
   for (const f of files) {
     const want = labels[f];
     const { samples, sampleRate } = readWav(join(dir, f));
     const { strikes, returns } = direct(samples, sampleRate, opt);
     const eff = effective(strikes, returns);
+    const low = strikes.filter((s) => s.space).length;
     const err = eff - (want.strikes ?? 0);
     totalErr += Math.abs(err);
     if (err === 0) exact++;
@@ -305,7 +310,8 @@ function cmdEval(dir, flags) {
       + String(want.strikes ?? 0).padStart(8)
       + String(eff).padStart(8)
       + (err === 0 ? '       ✓' : String(err > 0 ? `+${err}` : err).padStart(8))
-      + '   ' + rMark,
+      + '   ' + rMark.padEnd(7)
+      + '   ' + low + (want.spaces != null ? `/${want.spaces}` : ''),
     );
   }
   console.log(`\n${exact} of ${files.length} files exact; total miscount ${totalErr} strikes.`);

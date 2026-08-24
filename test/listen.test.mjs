@@ -55,10 +55,11 @@ function rng(seed = 1) {
  * @param {number[]} [spec.returns] carriage-return start times, seconds
  * @param {number} [spec.noise] room noise amplitude
  * @param {number[]} [spec.force] per-strike loudness, defaults to 1
+ * @param {number[]} [spec.spaces] space-bar times, seconds
  */
 function record({
   seconds, strikes = [], returns = [], noise = 0.0005, force = null,
-  reboundMs = 45, reboundLevel = 0.5, gain = 1,
+  reboundMs = 45, reboundLevel = 0.5, gain = 1, spaces = [],
 }) {
   const n = Math.round(seconds * RATE);
   const x = new Float32Array(n);
@@ -88,6 +89,27 @@ function record({
     click(t, a, 8);
     click(t + reboundMs / 1000, a * reboundLevel, 6);
   });
+
+  // The space bar drives the escapement without a typebar reaching the
+  // platen, so there is no metal-on-rubber impact and what is left is a low
+  // thump. Modelled by integrating the noise instead of differencing it —
+  // the opposite tilt to a strike. Measured on the real SM7, a space puts
+  // ~72% of its energy below 2 kHz against a strike's ~13%.
+  const thump = (at, amp, decayMs) => {
+    const start = Math.round(at * RATE);
+    const len = Math.round((decayMs * 6 * RATE) / 1000);
+    const q = rng(Math.round(at * 1e6) | 3);
+    let acc = 0;
+    for (let i = 0; i < len && start + i < n; i++) {
+      const t = (i / RATE) * 1000;
+      acc = acc * 0.97 + q() * 0.03;
+      x[start + i] += acc * amp * 20 * Math.exp(-t / decayMs);
+    }
+  };
+  for (const t of spaces) {
+    thump(t, gain, 12);
+    thump(t + 0.13, gain * 0.6, 10);      // the release, quieter and later
+  }
 
   for (const t of returns) {
     // Lever, travel, and the slam into the margin stop: continuous clatter
@@ -260,6 +282,35 @@ check('the band is set in hertz, so it means the same at any sample rate', () =>
     assert.ok(Math.abs(d.binHi * perBin - DEFAULTS.bandHighHz) < perBin,
       `high edge is ${(d.binHi * perBin).toFixed(0)} Hz at ${rate}`);
   }
+});
+
+check('a space bar reads low, a typebar reads broad', () => {
+  /*
+   * Measured on the labelled SM7 takes of 2026-08-24: space presses put
+   * 0.68/0.72/0.75 (q10/med/q90) of their 0.5-12 kHz energy below 2 kHz,
+   * against 0.08/0.13/0.62 for letter strikes. §4.3(b) of the research
+   * document had rated this a guess for want of data; it is the one thing
+   * that could eventually resolve a run of spaces, which is where an ASCII
+   * motif is most easily lost.
+   */
+  const x = record({ seconds: 5, strikes: [0.6, 1.4], spaces: [2.4, 3.4] });
+  const { strikes } = run(x);
+  const typed = strikes.filter((s) => s.at < 2000);
+  const spaced = strikes.filter((s) => s.at >= 2000);
+  assert.ok(typed.length >= 2 && spaced.length >= 2,
+    `heard ${typed.length} strikes and ${spaced.length} spaces`);
+  assert.ok(typed.every((s) => !s.space),
+    `a typebar was called a space: shares ${typed.map((s) => s.lowShare.toFixed(2))}`);
+  assert.ok(spaced.every((s) => s.space),
+    `a space was called a typebar: shares ${spaced.map((s) => s.lowShare.toFixed(2))}`);
+});
+
+check('the reading is a number on every strike, not only on spaces', () => {
+  // Whoever aligns against a known line needs the evidence, not a verdict.
+  const x = record({ seconds: 2, strikes: [0.8] });
+  const [s] = run(x).strikes;
+  assert.ok(s.lowShare >= 0 && s.lowShare <= 1, `share is ${s.lowShare}`);
+  assert.strictEqual(typeof s.space, 'boolean');
 });
 
 check('the band keeps the part of the strike that carries the energy', () => {

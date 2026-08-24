@@ -90,6 +90,37 @@ export const DEFAULTS = {
    */
   bandLowHz: 500,
   bandHighHz: 12000,
+  /**
+   * Where the space bar parts company with the typebars, in hertz.
+   *
+   * A typebar ends its travel by hitting the platen: metal on hard rubber
+   * through paper, which is what puts energy in the mid and high bands. The
+   * space bar drives the escapement and the carriage without any such
+   * impact, so what reaches the microphone is a low thump.
+   *
+   * Measured on the labelled SM7 takes (2026-08-24), share of 0.5-12 kHz
+   * energy falling below 2 kHz:
+   *
+   *   space presses (take 6, spaces alone)   0.68 / 0.72 / 0.75  (q10/med/q90)
+   *   letter strikes (takes 1-5)             0.08 / 0.13 / 0.62
+   *
+   * §4.3(b) of the research document rated this [guess] for want of data.
+   * It is now measured, and the answer is yes.
+   */
+  bandSplitHz: 2000,
+  /**
+   * Low-band share above which an event is called space-like, 0…1.
+   *
+   * The two clusters above are far apart, so the threshold sits in open
+   * ground between them rather than on a decision boundary anyone had to
+   * agonise over. Counted against the photographed sheet, 0.45 finds 38 of
+   * the 43 spaces actually typed across takes 1-5.
+   *
+   * This is evidence, not a verdict: nothing in the counting path acts on
+   * it yet. It is reported on every strike so that alignment against the
+   * known line — which is where it becomes worth something — has it.
+   */
+  spaceShare: 0.45,
   /** Sensitivity, 0…1. Higher means it takes less to trigger. */
   sensitivity: 0.55,
   /**
@@ -375,7 +406,8 @@ export class StrikeDetector {
   /**
    * @param {number} sampleRate
    * @param {Object} [opt] see DEFAULTS, plus:
-   * @param {(e:{strength:number, at:number, level:number}) => void} [opt.onStrike]
+   * @param {(e:{strength:number, at:number, level:number,
+   *   lowShare:number, space:boolean}) => void} [opt.onStrike]
    * @param {(e:{at:number, durationMs:number, level:number, strikesInside:number}) => void} [opt.onReturn]
    * @param {(e:{flux:number, threshold:number, level:number}) => void} [opt.onFrame]
    */
@@ -406,6 +438,8 @@ export class StrikeDetector {
     const perBin = sampleRate / n;
     this.binLo = Math.max(1, Math.floor(this.opt.bandLowHz / perBin));
     this.binHi = Math.min(n / 2, Math.ceil(this.opt.bandHighHz / perBin));
+    this.binSplit = Math.max(this.binLo + 1,
+      Math.min(this.binHi - 1, Math.round(this.opt.bandSplitHz / perBin)));
 
     const frames = Math.max(8, Math.round(this.opt.floorWindowMs / this.opt.hopMs));
     this.fluxWindow = new Robust(frames);
@@ -513,12 +547,28 @@ export class StrikeDetector {
     this.fft.magnitudes(this.frame, this.window, this.mag);
 
     let flux = 0;
+    // Where the *new* energy sits, low against high — the reading that tells
+    // a space bar from a typebar. Four ways of taking it were measured
+    // against the labelled takes: total energy or new energy, at the frame
+    // the flux peaks in or the one after. New energy at the frame after won,
+    // and it is the principled one — the room and the tail of the previous
+    // keystroke are in the total but not in the difference, and by the
+    // following frame the whole transient has entered the window.
+    //
+    // Squared, because a share of *energy* is what is meant. The unsquared
+    // sum was tried and is worthless here: the high band spans 10 kHz
+    // against the low band's 1.5, so it wins on bin count alone.
+    let eLow = 0, eHigh = 0;
     for (let i = this.binLo; i < this.binHi; i++) {
       // Half-wave rectified difference of *linear* magnitudes. A fall is the
       // sound decaying, and decay is not an onset.
       const d = this.mag[i] - this.prevMag[i];
-      if (d > 0) flux += d;
+      if (d > 0) {
+        flux += d;
+        if (i < this.binSplit) eLow += d * d; else eHigh += d * d;
+      }
     }
+    const share = eLow / (eLow + eHigh + 1e-20);
     const tmp = this.prevMag; this.prevMag = this.mag; this.mag = tmp;
 
     // The window ends at the newest sample, so this timestamp lags the sound
@@ -529,14 +579,14 @@ export class StrikeDetector {
     this.frames++;
     if (this.frames === 1) { this.warm = false; return; }  // no previous frame
     this.warm = true;
-    this._score(flux, this.level, at);
+    this._score(flux, this.level, at, share);
   }
 
   /**
    * Score one flux value and decide. Separate from the FFT so tests can
    * drive the peak picker directly with a made-up detection function.
    */
-  _score(flux, level, at) {
+  _score(flux, level, at, share = null) {
     this.fluxWindow.push(flux);
 
     const floor = this.fluxWindow.median;
@@ -611,7 +661,14 @@ export class StrikeDetector {
       && (this.loudSince === null || prevAt - this.loudSince <= this.opt.strikeMaxMs)) {
       this.strikePeaks.push(peak);
     }
-    this.onStrike({ strength: prev, at: prevAt, level });
+    this.onStrike({
+      strength: prev, at: prevAt, level,
+      // What the sound is made of, and the reading of it. Reported rather
+      // than acted on: the counting path treats every strike alike, and
+      // whoever aligns against a known line decides what to do with this.
+      lowShare: share,
+      space: share !== null && share >= this.opt.spaceShare,
+    });
     return prev;
   }
 

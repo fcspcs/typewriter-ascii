@@ -1129,15 +1129,58 @@ harness is `tools/listen-lab.mjs`; labels sit next to the audio in
 `recordings/`. This appendix records what those takes settled, in the order
 the guesses were made above.
 
-### The space bar, §4.3(b), still open
+### The space bar, §4.3(b), resolved — and the answer is yes
 
-Take 6 gives 22 events for 10 presses: the space bar produces a press and
-a release, the release 4.5–9 dB quieter and 90–500 ms later [measured].
-Neither loudness nor interval separates them — the release sits inside
-the range of a genuinely soft strike, and a time-window on the rebound
-gate was tried and made everything worse (39 → 64), which is recorded at
-`reboundDb` in the source so it is not re-invented. Whether the spectrum
-separates them is the next thing to measure.
+Two findings, and they point in opposite directions.
+
+**Loudness and timing do not separate a space from its own echo.** The
+space bar produces two clicks, press and release, the release 4.5–9 dB
+quieter and 90–500 ms later [measured, take 6: 10 presses, 22 events
+counted]. The release sits inside the loudness range of a genuinely soft
+strike — the "varying strike force" test requires an 8 dB swing to
+survive — and its delay sits inside ordinary typing intervals. A
+time-window on the rebound gate was tried and made everything worse
+(total miscount 39 → 64), because the release arrives later than any
+window a fast typist would tolerate; the attempt is recorded at
+`reboundDb` in the source so it is not re-invented.
+
+**The spectrum separates a space from a letter cleanly.** §4.3(b)
+reasoned mechanically that it should: a typebar ends its travel against
+the platen, metal on hard rubber through paper, and the space bar drives
+the escapement with no such impact. Measured, as a share of 0.5–12 kHz
+energy falling below 2 kHz [measured, `features.mjs`]:
+
+| events | q10 | median | q90 |
+|---|---|---|---|
+| space presses (take 6, spaces alone) | 0.68 | **0.72** | 0.75 |
+| letter strikes (takes 1–5) | 0.08 | **0.13** | 0.62 |
+
+Two clusters, far apart, and the histograms barely touch. How the reading
+is taken matters more than the threshold does — four ways were compared
+against the number of spaces on the photographed sheet:
+
+| reading | spaces found (43 typed) |
+|---|---|
+| total energy, at the frame the flux peaks in | 30 |
+| total energy, at the frame after | 36 |
+| **new energy (flux), at the frame after** | **44** |
+| new energy, unsquared | 21 |
+
+[measured, `variants.mjs`, threshold 0.45] The winner is the principled
+one: the room and the tail of the previous keystroke are in the total but
+not in the difference, and by the following frame the whole transient has
+entered the window. Squaring matters because a share of *energy* is what
+is meant — unsquared, the high band wins on bin count alone, spanning
+10 kHz against the low band's 1.5.
+
+The detector now reports `lowShare` and `space` on every strike. Nothing
+in the counting path acts on them, deliberately: the take that would
+settle how to act — spaces with per-press ground-truth *timing*, so
+press and release can be told apart individually — does not exist. What
+this unlocks is level 2 of §4.4, where the app contributes what the
+detector cannot know: where the spaces are in the line. For a motif with
+a run of eighteen spaces, that is the difference between counting them
+and merely knowing when the run has ended.
 
 ### The carriage return, §4.3(a), was two sounds all along
 
@@ -1179,6 +1222,11 @@ than a strike before strikes exist (§"strikesBeforeReturn").
 - **Fast typing.** The "one line as fast as you can" take was never
   recorded, so `minIntervalMs 120` is unproven against speed. It is the
   first thing the next session should capture.
+- **Spaces, individually.** Take 6 gives 22 events for 10 presses but no
+  per-press timing, so which events are presses and which releases is not
+  recoverable — five pairs sit 90–140 ms apart and look conclusive, the
+  remaining twelve events do not pair up at all. A take that counts each
+  press aloud as it happens would settle it.
 - **Speech near the microphone.** Spoken labels cost little here but did
   produce sub-threshold events; the app should expect the first seconds
   after the button press to be unclean.
