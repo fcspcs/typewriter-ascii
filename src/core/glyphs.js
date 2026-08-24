@@ -16,6 +16,8 @@
  * brightness.
  */
 
+import { rampGlyphs, RAMP_RANGE } from './ink.js';
+
 /** Sampling resolution of one cell. Higher is slower and barely better. */
 const CELL_W = 16;
 const CELL_H = 27;   // roughly the 10 cpi × 6 lpi cell shape
@@ -140,7 +142,66 @@ export function buildAtlas(chars, font = 'monospace') {
 
   // Darkest character is worth knowing — it sets the top of the tone range.
   const maxCoverage = Math.max(...glyphs.map((g) => g.coverage));
-  return { glyphs, maxCoverage, cellW: CELL_W, cellH: CELL_H };
+  // A canvas that cannot render reports every glyph as empty. Say so rather
+  // than pretend, the same way inkWeights() does — a shape match against
+  // blank descriptors is really a tone match, and callers should know.
+  const hasShapes = glyphs.some((g) => g.ink > 0);
+  return { glyphs, maxCoverage, cellW: CELL_W, cellH: CELL_H, hasShapes };
+}
+
+/**
+ * An atlas built from the measured table in ink.js, for where there is no
+ * canvas — the command line, a test, a server.
+ *
+ * What it has and has not got is the whole point, so it is stated plainly:
+ *
+ *   coverage  approximated. The table records the *order* of the characters
+ *             by weight and the two ends of the range, not each value, so
+ *             coverage is interpolated across the ranking. Tone mode picks
+ *             by nearest coverage, so this spreads the tones evenly by rank
+ *             — close to the browser, not identical to it.
+ *   centre    exact. Measured, one digit per character.
+ *   shape     absent. A log-polar histogram cannot be recovered from a
+ *             ranking; it needs the rendered glyph. `hasShapes` says so, and
+ *             callers are expected to check rather than to quietly get a
+ *             shape match that is really a tone match.
+ *
+ * @param {Iterable<string>} chars the machine's character set
+ * @returns {Object} the same shape as buildAtlas, plus hasShapes: false
+ */
+export function tableAtlas(chars) {
+  const known = new Map(rampGlyphs().map((g) => [g.ch, g]));
+  const { min, max } = RAMP_RANGE;
+
+  const glyphs = [{
+    ch: ' ',
+    coverage: 0,
+    shape: new Float32Array(RADIAL * ANGULAR),
+    ink: 0,
+    centre: 0.5,
+  }];
+
+  for (const ch of chars) {
+    if (ch === ' ') continue;
+    const g = known.get(ch);
+    glyphs.push({
+      ch,
+      // Unknown characters sit mid-range rather than at zero, which would
+      // make them the preferred match for blank paper.
+      coverage: g ? min + g.rank * (max - min) : (min + max) / 2,
+      shape: new Float32Array(RADIAL * ANGULAR),
+      ink: 0,
+      centre: g ? g.centre : 0.5,
+    });
+  }
+
+  return {
+    glyphs,
+    maxCoverage: Math.max(...glyphs.map((g) => g.coverage)),
+    cellW: CELL_W,
+    cellH: CELL_H,
+    hasShapes: false,
+  };
 }
 
 /**

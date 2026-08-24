@@ -71,11 +71,36 @@ export function toInk(img, { invert = 'auto' } = {}) {
  * rendered with the two or three characters whose coverage happens to land
  * in that band — flat, and usually the heavy ones. Percentile ends rather
  * than min/max, so one stray white speck cannot set the scale.
+ *
+ * The percentile has to follow the picture, though, and this is where a line
+ * drawing used to be lost. A fixed 98th percentile assumes the top 2% of the
+ * frame is drawing; an ornamental monogram covers well under 1%, so the 98th
+ * percentile *is* background, the range comes out empty, and the function
+ * gave up — leaving the faint blurred remains of the lines for `contrast` to
+ * clamp to nothing. The rescue was skipped in exactly the case that needed
+ * rescuing.
+ *
+ * So when the fixed percentile finds nothing, the top is taken from the ink
+ * instead of from the frame: how much of the picture carries ink at all,
+ * then a high point within *that* population. Still a percentile, so a
+ * handful of hot pixels cannot set the scale, and a genuinely blank sheet
+ * still has nothing to find and is still left alone.
  */
 export function normalise(field, low = 0.02, high = 0.98) {
   const sorted = Float32Array.from(field.data).sort();
-  const lo = sorted[Math.floor(sorted.length * low)];
-  const hi = sorted[Math.floor(sorted.length * high)];
+  const n = sorted.length;
+  const lo = sorted[Math.floor(n * low)];
+  let hi = sorted[Math.floor(n * high)];
+
+  if (hi - lo < 0.05) {
+    // Everything above a quarter of the way to the peak counts as ink. A
+    // share of the range rather than an absolute, so a faint scan and a
+    // black-and-white logo are measured the same way.
+    const floor = lo + (sorted[n - 1] - lo) * 0.25;
+    let inked = 0;
+    while (inked < n && sorted[n - 1 - inked] > floor) inked++;
+    if (inked) hi = sorted[n - 1 - Math.floor(inked * 0.2)];
+  }
   if (hi - lo < 0.05) return field;      // genuinely flat; leave it alone
 
   const out = new Float32Array(field.data.length);
@@ -83,6 +108,46 @@ export function normalise(field, low = 0.02, high = 0.98) {
     out[i] = clamp((field.data[i] - lo) / (hi - lo), 0, 1);
   }
   return { data: out, w: field.w, h: field.h };
+}
+
+/**
+ * How much of the picture is ink, and how thick the strokes are.
+ *
+ * Area over perimeter. A stroke of width w and length L has area wL and
+ * roughly 2L of edge, so twice the ratio gives back w; a solid blob of
+ * radius r gives back r, which is the right answer for "how far can this be
+ * smoothed before it stops being itself".
+ *
+ * Coverage comes with it because the two are only meaningful together. Thin
+ * strokes over a small part of the frame is a drawing. Thin strokes over
+ * half the frame is texture in a photograph, and blurring that away is the
+ * whole point rather than a mistake.
+ *
+ * @returns {{coverage: number, width: number}} width in pixels, 0 if no ink
+ */
+export function strokes(field) {
+  const { w, h, data } = field;
+  let peak = 0;
+  for (let i = 0; i < data.length; i++) if (data[i] > peak) peak = data[i];
+  if (peak <= 0) return { coverage: 0, width: 0 };
+
+  const t = peak * 0.5;
+  let area = 0;
+  let edge = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (data[i] <= t) continue;
+      area++;
+      if (x === 0 || x === w - 1 || y === 0 || y === h - 1 ||
+          data[i - 1] <= t || data[i + 1] <= t ||
+          data[i - w] <= t || data[i + w] <= t) edge++;
+    }
+  }
+  return {
+    coverage: area / (w * h),
+    width: edge ? (2 * area) / edge : 0,
+  };
 }
 
 /** Separable box blur, run a few times — close enough to a gaussian. */
@@ -201,6 +266,91 @@ export function cropToContent(field, threshold = 0.04, air = 2) {
     for (let x = 0; x < nw; x++) out[y * nw + x] = data[(y + y0) * w + x + x0];
   }
   return { data: out, w: nw, h: nh };
+}
+
+/* ------------------------------------------------------------------ */
+/* The preparation, in one place                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Ink coverage below which a picture is treated as a drawing rather than a
+ * photograph. Line art on a sheet runs well under a tenth of the frame; a
+ * photograph that has been reduced to ink is far denser than this.
+ */
+const LINE_ART_COVERAGE = 0.15;
+
+/**
+ * Run steps 1 and 2 in the order that decides the result.
+ *
+ * This used to live inline in the page's convert(), which meant the command
+ * line could not run it and no test covered the *order* — only the individual
+ * steps. Order is the part that matters: the same five functions in a
+ * different sequence give a different picture, and in the worst case an empty
+ * one.
+ *
+ * `onStage` is called after every step with a copy-free view of the field, so
+ * a caller can measure what each step did without this function knowing
+ * anything about reporting.
+ *
+ * @param {ImageData} img
+ * @param {Object} [o]
+ * @param {boolean|'auto'} [o.invert='auto']
+ * @param {number} [o.detail=0.45]     0…1, the Detail slider
+ * @param {number} [o.contrast=1.3]    the Contrast slider, 1 = untouched
+ * @param {string} [o.mode='shape']    'shape' | 'tone' | 'outline' | 'sentence'
+ * @param {number} [o.maxCols=60]      sets the blur radius, via the cell size
+ * @param {(stage: string, field: Object, extra?: Object) => void} [o.onStage]
+ * @returns {{field: Object, inverted: boolean, radius: number}}
+ */
+export function prepare(img, o = {}) {
+  const {
+    invert = 'auto', detail = 0.45, contrast: amount = 1.3,
+    mode = 'shape', maxCols = 60, onStage = null,
+  } = o;
+  const step = (name, field, extra) => { onStage?.(name, field, extra); return field; };
+
+  let field = step('ink', toInk(img, { invert }));
+  const inverted = field.inverted;
+
+  /*
+   * Smooth before sampling: texture cannot survive a 2.5 mm cell, and
+   * leaving it in produces noise that reads as dirt.
+   *
+   * The radius follows the cell, which is right for a photograph and wrong
+   * for a drawing. A cell on A4 is fifteen pixels of a 900 px source, so at
+   * the default Detail the radius is around seven — and a hairline is one.
+   * Spreading one pixel of ink over fifteen leaves a peak of 0.15 where
+   * there was 1.0, which is how an ornamental monogram arrived at the
+   * character matcher as an empty grey field.
+   *
+   * So the radius is also capped by the strokes themselves, but only for
+   * pictures sparse enough to be drawings. A photograph is dense, keeps the
+   * full radius, and still loses the texture it needs to lose.
+   */
+  const art = strokes(field);
+  let radius = Math.max(0, (1 - detail) * (field.w / maxCols) * 0.9);
+  const lineArt = art.width > 0 && art.coverage < LINE_ART_COVERAGE;
+  if (lineArt) radius = Math.min(radius, art.width * 0.5);
+  field = step('blur', blur(field, radius), { radius, strokes: art });
+
+  /*
+   * Stretch, then push apart — and not the other way round.
+   *
+   * `contrast` pivots on 0.5, so it can only mean anything once the picture
+   * occupies the range it is pivoting inside. Run first, on a drawing whose
+   * average ink is 0.005, it clamps everything below 0.5 - 0.5/amount to
+   * nothing: at the default 130% that is everything under 0.115, and the
+   * blurred remains of a line peak at 0.15. Every pixel went to zero, and
+   * the normalise that would have rescued the picture then had nothing left
+   * to work with.
+   */
+  field = step('normalise', normalise(field));
+  field = step('contrast', contrast(field, amount), { amount });
+
+  if (mode === 'outline') field = step('outline', outline(field, 0.45));
+  field = step('crop', cropToContent(field));
+
+  return { field, inverted, radius, strokes: art, lineArt };
 }
 
 /* ------------------------------------------------------------------ */

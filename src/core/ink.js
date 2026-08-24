@@ -59,6 +59,27 @@ function rampCentre(i) {
 }
 
 /**
+ * The ends of the measured coverage range, for anyone rebuilding an atlas
+ * from the table above rather than from a canvas.
+ */
+export const RAMP_RANGE = { min: 0.0167, max: 0.2043 };
+
+/**
+ * The ramp as data: every character it knows, faintest first, with where it
+ * sits in the ranking and where its ink sits in the cell.
+ *
+ * Exported so a headless atlas can be built from the same measurements the
+ * tone ramp uses, instead of a second table drifting alongside this one.
+ */
+export function rampGlyphs() {
+  return [...RAMP].map((ch, i) => ({
+    ch,
+    rank: i / (RAMP.length - 1),     // 0 faintest … 1 heaviest
+    centre: rampCentre(i),
+  }));
+}
+
+/**
  * A function from character to how much ink it puts on the paper, 0…1.
  *
  * With an atlas this is measured against the font on screen. Without one it
