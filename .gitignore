@@ -12,3 +12,8 @@ recordings/*.mp3
 recordings/*.flac
 recordings/*.ogg
 recordings/*.aac
+
+# FIGlet fonts stay local: the collection's licences are a patchwork and
+# most files state none at all. fonts/README.md stays tracked and says where
+# to get them.
+fonts/*.flf

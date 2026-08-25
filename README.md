@@ -265,6 +265,19 @@ To use them anyway, point [`figlet`](https://github.com/patorjk/figlet.js) at
 your own copy of the `.flf` files. They are worth having; they just are not
 ours to ship.
 
+**Or import the real thing.** Redrawn is not identical, and sometimes
+identical is the point. The program reads FIGlet's own `.flf` font files —
+from *your* copy, which stays on your disk the way the audio recordings do —
+and sets type with the real layout algorithm: full width, kerning, and
+smushing with the six controlled rules of the FIGfont standard, so the
+output is pixel for pixel what the TAAG site shows. Characters your machine
+has not got go through the same stand-in engine as everything else, and you
+are told what will be typed in their place; only a character with no
+stand-in at all is left blank, by name. See `fonts/README.md` for where to
+get the files:
+
+    node tools/cli.mjs text "HELLO" --flf fonts/Roman.flf
+
 Credit where due: the FIGlet format and its font collection come from the
 FIGlet project (figlet.org) and decades of contributors.
 
