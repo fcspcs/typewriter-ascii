@@ -1,14 +1,16 @@
 # The fonts, and whose they are
 
-FIGlet font files (`.flf`). The command line sets type with them, pixel for
-pixel as the TAAG site shows them:
+FIGlet font files (`.flf`). The browser offers them in the face picker,
+under their own group, and the command line sets type with them too — pixel
+for pixel as the TAAG site shows them:
 
     node tools/cli.mjs text "HELLO" --flf fonts/Roman.flf
 
-Any `.flf` file you add to this folder works the same way. Characters your
-machine has not got are typed as their stand-ins (`^` as `´` on the Olympia
-SM7, and you are told); only a character with no stand-in at all is left
-blank, named in a note.
+Any `.flf` file you add to this folder works with `--flf` as it is; name it
+in [`index.json`](index.json) and it appears in the browser's picker as
+well. Characters your machine has not got are typed as their stand-ins
+(`^` as `´` on the Olympia SM7, and you are told); only a character with no
+stand-in at all is left blank, named in a note.
 
 ## Provenance
 

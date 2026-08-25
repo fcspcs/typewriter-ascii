@@ -156,12 +156,17 @@ the [FIGlet collection](https://github.com/patorjk/figlet.js) the way figlet
 itself, every Linux distribution and the TAAG site have redistributed them
 for thirty years. They are the work of their authors, who are named in
 [`fonts/README.md`](../fonts/README.md); they are **not** covered by this
-project's MIT licence. Any `.flf` you drop into the folder works the same
-way:
+project's MIT licence.
+
+In the browser they sit in the face picker, under their own group; the file
+is fetched the first time a font is chosen. On the command line:
 
 ```sh
 node tools/cli.mjs text "HELLO" --flf fonts/Roman.flf
 ```
+
+Any `.flf` you drop into the folder works with `--flf` as it is, and joins
+the browser's picker once it is named in [`fonts/index.json`](../fonts/index.json).
 
 Credit where due: the FIGlet format and its font collection come from the
 FIGlet project (figlet.org) and decades of contributors.

@@ -247,13 +247,15 @@ Keystrokes vary a lot between faces, which matters when you are the printer:
 calligraphic hand, 327 in the three-dimensional face. Hollow faces cost
 roughly a third of what solid ones do.
 
-**Or set the real thing.** The command line reads FIGlet's own `.flf` font
-files and sets type with the real layout algorithm — full width, kerning,
-and smushing with the six controlled rules of the FIGfont standard — so the
-output is pixel for pixel what the TAAG site shows. Nineteen fonts ship in
-[`fonts/`](fonts/), redistributed as received and credited to their authors
-in [`fonts/README.md`](fonts/README.md); any `.flf` you drop into the folder
-works the same way:
+**Or set the real thing.** Nineteen original FIGlet fonts ship in
+[`fonts/`](fonts/) and appear in the browser's face picker beside the drawn
+faces, set with the real layout algorithm — full width, kerning, and
+smushing with the six controlled rules of the FIGfont standard — so the
+output is pixel for pixel what the TAAG site shows, before the marks the
+machine lacks are swapped for what it can strike, and you are told what
+changed. They are redistributed as received and credited to their authors
+in [`fonts/README.md`](fonts/README.md). The command line reads them too,
+and any `.flf` you drop into the folder joins in:
 
 ```sh
 node tools/cli.mjs text "HELLO" --flf fonts/Roman.flf

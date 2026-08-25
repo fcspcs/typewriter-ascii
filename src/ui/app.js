@@ -120,6 +120,32 @@ function fillSelects(saved) {
   $('letterStyle').innerHTML = Object.entries(STYLES)
     .map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
 
+  /*
+   * The real FIGlet fonts, from the manifest rather than a hard-coded list,
+   * so dropping an .flf into fonts/ and naming it in index.json is all it
+   * takes. Where the manifest cannot be fetched — a page opened straight
+   * from disk, a test without a network stack — the drawn faces stand
+   * alone, which is exactly what they did before the fonts shipped.
+   */
+  try {
+    fetch('fonts/index.json')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((names) => {
+        if (!Array.isArray(names) || !names.length) return;
+        const group = document.createElement('optgroup');
+        group.label = 'FIGlet fonts, as received';
+        for (const n of names) {
+          const o = document.createElement('option');
+          o.value = FLF + n;
+          o.textContent = n;
+          group.append(o);
+        }
+        $('letterStyle').append(group);
+        syncLetterHint();
+      })
+      .catch(() => {});
+  } catch { /* no fetch here — the drawn faces stand alone */ }
+
   $('machine').innerHTML = PROFILES
     .map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
   const sizes = PAPERS
@@ -262,7 +288,10 @@ function syncInkControls() {
     return;
   }
 
-  const twoSurface = currentTab() === 'text' && usesTwo($('letterStyle').value);
+  // An imported font has no second surface to colour: like pasted art, it
+  // is marks on a page, so red goes by lines or amount, not by face parts.
+  const twoSurface = currentTab() === 'text'
+    && !isFlf($('letterStyle').value) && usesTwo($('letterStyle').value);
   // Depth and accent grade a motif from faint to heavy. With a single ink
   // level there is nothing to grade: the slider would travel its whole
   // length and either do nothing or turn everything red. Leave them out.
@@ -519,6 +548,56 @@ function letterStandIns(style) {
   });
 }
 
+/* ── the FIGlet fonts, offered beside the drawn faces ────────── */
+
+/*
+ * The fonts in fonts/ appear in the same picker as the drawn faces, under
+ * their own group. The picker value is 'flf:Name'; the file is fetched the
+ * first time that face is chosen and parsed once. An imported font is the
+ * paste path with a typesetter in front — set exactly as the file says,
+ * then swap what the machine lacks and blank what has no stand-in, saying
+ * so either way. The same bargain the command line makes with --flf, with
+ * one advantage over it: the measured half of the stand-in engine is here,
+ * because there is a canvas.
+ */
+const FLF = 'flf:';
+const isFlf = (v) => typeof v === 'string' && v.startsWith(FLF);
+const flfFonts = new Map();          // name → parsed font, or 'loading'
+
+/** The parsed font, or null while it is on its way (convert() re-runs). */
+function flfFont(name) {
+  const got = flfFonts.get(name);
+  if (got && got !== 'loading') return got;
+  if (!got) {
+    flfFonts.set(name, 'loading');
+    try {
+      fetch(`fonts/${encodeURIComponent(name)}.flf`)
+        .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.text(); })
+        .then((text) => {
+          flfFonts.set(name, parseFlf(text, name));
+          convert();
+        })
+        .catch(() => flfFonts.delete(name));
+    } catch { flfFonts.delete(name); }
+  }
+  return null;
+}
+
+/** A word set in an flf font, swapped to what this machine can strike. */
+function flfLines(font, word, { have, maxCols }) {
+  const fset = flfLetter(font, word, { maxCols });
+  const { swaps, missing } = standIns(
+    new Set(fset.lines.join('').replace(/ /g, '')),
+    { have, nearest: (ch, pool) => nearestChar(ch, app.atlas, pool) });
+  const gone = new Set(missing);
+  return {
+    unknown: fset.unknown, swaps, missing,
+    lines: fset.lines.map((row) => [...row]
+      .map((c) => swaps.get(c) ?? (gone.has(c) ? ' ' : c))
+      .join('').replace(/\s+$/, '')),
+  };
+}
+
 function convert() {
   const tab = currentTab();
   /*
@@ -579,7 +658,24 @@ function convert() {
       word = $('letterText').placeholder;
       ghost = true;
     }
-    if (word.trim()) {
+    if (word.trim() && isFlf($('letterStyle').value)) {
+      const font = flfFont($('letterStyle').value.slice(FLF.length));
+      if (font) {
+        const r = flfLines(font, word, { have, maxCols: planRoom.cols });
+        if (r.unknown.size) {
+          note(`${font.name} has no ${[...r.unknown].join(' ')} — left blank.`);
+        }
+        if (r.swaps.size) {
+          note(`Typing ${[...r.swaps].map(([a, b]) => `${a} as ${b}`)
+            .join(', ')} — this machine has no ${[...r.swaps.keys()].join(' ')}.`);
+        }
+        if (r.missing.length) {
+          note(`No stand-in for ${r.missing.join(' ')} on this machine — ` +
+               `left blank.`);
+        }
+        lines = turnRows(r.lines, turn, have);
+      }
+    } else if (word.trim()) {
       const style = $('letterStyle').value;
       /*
        * Wrapped to the margins, not to the edge of the paper.
@@ -1158,6 +1254,13 @@ function syncLetterHint() {
   const room = planningGrid(sheetGrid(app.paper, app.machine), app.turn).cols;
 
   for (const opt of sel.options) {
+    /*
+     * An imported font is never greyed out here: which marks it strikes is
+     * only known once the file is fetched and the word is set, and the
+     * stand-in engine answers for nearly anything. What it cannot answer
+     * for is blanked and named at selection, like pasted art.
+     */
+    if (isFlf(opt.value)) continue;
     const { missing } = letterStandIns(opt.value);
     const name = STYLES[opt.value]?.name ?? opt.value;
     opt.disabled = missing.length > 0;
@@ -1181,6 +1284,38 @@ function syncLetterHint() {
   }
 
   const style = sel.value;
+
+  if (isFlf(style)) {
+    const name = style.slice(FLF.length);
+    const font = flfFonts.get(name);
+    if (!font || font === 'loading') {
+      el.textContent = `${name} — fetching the font…`;
+      return;
+    }
+    const have = new Set(charset(app.machine).filter((c) => app.chosen.has(c)));
+    const r = flfLines(font, word, { have, maxCols: room });
+    const w = Math.max(0, ...r.lines.map((l) => l.length));
+    const parts = [];
+    if (w > room) {
+      parts.push(`Too wide — ${w} columns against the ${room} this sheet ` +
+        `holds, and a word is only ever broken at a space.`);
+    }
+    if (r.swaps.size) {
+      parts.push(`Typed ${[...r.swaps]
+        .map(([a, b]) => `${a} as ${b}`).join(', ')}.`);
+    }
+    if (r.missing.length) {
+      parts.push(`No stand-in for ${r.missing.join(' ')} — left blank.`);
+    }
+    parts.push('A FIGlet font, set exactly as received — fonts/README.md ' +
+      'says whose it is.');
+    if (app.ghost) {
+      parts.push(`Showing ${$('letterText').placeholder} until you type something.`);
+    }
+    el.textContent = parts.join(' ');
+    return;
+  }
+
   const { swaps, missing } = letterStandIns(style);
   if (missing.length) {
     el.textContent = `${STYLES[style]?.name ?? style} is drawn with ` +
