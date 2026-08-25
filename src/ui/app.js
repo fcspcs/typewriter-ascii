@@ -9,7 +9,7 @@
 import { PROFILES, profileById } from '../profiles/index.js';
 import {
   charset, makeTypeable, standIns, PAPERS, paperById, textArea, setUp, sheetGrid,
-  pitchFrom, expectedMm, PITCHES, LINE_PITCHES, landscape,
+  pitchFrom, expectedMm, PITCHES, LINE_PITCHES, landscape, cellWidthMm,
 } from '../core/machine.js';
 import { buildAtlas, nearestChar } from '../core/glyphs.js';
 import {
@@ -46,6 +46,9 @@ const app = {
   image: null,        // ImageData of the source
   lines: [],
   colours: [],
+  // How the preview is shown: the whole sheet scaled to the column, or the
+  // sheet at the size it comes out of the machine.
+  zoom: 'fit',
   at: 0,              // current line
   strike: 0,          // keystrokes done in the current line
   els: [],
@@ -77,6 +80,7 @@ const save = () => {
       invert: $('invert').value,
       sentence: $('sentence').value,
       orientation: $('orientation').value,
+      zoom: app.zoom,
     }));
   } catch { /* private mode */ }
 };
@@ -121,6 +125,7 @@ function fillSelects(saved) {
   // had turned the sheet on their last visit pointed the same way.
   if (saved.orientation) $('orientation').value = saved.orientation;
   else if (saved.landscape) $('orientation').value = 'sideways';
+  app.zoom = saved.zoom === 'original' ? 'original' : 'fit';
 
   /*
    * Where you had got to, restored once at startup.
@@ -512,6 +517,8 @@ function charAdvance() {
   return advanceRatio;
 }
 
+const PX_PER_MM = 96 / 25.4;   // a millimetre, as CSS reckons one
+
 /**
  * The preview is a sheet of paper, not a block of text.
  *
@@ -525,12 +532,21 @@ function charAdvance() {
  * the motif standing where `setUp()` says the machine will put it. The cell
  * is the machine's real cell — wider than tall at pica, more so at elite —
  * so a circle that will come out as an egg looks like an egg here too.
+ *
+ * Two sizes, because a scaled sheet cannot answer everything. `fit` puts the
+ * whole page beside the settings, which is what you need while you are still
+ * choosing them. `original` draws the same sheet at the size it leaves the
+ * machine, and that is a different question: at a tenth of scale any set of
+ * characters reads as a smooth grey, and the only way to find out whether
+ * the motif survives being made of type is to look at type the size it will
+ * actually be.
  */
 function drawMini() {
   const { lines, colours } = app;
   const host = $('mini');
   const paperEl = host.parentElement;
-  if (!lines.length) { host.textContent = ''; paperEl.style.aspectRatio = ''; return; }
+  const real = app.zoom === 'original';
+  if (!lines.length) { host.textContent = ''; sizeSheet(paperEl, false); return; }
 
   const sheet = sheetGrid(app.sheet, app.machine);
   const col0 = Math.max(0, (app.setup?.left ?? 0) - (app.setup?.paperGuide ?? 0));
@@ -541,12 +557,19 @@ function drawMini() {
   // has been turned looks turned. If the preview stayed upright while the
   // instructions said to feed the paper sideways, one of the two would be
   // lying and there is no way to tell which from the machine.
-  paperEl.style.aspectRatio = `${app.sheet.w} / ${app.sheet.h}`;
+  sizeSheet(paperEl, real);
 
-  // Fit the sheet's columns across the box; the cell height then follows
-  // from the machine, not from a line-height that happens to look nice.
-  const boxW = paperEl.clientWidth - 24;
-  const cellW = boxW / sheet.cols;
+  /*
+   * The cell, in pixels.
+   *
+   * At `fit` the sheet's columns are spread across whatever width the column
+   * gives us. At `original` the cell is not fitted to anything: it is the
+   * machine's own 25.4/cpi millimetres, put on screen as millimetres, and
+   * the sheet is sized to match rather than the other way round.
+   */
+  const cellW = real
+    ? cellWidthMm(app.machine) * PX_PER_MM
+    : (paperEl.clientWidth - 24) / sheet.cols;
   const cellH = cellW * (app.machine.cpi / app.machine.lpi);
   const size = cellW / charAdvance();
 
@@ -576,6 +599,47 @@ function drawMini() {
     out.push(row);
   }
   host.innerHTML = out.join('\n');
+}
+
+/**
+ * The box the sheet is drawn in, at whichever of the two sizes is on.
+ *
+ * At `fit` nothing is fixed: the width comes from the column and the height
+ * from the paper's proportions, so the box tracks the window. At `original`
+ * the paper's own millimetres decide both, and the wrapper is told to scroll
+ * because 210 mm of A4 does not fit in a column beside the settings and must
+ * not be allowed to stretch the page trying.
+ *
+ * The shape is declared either way. It is what the sheet is when the size is
+ * not pinned, and when it is pinned the two lengths simply outrank it.
+ */
+function sizeSheet(el, real) {
+  el.classList.toggle('real', real);
+  el.parentElement?.classList.toggle('real', real);
+
+  const shown = app.lines.length > 0;
+  el.style.aspectRatio = shown ? `${app.sheet.w} / ${app.sheet.h}` : '';
+  el.style.width = real && shown ? `${app.sheet.w * PX_PER_MM}px` : '';
+  el.style.height = real && shown ? `${app.sheet.h * PX_PER_MM}px` : '';
+}
+
+/**
+ * Fit, or actual size.
+ *
+ * Fit is the default and stays the default: on arrival the point is to see
+ * the whole sheet at a glance while the settings are still moving. Actual
+ * size is the second look you take once it is nearly right, so it is a
+ * button and not a mode you have to be rescued from — and it is remembered,
+ * because someone comparing two motifs at real size does not want to ask
+ * for it again after every reload.
+ */
+function setZoom(zoom) {
+  app.zoom = zoom === 'original' ? 'original' : 'fit';
+  $('zoomFit').classList.toggle('on', app.zoom === 'fit');
+  $('zoomReal').classList.toggle('on', app.zoom === 'original');
+  $('zoomFit').setAttribute('aria-pressed', String(app.zoom === 'fit'));
+  $('zoomReal').setAttribute('aria-pressed', String(app.zoom === 'original'));
+  drawMini();
 }
 
 /**
@@ -1077,6 +1141,11 @@ function wire() {
   $('full').onclick = toggleFull;
   $('pdf').onclick = savePdf;
   $('listen').onclick = toggleListen;
+
+  // Redrawing is enough: nothing about the motif changes, only the size the
+  // same sheet is drawn at, so there is no need to convert the picture again.
+  $('zoomFit').onclick = () => { setZoom('fit'); save(); };
+  $('zoomReal').onclick = () => { setZoom('original'); save(); };
   $('back1').onclick = () => {
     app.strike = Math.max(0, app.strike - 1);
     app.tracker?.strike(-1);
@@ -1470,5 +1539,8 @@ rebuildAtlas();
 wire();
 showExpected();
 showMeasured();
+// Marks the buttons before the first draw, so the pair says which size is on
+// even when the remembered answer is not the default.
+setZoom(app.zoom);
 $('sentenceRow').hidden = $('mode').value !== 'sentence';
 convert();

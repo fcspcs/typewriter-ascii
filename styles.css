@@ -308,6 +308,32 @@ input[type=range]::-moz-range-thumb {
 .paper-view .r { color: var(--sheet-red); font-style: normal; }
 .paper-view .blank { color: #8a8880; }
 
+/*
+ * Original size needs somewhere to overflow to.
+ *
+ * At actual size an A4 is 210 mm across, which is wider than the column and
+ * a good deal taller than the screen. The sheet itself is sized in drawMini()
+ * from the paper's real millimetres; this box is what lets you move around
+ * it without the page growing a metre of scroll of its own — the sticky
+ * column has to keep working, and the settings beside it must not be pushed
+ * off the bottom by a preview.
+ *
+ * At `fit` it is an ordinary wrapper: nothing overflows, so nothing scrolls.
+ */
+.paper-scroll.real {
+  overflow: auto;
+  max-height: min(72vh, 900px);
+  /* The scrollbars belong to a sheet of paper, not to the page around it. */
+  color-scheme: light;
+}
+/*
+ * At actual size the box IS the sheet, edge to edge. The 12 px of breathing
+ * room that flatters a thumbnail would be six millimetres of paper that is
+ * not there, and the whole claim of this view is that what you measure on
+ * screen is what comes out of the machine.
+ */
+.paper-view.real { padding: 0; }
+
 .facts { display: flex; flex-wrap: wrap; gap: 0 2rem; margin: 0 0 0.9rem;
          font-size: 11.5px; }
 .facts div { display: flex; gap: 0.45rem; }

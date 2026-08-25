@@ -480,6 +480,87 @@ await check('the preview fills in as soon as there is something to type', () => 
   assert($('mini').innerHTML.trim().length > 0, 'preview is empty');
 });
 
+await check('the preview offers fit and actual size, and fit is the default', () => {
+  // Both live in the heading over the sheet, where the other tool pairs on
+  // this page live, and one of them is always marked. A pair of buttons with
+  // neither marked leaves you unable to tell which size you are looking at,
+  // which is the one thing this pair exists to say.
+  const tools = window.document.querySelector('.paper-stick h2 .tools');
+  assert(tools, 'no tools beside the preview heading');
+  assert(tools.contains($('zoomFit')) && tools.contains($('zoomReal')),
+    'the size buttons are not over the preview');
+  assert($('zoomFit').classList.contains('on'), 'fit is not the default');
+  assert(!$('zoomReal').classList.contains('on'), 'both sizes are marked on');
+});
+
+await check('actual size draws the sheet in real millimetres', async () => {
+  // The whole claim of this view is that a ruler held to the screen agrees
+  // with the machine: A4 is 210 mm across, and six lines to the inch is 96
+  // CSS pixels to the inch. Scaled to a column both are true of nothing.
+  const view = window.document.querySelector('.paper-view');
+  const mm = 96 / 25.4;
+
+  $('zoomReal').click();
+  await wait(50);
+
+  assert($('zoomReal').classList.contains('on'), 'the button is not marked');
+  assert(!$('zoomFit').classList.contains('on'), 'fit is still marked too');
+  assert(view.classList.contains('real'), 'the sheet is not in actual size');
+  assert(view.parentElement.classList.contains('paper-scroll'),
+    'nothing to scroll a sheet wider than the column');
+  assert(view.parentElement.classList.contains('real'),
+    'the scroll box was not told the sheet is now oversized');
+
+  const w = parseFloat(view.style.width);
+  const h = parseFloat(view.style.height);
+  assert(Math.abs(w - 210 * mm) < 1, `A4 is ${w.toFixed(1)} px, not 210 mm`);
+  assert(Math.abs(h - 297 * mm) < 1, `A4 is ${h.toFixed(1)} px tall, not 297 mm`);
+
+  // The line pitch the machine actually feeds, taken from the machine and
+  // not from a number typed twice.
+  const lpi = +/([\d.]+)\s*lpi/.exec($('machineHint').textContent)?.[1];
+  assert(lpi > 0, `no line pitch on screen: "${$('machineHint').textContent}"`);
+  const line = parseFloat($('mini').style.lineHeight);
+  assert(Math.abs(line - 96 / lpi) < 0.5,
+    `a line is ${line.toFixed(2)} px, but ${lpi} to the inch is ${(96 / lpi).toFixed(2)}`);
+});
+
+await check('a sheet bigger than the column can be moved around', () => {
+  // jsdom does no layout, so the rule that gives an oversized sheet somewhere
+  // to overflow to is checked where it is written. Without it the sheet is
+  // simply clipped at actual size, and everything past 210 mm is unreachable.
+  const css = fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8');
+  const block = css.match(/\.paper-scroll\.real\s*\{[^}]*\}/)?.[0] ?? '';
+  assert(/overflow:\s*auto/.test(block), `nothing scrolls: "${block}"`);
+  assert(/max-height/.test(block),
+    'an A4 at actual size would push the settings off the bottom of the page');
+});
+
+await check('fit lets the sheet go back to the size of the column', async () => {
+  const view = window.document.querySelector('.paper-view');
+  $('zoomFit').click();
+  await wait(50);
+
+  assert(!view.classList.contains('real'), 'still pinned to actual size');
+  assert(view.style.width === '', `width still pinned: "${view.style.width}"`);
+  assert(view.style.height === '', `height still pinned: "${view.style.height}"`);
+  // The shape of the paper is not a property of the zoom: it is what the
+  // preview says a sheet is, and it has to survive the trip back.
+  assert(Math.abs(paperRatio(view) - 210 / 297) < 0.01,
+    `the sheet lost its shape: "${view.style.aspectRatio}"`);
+});
+
+await check('the size you chose is still there next time', () => {
+  // Someone comparing two motifs at actual size should not have to ask for
+  // it again after every reload.
+  $('zoomReal').click();
+  const stored = JSON.parse(window.localStorage.getItem('typewriter-ascii') ?? '{}');
+  assert(stored.zoom === 'original', `stored "${stored.zoom}"`);
+  $('zoomFit').click();
+  assert(JSON.parse(window.localStorage.getItem('typewriter-ascii')).zoom === 'fit',
+    'going back to fit was not remembered');
+});
+
 await check('the preview can actually stay put while the settings scroll', () => {
   // `position: sticky` is not enough on its own. A sticky element only
   // travels inside its own parent, and the compose grid is `align-items:

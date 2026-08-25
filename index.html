@@ -343,11 +343,28 @@
   <!-- ── live paper ──────────────────────────────────────── -->
   <div class="paper-col">
     <div class="paper-stick">
-      <h2>On the page</h2>
+      <!--
+        Two ways to look at the same sheet, and they answer different
+        questions. Fit shows the whole page at once, which is what you want
+        while you are still moving sliders. Original draws it at the size it
+        comes out of the machine — one cell is a real 2.54 mm at pica — which
+        is the only way to tell before typing it whether the characters are
+        going to read as a picture from across a room or as grey mush.
+      -->
+      <h2>On the page
+        <span class="tools" role="group" aria-label="Preview size">
+          <button type="button" id="zoomFit" class="link on"
+                  title="The whole sheet, scaled to fit beside the settings.">fit</button>
+          <button type="button" id="zoomReal" class="link"
+                  title="Actual size: the sheet and every character at the size they come out of the machine.">original</button>
+        </span>
+      </h2>
       <dl class="facts" id="facts"></dl>
-      <div class="paper-view">
-        <p class="blank">Nothing to type yet. Choose a picture, or type a word.</p>
-        <pre id="mini"></pre>
+      <div class="paper-scroll">
+        <div class="paper-view">
+          <p class="blank">Nothing to type yet. Choose a picture, or type a word.</p>
+          <pre id="mini"></pre>
+        </div>
       </div>
       <div id="warnings"></div>
       <p class="warn" id="setupNote" hidden></p>
