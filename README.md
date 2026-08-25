@@ -356,7 +356,7 @@ The whole point is that you never reach for the screen. The line you are on
 opens up and shows what to strike — spaces counted and grouped, runs as a
 count — and the rest stays as motif, so you always see where you are:
 
-![The typing view: setup summary, progress bar, the motif above, and the current line opened up showing 31×W as what to strike](docs/img/ui-typing.png)
+![The typing view: setup summary, the motif above, and the current line opened up into counted runs and grouped spaces — what to strike, nothing more](docs/img/ui-typing.png)
 
 Two ways to advance without reaching over:
 
