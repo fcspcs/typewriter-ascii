@@ -33,7 +33,7 @@ import { parseFlf, flfLetter } from '../core/figlet.js';
 import { StrikeListener, LineTracker, METER_FULL_SCALE } from '../core/listen.js';
 import { buildSheetPdf, downloadPdf } from '../core/pdf.js';
 import {
-  renderSheet, paintSheet, paintStrike, renderTable, paintTable, keepInView,
+  renderSheet, paintSheet, paintStrike, keepInView,
 } from './sheet.js';
 import { renderKeyboard, pick, learnByTyping } from './keyboard.js';
 
@@ -73,7 +73,6 @@ const app = {
   at: 0,              // current line
   strike: 0,          // keystrokes done in the current line
   els: [],
-  rows: [],
   setup: null,
   listener: null,
   tracker: null,      // set while listening: what the count is worth
@@ -1896,9 +1895,7 @@ function draw() {
     $('warnings').innerHTML = '';
     $('instructions').innerHTML = '';
     $('sheet').innerHTML = '';
-    $('table').innerHTML = '';
     app.els = [];
-    app.rows = [];
     $('count').textContent = '';
     $('bar').style.width = '0%';
     return;
@@ -2020,9 +2017,7 @@ function draw() {
   if (app.ghost) {
     $('instructions').innerHTML = '';
     $('sheet').innerHTML = '';
-    $('table').innerHTML = '';
     app.els = [];
-    app.rows = [];
     $('count').textContent = '';
     $('bar').style.width = '0%';
     return;
@@ -2078,23 +2073,6 @@ function draw() {
         `${app.strike} / ${strikesInLine(app.lines[app.at] ?? '')}`;
     };
   });
-
-  /*
-   * The table numbers the lines of the *motif*, the same as everywhere else.
-   *
-   * It used to add the paper feed, so line one of a word centred on A4 was
-   * called line 32 - while the sheet above it, the progress counter and the
-   * typing sheet in the PDF all called it line one. Four places, two
-   * different numbering schemes, and the one that disagreed was the one
-   * headed "for looking things up".
-   *
-   * Motif numbering is the right one because it is the only one you can
-   * check: the paper feed is done once, before typing, and after that
-   * nothing on the page or the machine tells you which absolute line of the
-   * sheet you are on.
-   */
-  app.rows = renderTable($('table'), typing, typingInk);
-  app.rows.forEach((tr, i) => { tr.onclick = () => go(i); });
 
   paint();
 }
@@ -2237,7 +2215,6 @@ const ordinalWord = (n) => ORDINAL_WORDS[n - 1] ?? `${n}th`;
 
 function paint(previous = -1) {
   paintSheet(app.els, app.lines, app.colours, app.at, app.strike, previous);
-  paintTable(app.rows, app.at);
 
   const n = app.lines.length || 1;
   $('bar').style.width = `${Math.round(app.at / n * 100)}%`;

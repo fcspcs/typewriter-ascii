@@ -153,11 +153,14 @@ await check('the open line shows runs, the others do not', () => {
     'a closed line is showing runs');
 });
 
-await check('the reference table matches the sheet', () => {
-  const rows = window.document.querySelectorAll('#table tr');
-  const lines = window.document.querySelectorAll('.sheet .ln');
-  assert(rows.length === lines.length,
-    `${rows.length} rows vs ${lines.length} lines`);
+await check('the lines are listed once, not twice', () => {
+  // A second copy of every line lived below the sheet, headed "for looking
+  // things up". Two lists of the same lines is two places to lose your
+  // place in, and the one you are not typing from wins the argument.
+  assert(!window.document.getElementById('table'),
+    'the reference table is back');
+  assert(window.document.querySelectorAll('.sheet').length === 1,
+    'more than one sheet on the page');
 });
 
 await check('facts are reported', () => {
@@ -631,9 +634,28 @@ await check('the preview follows a change of settings', () => {
 });
 
 await check('spaces are marked, not left blank', () => {
-  const table = $('table').innerHTML;
-  assert(/class="sp"/.test(table), 'no space markers in the table');
-  assert(!/_/.test(table.replace(/[^_]/g, '')) || true, '');
+  // An empty cell reads as "nothing here", which is the exact misreading
+  // that loses the count. Every space you must type is a tinted cell.
+  const open = window.document.querySelector('.sheet .ln.now');
+  assert(open, 'no line is open');
+  if (!open.querySelectorAll('.run').length) return;   // a blank line
+  // The sheet writes its spaces as non-breaking ones, so a browser cannot
+  // collapse the very thing being counted.
+  const blanks = [...open.textContent]
+    .filter((c) => c.charCodeAt(0) === 0xa0).length;
+  const marked = open.querySelectorAll('.run.gap .c').length;
+  assert(blanks === marked,
+    `${blanks} spaces in the open line, ${marked} of them marked`);
+});
+
+await check('the space key is cut from the sheet, not drawn beside it', () => {
+  // The key used to be a glyph of its own - an open box - while the sheet
+  // drew a tinted cell with a dot in it. One space, two symbols, and the
+  // reader left to work out they meant the same thing.
+  const key = window.document.querySelector('.sheet-key .run.gap .c');
+  assert(key, 'the space key is not built from the sheet’s own cell');
+  assert(key.textContent.trim() === '',
+    `the key spells the space out as ${JSON.stringify(key.textContent)}`);
 });
 
 await check('every picture style explains itself', () => {
@@ -696,7 +718,6 @@ await check('an empty lettering box previews its placeholder', async () => {
     'setup instructions for a word nobody typed: ' +
     $('instructions').textContent);
   assert($('sheet').innerHTML.trim() === '', 'a typing sheet for a ghost');
-  assert($('table').innerHTML.trim() === '', 'a reference table for a ghost');
 });
 
 await check('the faces can be compared on the ghost', async () => {
@@ -729,7 +750,6 @@ await check('no setup numbers are shown before there is a motif', async () => {
     'still showing setup instructions: ' + $('instructions').textContent);
   assert($('facts').textContent.trim() === '', 'still showing facts');
   assert($('sheet').innerHTML.trim() === '', 'sheet not cleared');
-  assert($('table').innerHTML.trim() === '', 'table not cleared');
 });
 
 await check('the instructions come back once there is something to type', async () => {
@@ -2152,21 +2172,19 @@ await check('no disclosure is left standing with nothing behind it', () => {
 console.log('the app disagreeing with itself');
 
 await check('every panel numbers the lines the same way', async () => {
-  // The table used to add the paper feed, so line one of a word centred on
-  // A4 was called line 32 there and line 1 in the sheet, the progress
-  // counter and the typing sheet in the PDF. Four places, two schemes, and
-  // the odd one out was the panel headed "for looking things up".
+  // There used to be a reference table below the sheet, and it added the
+  // paper feed: line one of a word centred on A4 was called line 32 there
+  // and line 1 in the sheet, the progress counter and the typing sheet in
+  // the PDF. Four places, two schemes, and the odd one out was the panel
+  // headed "for looking things up". That panel is gone now, and the
+  // numbering it disagreed with is the one still standing.
   //
   // Motif numbering is the checkable one: the paper feed happens once,
   // before typing, and afterwards nothing on the page or the machine says
   // which absolute line of the sheet you are on.
-  await typeWord('HI', 'block');
-  const nums = [...window.document.querySelectorAll('#table tr td.n')]
-    .map((e) => +e.textContent);
+  await typeWord('HI', 'oblique');
   const lines = window.document.querySelectorAll('.sheet .ln').length;
-  assert(nums[0] === 1, `the table starts at line ${nums[0]}, not 1`);
-  assert(nums[nums.length - 1] === lines,
-    `the table ends at ${nums[nums.length - 1]} for ${lines} lines`);
+  assert(lines > 0, 'nothing on the sheet to number');
   assert($('count').textContent.includes(`/ ${lines} lines`),
     `the counter says "${$('count').textContent}" for ${lines} lines`);
 });

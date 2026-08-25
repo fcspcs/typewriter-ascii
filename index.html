@@ -6,6 +6,8 @@
 <title>Typewriter ASCII</title>
 <meta name="description" content="Turn images and text into ASCII art you can actually type on a mechanical typewriter.">
 <meta name="color-scheme" content="light dark">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -526,18 +528,24 @@
     <ol class="setup" id="instructions"></ol>
   </details>
 
-  <p class="lede-sm">
-    The line you are on opens up and shows what to strike.
-    <span class="key-legend"><span class="sp-demo">␣</span> is a space — type it.</span>
-    A number means repeat that many times.
-  </p>
-
   <div class="progress"><i id="bar"></i></div>
   <div class="controls">
     <button id="prev">&uarr;</button>
     <button id="next">line done &darr;</button>
     <button id="restart" class="link">restart</button>
     <span class="count" id="count"></span>
+    <!--
+      The one mark on the sheet that is not a key you press, so it is the
+      one thing worth naming. The rest the open line says for itself: a
+      number sits over the run it counts.
+
+      Built from the classes the open line is built from, because the
+      sample and the sheet have drifted apart before - the sample was an
+      open-box glyph while the sheet drew a tinted cell with a dot in it.
+    -->
+    <span class="sheet-key">
+      <span class="run gap"><span class="c">&nbsp;</span><span class="c">&nbsp;</span></span>space
+    </span>
   </div>
 
   <div id="ear" hidden>
@@ -569,13 +577,6 @@
   </div>
 
   <div class="sheet" id="sheet"></div>
-</section>
-
-<!-- ══ reference ═════════════════════════════════════════════ -->
-<section id="stepTable">
-  <h2>Every line at once</h2>
-  <p class="lede-sm">For looking things up. You should not need it while typing.</p>
-  <div class="scroll"><table id="table"></table></div>
 </section>
 
 </main>

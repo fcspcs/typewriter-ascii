@@ -5,8 +5,9 @@
  * are on opens up *in place* and shows what to type. Lines behind are inked,
  * lines ahead are pale. Nothing else moves.
  *
- * The full table lives further down the page for looking things up, but you
- * should never need it while typing.
+ * There is no second copy of the same lines further down the page. A
+ * lookup table you never need while typing is a lookup table you read
+ * instead of the sheet, and then you are counting in two places at once.
  */
 
 import { runsOf } from '../core/runs.js';
@@ -114,40 +115,6 @@ export function paintSheet(els, lines, colours, at, strike, previous = -1) {
 export function paintStrike(els, lines, colours, at, strike) {
   if (at < 0 || at >= els.length) return;
   els[at].innerHTML = openLine(lines[at], colours?.[at], strike);
-}
-
-/**
- * The reference table. Same information, all lines at once.
- *
- * Numbered from the motif, like the sheet above it, the progress counter and
- * the typing sheet in the PDF. It used to add the paper feed on top, so the
- * first line of a word centred on A4 was called line 32 here and line 1
- * everywhere else — in the one panel headed "for looking things up".
- */
-export function renderTable(host, lines, colours) {
-  host.innerHTML = lines.map((line, i) => {
-    const runs = runsOf(line, colours?.[i]);
-    const text = runs.length
-      ? runs.map((r) => {
-          // Spaces get a tinted marker, not an underscore: an underscore is
-          // also a character you can type, so using it for "space" is one
-          // more thing to misread.
-          if (r.space) return `<span class="sp">${'\u00b7'.repeat(r.n)}</span>`;
-          const t = r.n > 1 ? `${r.n}${esc(r.ch)}` : esc(r.ch);
-          return r.red ? `<span class="red">${t}</span>` : t;
-        }).join('  ')
-      : '<span style="opacity:.4">empty</span>';
-    return `<tr data-i="${i}"><td class="n">${i + 1}</td>` +
-           `<td class="rn">${text}</td></tr>`;
-  }).join('');
-  return [...host.querySelectorAll('tr')];
-}
-
-export function paintTable(rows, at) {
-  rows.forEach((tr, i) => {
-    tr.classList.toggle('done', i < at);
-    tr.classList.toggle('now', i === at);
-  });
 }
 
 /**

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
+  <!--
+    The margin release key again, sized for a browser tab. The full logo in
+    docs/img/logo.svg has a second rectangle for the key's top face and
+    smaller dots; at 16px those close up into a smudge. Here the key fills
+    the tile, the strokes are thick and the four dots stay four dots.
+  -->
+  <rect width="240" height="240" fill="#15140f"/>
+  <rect x="18" y="18" width="204" height="204" rx="40" fill="none" stroke="#eae7dd" stroke-width="20"/>
+  <circle cx="86"  cy="86"  r="26" fill="#eae7dd"/>
+  <circle cx="154" cy="86"  r="26" fill="#eae7dd"/>
+  <circle cx="86"  cy="154" r="26" fill="#eae7dd"/>
+  <circle cx="154" cy="154" r="26" fill="#eae7dd"/>
+</svg>

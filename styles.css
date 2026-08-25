@@ -559,10 +559,26 @@ ol.setup span { display: block; color: var(--faint); font-size: 12px; }
 .count { color: var(--faint); font-size: 12px;
          font-variant-numeric: tabular-nums; }
 
-.key-legend { white-space: nowrap; }
-.sp-demo {
-  display: inline-block; background: var(--space); color: var(--ink);
-  padding: 0 0.25em; margin: 0 0.15em;
+/*
+ * The sample space cell at the end of the controls.
+ *
+ * It is a .run.gap .c and nothing else, so whatever the open line draws for
+ * a space is exactly what shows here. It used to be its own little glyph
+ * and the two drifted apart: the key said one thing, the sheet drew
+ * another, and the reader had to guess they meant the same space.
+ *
+ * Fixed at 12px rather than following --sheet-size, which is fitted to the
+ * window and runs anywhere from 8px to 15px. A key that changes size with
+ * the thing it explains reads as part of the picture rather than as a note
+ * about it.
+ *
+ * It sits in the flow of the controls, next to the line count, and not
+ * pushed out to the right edge: a tinted cell on its own in an acre of
+ * empty page reads as something that went wrong, not as a key.
+ */
+.sheet-key {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  color: var(--faint); font-size: 12px; line-height: 1.18;
 }
 
 /* ── listening ───────────────────────────────────────────────── */
@@ -641,23 +657,6 @@ body.counting .run .c.hit {
 }
 body.counting .run.gap .c.hit::after { opacity: 0.5; }
 
-/* ── table ───────────────────────────────────────────────────── */
-
-.scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-table { border-collapse: collapse; width: max-content; min-width: 100%;
-        font-size: 12px; }
-tr { border-bottom: 1px solid var(--hair); cursor: pointer; }
-tr.now { background: var(--mark); }
-tr.done td { opacity: 0.4; }
-td { padding: 0.5rem 0.9rem 0.5rem 0; vertical-align: baseline; }
-td.n { color: var(--faint); text-align: right; width: 3.4rem;
-       font-variant-numeric: tabular-nums; position: sticky; left: 0;
-       background: var(--paper); padding-right: 1rem; }
-tr.now td.n { background: var(--mark); color: var(--ink); }
-td.rn { white-space: pre; }
-td.rn .red { color: var(--red); }
-td.rn .sp { background: var(--space); }
-
 /* ── nothing to type yet ─────────────────────────────────────── */
 /*
  * An empty motif still produces arithmetic - setUp() dutifully centres
@@ -669,8 +668,7 @@ td.rn .sp { background: var(--space); }
          text-align: center; padding: 2.5rem 1rem; }
 body.empty .blank { display: block; }
 body.empty #stepSetup,
-body.empty #stepSheet,
-body.empty #stepTable { display: none; }
+body.empty #stepSheet { display: none; }
 
 /*
  * The lettering tab previews its own placeholder while the box is empty,
@@ -681,15 +679,13 @@ body.empty #stepTable { display: none; }
  */
 body.ghost #mini { opacity: .55; }
 body.ghost #stepSetup,
-body.ghost #stepSheet,
-body.ghost #stepTable { display: none; }
+body.ghost #stepSheet { display: none; }
 
 /* ── full screen ─────────────────────────────────────────────── */
 
 body.full > header,
 body.full .compose,
 body.full #stepSetup,
-body.full #stepTable,
 body.full footer,
 body.full .lede-sm { display: none; }
 body.full main { max-width: none; padding: 0; }
@@ -723,7 +719,6 @@ dialog menu { display: flex; justify-content: flex-end; gap: 1.3rem;
 @media (max-width: 640px) {
   body { font-size: 13px; }
   section { padding: 1.8rem 0; }
-  td.n { width: 2.6rem; }
   .key { width: 1.7rem; height: 1.7rem; font-size: 11px; }
   .paper-view { max-height: none; }
 }
