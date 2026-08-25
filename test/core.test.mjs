@@ -6,7 +6,8 @@
  */
 import assert from 'node:assert';
 import {
-  charset, makeTypeable, untypeable, standIns, PAPERS, paperById,
+  charset, makeTypeable, typeableSentence, untypeable, standIns, PAPERS,
+  paperById,
   textArea, sheetGrid, setUp, cellWidthMm, cellHeightMm,
   pitchFrom, expectedMm, PITCHES, LINE_PITCHES,
 } from '../src/core/machine.js';
@@ -94,6 +95,51 @@ check('untypeable reports only genuinely impossible characters', () => {
   assert.deepStrictEqual(untypeable('abc', sm7), []);
   const bad = untypeable('\u4f60\u597d', sm7);
   assert.strictEqual(bad.length, 2);
+});
+
+check('a sentence is met by the same stand-in table as everything else', () => {
+  // The path that used to go straight to the sheet. `}` is not on the SM7
+  // and `)` is, so that is what gets struck - and the caller is told.
+  const have = new Set(charset(sm7));
+  const r = typeableSentence('a } b', have);
+  assert.strictEqual(r.text, 'a ) b');
+  assert.strictEqual(r.swaps.get('}'), ')');
+  assert.deepStrictEqual(r.missing, []);
+});
+
+check('a character with no stand-in is left out of a sentence, not blanked', () => {
+  /*
+   * makeTypeable() blanks it, and for pasted art that is right: a blank
+   * cell is an honest nothing. A sentence is language spelled across a
+   * picture, and the stream only advances when something is typed, so a
+   * phantom space would push a word gap onto a cell that never had one.
+   */
+  const r = typeableSentence('a▓b', new Set(charset(sm7)));
+  assert.strictEqual(r.text, 'ab');
+  assert.deepStrictEqual(r.missing, ['▓']);
+});
+
+check('a sentence with nothing typeable in it comes back empty', () => {
+  // The caller's cue to refuse: there is nothing left to spell a picture
+  // with, and a motif of characters the machine cannot strike is the one
+  // thing this program exists to prevent.
+  const r = typeableSentence('▓▒░', new Set(charset(sm7)));
+  assert.strictEqual(r.text.trim(), '');
+  assert.strictEqual(r.missing.length, 3);
+});
+
+check('a key switched off counts as a key the machine has not got', () => {
+  // Which is what it means everywhere else on the page, so the sentence
+  // takes the characters it is given rather than the whole profile.
+  const r = typeableSentence('hello', new Set([...charset(sm7)]
+    .filter((c) => c !== 'l')));
+  assert.ok(!r.text.includes('l'), `struck a key that was switched off: ${r.text}`);
+});
+
+check('a space is the space bar, not a character to stand in for', () => {
+  const r = typeableSentence('a b', new Set(charset(sm7)));
+  assert.strictEqual(r.text, 'a b');
+  assert.strictEqual(r.swaps.size, 0);
 });
 
 check('newlines and spaces survive conversion', () => {

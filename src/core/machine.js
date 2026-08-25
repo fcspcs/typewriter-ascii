@@ -264,6 +264,47 @@ export function makeTypeable(text, m) {
   return { text: out, dropped };
 }
 
+/**
+ * A sentence as this machine will actually strike it.
+ *
+ * The same table as makeTypeable() and two deliberate differences, both
+ * because this is language rather than artwork.
+ *
+ * A character with no stand-in is *left out* instead of becoming a space.
+ * In pasted art a blank cell is an honest nothing; in a sentence spelled
+ * across a picture the stream only advances when something is typed, so a
+ * phantom space would push a word gap onto a cell that was never meant to
+ * have one, and the sentence would read with a hole in it either way.
+ *
+ * And `have` is handed in rather than taken from the profile, so a key
+ * switched off under Characters counts as a key the machine has not got —
+ * which is what it means everywhere else on the page.
+ *
+ * @param {string} phrase
+ * @param {Set<string>|string[]} have the machine's characters
+ * @returns {{text: string, swaps: Map<string,string>, missing: string[]}}
+ */
+export function typeableSentence(phrase, have) {
+  const set = have instanceof Set ? have : new Set(have);
+  const swaps = new Map();
+  const missing = [];
+  let text = '';
+
+  for (const ch of String(phrase)) {
+    // A space is the space bar, not a character on the keyboard, so it is
+    // never in `charset` and must not be looked up as if it were.
+    if (ch === ' ' || set.has(ch)) { text += ch; continue; }
+    const swap = (SUBSTITUTES[ch] ?? []).find((c) => set.has(c));
+    if (swap) {
+      swaps.set(ch, swap);
+      text += swap;
+    } else if (!missing.includes(ch)) {
+      missing.push(ch);
+    }
+  }
+  return { text, swaps, missing };
+}
+
 /** Which characters of `text` this machine cannot type at all. */
 export function untypeable(text, m) {
   const have = new Set(charset(m));

@@ -23,8 +23,8 @@
 import fs from 'node:fs';
 import { PROFILES, profileById } from '../src/profiles/index.js';
 import {
-  makeTypeable, standIns, PAPERS, paperById, setUp, charset, textArea,
-  sheetGrid,
+  makeTypeable, typeableSentence, standIns, PAPERS, paperById, setUp,
+  charset, textArea, sheetGrid,
 } from '../src/core/machine.js';
 import { colourMap, inkTally, parseRows, runsOf, runsToText } from '../src/core/runs.js';
 import { letter, tonesOf, marksOf, STYLES } from '../src/core/lettering.js';
@@ -416,7 +416,28 @@ function convertPicture(path) {
 
   let lines;
   if (set.mode === 'sentence') {
-    lines = toSentence(field, grid.cols, grid.rows, set.sentence);
+    /*
+     * The sentence meets the machine here, like everything else that ends
+     * up on paper. It was the one path that did not: a `}` in --sentence
+     * spelled a whole sheet in a character the Olympia SM7 has not got,
+     * and nothing said so.
+     */
+    const said = typeableSentence(set.sentence, charset(machine));
+    if (said.swaps.size) {
+      notes.push(`Typing ${[...said.swaps].map(([a, b]) => `${a} as ${b}`)
+        .join(', ')} - the ${machine.name} has no ` +
+        `${[...said.swaps.keys()].join(' ')}.`);
+    }
+    if (said.missing.length) {
+      notes.push(`No stand-in for ${said.missing.join(' ')} on the ` +
+        `${machine.name}, so ${said.missing.length > 1 ? 'they were' : 'it was'} ` +
+        `left out of the sentence.`);
+    }
+    if (!said.text.trim()) {
+      die(`Nothing in --sentence can be typed on the ${machine.name}, so ` +
+        `there is nothing to spell the picture with.`);
+    }
+    lines = toSentence(field, grid.cols, grid.rows, said.text);
   } else {
     const render = set.mode === 'tone' || fellBack ? 'tone' : 'shape';
     lines = toCharacters(field, grid.cols, grid.rows, atlas, {

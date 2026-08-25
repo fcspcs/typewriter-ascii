@@ -8,7 +8,8 @@
 
 import { PROFILES, profileById } from '../profiles/index.js';
 import {
-  charset, makeTypeable, standIns, PAPERS, paperById, textArea, setUp, sheetGrid,
+  charset, makeTypeable, typeableSentence, standIns, PAPERS, paperById,
+  textArea, setUp, sheetGrid,
   pitchFrom, expectedMm, PITCHES, LINE_PITCHES, cellWidthMm, cellHeightMm,
 } from '../core/machine.js';
 import {
@@ -931,7 +932,21 @@ function convert() {
                          cellAspect(app.machine));
 
     if (mode === 'sentence') {
-      lines = toSentence(field, grid.cols, grid.rows, $('sentence').value);
+      /*
+       * The sentence meets the machine here, like everything else that ends
+       * up on paper.
+       *
+       * This was the one path that never did. A picture matched by shape or
+       * tone can only pick from the keys it is given, pasted art goes
+       * through makeTypeable(), a word goes through the stand-in engine —
+       * and a sentence went to the sheet exactly as typed. A single `}` in
+       * the box spelled the whole motif in a character the Olympia SM7 has
+       * not got, and nothing anywhere said so.
+       */
+      const said = sentenceForMachine();
+      lines = said.text.trim()
+        ? toSentence(field, grid.cols, grid.rows, said.text)
+        : [];
     } else {
       lines = toCharacters(field, grid.cols, grid.rows, app.atlas, {
         mode: mode === 'tone' ? 'tone' : 'shape',
@@ -1577,6 +1592,56 @@ function syncLetterHint() {
 }
 
 /**
+ * The sentence as this machine will strike it, narrowed to the keys that
+ * are switched on. See typeableSentence() for why a mark with no stand-in
+ * is left out rather than blanked.
+ */
+const sentenceForMachine = () => typeableSentence($('sentence').value,
+  new Set(charset(app.machine).filter((c) => app.chosen.has(c))));
+
+/**
+ * Whether the sentence can be typed at all — said at the box it was typed
+ * into, the way the words box says it.
+ *
+ * Nothing is refused at the keyboard. The limit belongs to the machine
+ * rather than to the sentence, so a character blocked here would come back
+ * the moment somebody switched machines, and half a word cannot be pasted
+ * in. What can be swapped is swapped and named; what cannot is left out and
+ * named. Only a sentence with nothing typeable left in it stops the mode,
+ * because there is then nothing to spell the picture with — and a sheet
+ * spelled in a character the machine has not got is the one outcome this
+ * whole program exists to prevent.
+ */
+function syncSentenceFit() {
+  const el = $('sentenceFit');
+  if (!el) return;
+  if ($('mode').value !== 'sentence' || currentTab() !== 'image') {
+    el.hidden = true;
+    return;
+  }
+
+  const { text, swaps, missing } = sentenceForMachine();
+  const parts = [];
+  if (!text.trim()) {
+    parts.push(`Nothing here can be typed on the ${app.machine.name}, so ` +
+      `there is nothing to spell the picture with.`);
+  }
+  if (swaps.size) {
+    parts.push(`Typing ${[...swaps].map(([a, b]) => `${a} as ${b}`)
+      .join(', ')}.`);
+  }
+  if (missing.length) {
+    parts.push(`No stand-in for ${missing.join(' ')} on this machine, so ` +
+      `${missing.length > 1 ? 'they are' : 'it is'} left out.`);
+  }
+  el.textContent = parts.join(' ');
+  el.hidden = !parts.length;
+  // A sentence that can still be typed, with a swap or two named, is a note.
+  // One with nothing left of it is a refusal.
+  el.classList.toggle('stop', !text.trim());
+}
+
+/**
  * What planning a word sideways did to it — and the two are not the same
  * promise, so they do not get the same sentence.
  *
@@ -1887,6 +1952,15 @@ function draw() {
   // placeholder is faded in the box it came from, and keeps the setup and
   // typing sections away.
   document.body.classList.toggle('ghost', app.ghost);
+  /*
+   * Before the early return, because this one describes the *input* rather
+   * than the motif — and because refusing a sentence is exactly what empties
+   * the motif. Left below with the other panels it would have gone quiet in
+   * the one case it exists for: nothing typeable in the box, no lines, and
+   * no explanation of why the sheet went blank.
+   */
+  syncSentenceFit();
+
   if (!lines.length) {
     $('seams').hidden = true;
     $('sheetPickRow').hidden = true;

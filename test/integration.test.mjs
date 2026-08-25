@@ -677,6 +677,54 @@ await check('the sentence field only appears when it applies', () => {
   assert(!$('sentenceRow').hidden, 'sentence field hidden when it applies');
 });
 
+await check('a sentence meets the machine, and says what it will strike',
+  async () => {
+    /*
+     * The path that used to go straight to the sheet. A `}` in the box
+     * spelled a whole motif in a character the Olympia SM7 has not got,
+     * and nothing anywhere said so — the promise the rest of the program
+     * keeps, broken in the one place nobody had wired to the stand-in
+     * engine.
+     */
+    // The field lives in the picture panel, so the warning belongs there
+    // too — it is hidden with the panel when another tab is on.
+    [...window.document.querySelectorAll('.tab')]
+      .find((t) => t.dataset.tab === 'image').click();
+    await wait(300);
+    $('sentence').value = 'hello}world';
+    $('sentence').dispatchEvent(new window.Event('input'));
+    await wait(500);
+
+    const t = $('sentenceFit').textContent;
+    assert(!$('sentenceFit').hidden, 'nothing said about an untypeable mark');
+    assert(/\} as \)/.test(t), `the swap is not named: "${t}"`);
+    assert(!$('sentenceFit').classList.contains('stop'),
+      'a sentence that can still be typed was refused');
+  });
+
+await check('and a sentence with nothing typeable left is refused', async () => {
+  // There is then nothing to spell the picture with.
+  $('sentence').value = '▓▒░';
+  $('sentence').dispatchEvent(new window.Event('input'));
+  await wait(500);
+
+  assert($('sentenceFit').classList.contains('stop'),
+    `not refused: "${$('sentenceFit').textContent}"`);
+  assert(/nothing to spell/i.test($('sentenceFit').textContent),
+    `no reason given: "${$('sentenceFit').textContent}"`);
+
+  $('sentence').value = 'she loved him and he loved her';
+  $('sentence').dispatchEvent(new window.Event('input'));
+  await wait(400);
+  assert($('sentenceFit').hidden, 'the refusal outlived the sentence');
+
+  $('mode').value = 'shape';
+  $('mode').dispatchEvent(new window.Event('change'));
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'text').click();
+  await wait(300);
+});
+
 await check('the machine explains what it is', () => {
   // Short on screen, the rest in the tooltip: this sits in a narrow column
   // of settings, and a sentence there is read once and then in the way.

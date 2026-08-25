@@ -114,6 +114,33 @@ check('only characters the machine actually has', () => {
   assert.ok(typed.size > 0, 'nothing was typed at all');
 });
 
+check('and that holds for a picture spelled out in words', () => {
+  /*
+   * The one path that used to go straight to the sheet. A sentence was
+   * typed exactly as given, so a single `}` — which the SM7 has not got —
+   * spelled an entire motif and nothing anywhere said so. It is the same
+   * promise as above and it was broken in the one place nobody had wired
+   * the stand-in engine to.
+   */
+  const o = json(run('image', picture, '--mode', 'sentence',
+    '--sentence', 'hello}world', '--machine', 'olympia-sm7', '--json'));
+  const typed = new Set([...o.lines.join('')].filter((c) => c !== ' '));
+  assert.ok(typed.size > 0, 'nothing was typed at all');
+  assert.ok(!typed.has('}'), 'typed a brace, which the SM7 has not got');
+  assert.ok(typed.has(')'), 'the brace was dropped rather than stood in for');
+});
+
+check('a sentence with nothing typeable in it is refused, not drawn', () => {
+  // There is then nothing to spell the picture with, and a sheet of
+  // characters the machine cannot strike is the one outcome this whole
+  // program exists to prevent.
+  const r = run('image', picture, '--mode', 'sentence',
+    '--sentence', '▓▒░', '--machine', 'olympia-sm7', '--json');
+  const o = json(r);
+  assert.strictEqual(o.ok, false);
+  assert.ok(/nothing to spell/i.test(o.error), o.error);
+});
+
 check('the setup is reported, not just the art', () => {
   const o = json(run('image', picture, '--mode', 'tone', '--contrast', '110',
     '--detail', '80', '--json'));

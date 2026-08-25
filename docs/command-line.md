@@ -78,6 +78,14 @@ Unknown ids, out-of-range modes and non-numeric sliders are refused rather
 than defaulted. A typo that silently produces a plausible sheet for the wrong
 machine costs more than an error does.
 
+`--sentence` goes through the stand-in table like every other piece of text
+that ends up on paper: a `}` is typed as `)` on a machine that has no brace,
+and you are told. A character with no stand-in is left out rather than
+blanked — the stream only advances when something is typed, so a phantom
+space would push a word gap onto a cell that never had one. A sentence with
+nothing typeable left in it is refused, because there is then nothing to
+spell the picture with.
+
 ### Several sheets
 
 `--across` and `--down` spread one motif over a grid of sheets, the same way
