@@ -9,6 +9,7 @@
  * glyphs built to trigger exactly that rule.
  */
 import assert from 'node:assert';
+import fs from 'node:fs';
 import {
   parseFlf, flfRender, flfLetter, flfMarks,
 } from '../src/core/figlet.js';
@@ -247,6 +248,24 @@ check('flfMarks reports every character the font might strike', () => {
   assert.ok(!marks.has('$'), 'the hardblank is not a mark');
   assert.ok(!marks.has(' '), 'space is not a mark');
 });
+
+console.log('the bundled fonts');
+
+check('every bundled font parses and sets type', () => {
+  // The generated fonts above are tidy; the real ones are not. Filter ends
+  // its lines with # instead of @ and its O-umlaut opens with a row of
+  // digits, which a lazy code-tag detector reads as a code tag - that is a
+  // crash this test now guards. The manifest is the same file the app uses.
+  const names = JSON.parse(fs.readFileSync('fonts/index.json', 'utf8'));
+  assert.ok(names.length >= 19, 'the manifest lost fonts');
+  for (const name of names) {
+    const font = parseFlf(
+      fs.readFileSync(`fonts/${name}.flf`, 'utf8'), name);
+    const { rows } = flfRender(font, 'PROBE');
+    assert.ok(rows.some((r) => r.trim()), `${name} set nothing`);
+  }
+});
+
 
 console.log('meeting the machine');
 

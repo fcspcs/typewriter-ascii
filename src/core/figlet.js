@@ -86,6 +86,10 @@ export function parseFlf(text, name = 'imported') {
 
   let at = 1 + comments;
 
+  // The endmark this font actually uses, learned from its first glyph
+  // line. `@` is only a convention: Filter ends its lines with `#`.
+  let endmark = null;
+
   /** Read one glyph: `height` lines, endmark stripped, padded square. */
   const readGlyph = () => {
     if (at >= lines.length || lines[at] === undefined) return null;
@@ -96,25 +100,39 @@ export function parseFlf(text, name = 'imported') {
       line = line.replace(/[\r\s]+$/, (m) => m.replace(/\r/g, ''));
       const end = line[line.length - 1];
       if (end === undefined) { rows.push(''); continue; }
+      if (endmark === null) endmark = end;
       rows.push(line.replace(new RegExp(`\\${end}+$`), ''));
     }
     const w = Math.max(0, ...rows.map((r) => r.length));
     return rows.map((r) => r.padEnd(w, ' '));
   };
 
+  /*
+   * Telling a code-tag line from a glyph row needs more than "starts with
+   * a number": a glyph row can too. Filter's Ö begins `88888888 #` —
+   * digits, a space, ink — and reading that as code tag 88888888 crashed
+   * on a code point Unicode does not have. The reliable difference is the
+   * endmark: a glyph row ends with it, a tag line does not.
+   */
+  const isCodeTag = (line) => line !== undefined && CODE_TAG.test(line) &&
+    !(endmark !== null && line.replace(/\s+$/, '').endsWith(endmark));
+
   const glyphs = new Map();
   for (const ch of REQUIRED) {
     // Fonts that stop at the ASCII set exist, standard or no standard. A
     // code tag where a Deutsch glyph should be is the usual way they say so.
-    if (ch.charCodeAt(0) > 126 && CODE_TAG.test(lines[at] ?? '')) break;
+    if (ch.charCodeAt(0) > 126 && isCodeTag(lines[at])) break;
     const g = readGlyph();
     if (!g) break;
     glyphs.set(ch, g);
   }
 
   // Code-tagged glyphs: anything beyond the required set, one tag line each.
-  while (at < lines.length && CODE_TAG.test(lines[at])) {
+  while (at < lines.length && isCodeTag(lines[at])) {
     const code = parseCode(lines[at].match(CODE_TAG)[1]);
+    // Junk that happens to open with a number is the end of the glyphs,
+    // not a reason to throw halfway through a font that parsed fine.
+    if (!Number.isFinite(code) || code > 0x10ffff) break;
     at++;
     const g = readGlyph();
     if (!g) break;
