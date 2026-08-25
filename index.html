@@ -229,6 +229,13 @@
 
       <div class="two">
         <div class="field">
+          <!--
+            The last entry in this list is not a paper size. "Compose" opens
+            the block below and turns the sheet into a tiling of itself,
+            because a typewriter's resolution is fixed - a cell is 2.54 by
+            4.23 mm at pica and nothing makes it smaller - so the only route
+            to a bigger, more detailed picture is more paper.
+          -->
           <label for="paper">Sheet</label>
           <select id="paper"></select>
         </div>
@@ -240,37 +247,68 @@
           </select>
         </div>
       </div>
+
       <!--
-        Turning the sheet is not a rotation of the artwork. A typewriter's
-        type bars strike one way only, so the letters cannot turn - but the
-        paper can go in the other way round, which costs a second and buys
-        116 columns on A4 instead of 82.
+        Compose: one motif across several sheets.
 
-        It sits here, in "the paper", and not in any of the three tabs,
-        because landscape is a property of the PAPER and not of where the
-        motif came from. You feed the sheet in sideways; the sheet does not
-        know or care whether a photograph, a word or pasted art is going to
-        land on it. A wide photograph gains exactly as much as a long word.
+        The matrix is a grid of buttons rather than two number inputs because
+        the thing being chosen is a shape, and a shape is easier to point at
+        than to describe. Hovering shows what it would be; clicking takes it.
 
-        So it belongs beside the sheet size and the position, it applies in
-        all three modes, and it must not be cleared or hidden when the mode
-        changes - the paper has not changed.
+        The rule the whole feature rests on is stated in compose.js: no cell
+        ever straddles a join. Two A4 butted together are 420 mm, which
+        divides into 165 columns - one more than the 164 the two sheets hold
+        between them, and that extra one lands half on each sheet where no
+        type bar can reach it. So the grid is the sheet's grid multiplied,
+        and the leftover millimetres pile up at the joins instead, where you
+        can close them by overlapping the paper.
+      -->
+      <div class="field" id="composeRow" hidden>
+        <label id="composeLabel">How many sheets</label>
+        <div class="compose">
+          <div class="matrix" id="matrix" role="group"
+               aria-labelledby="composeLabel"></div>
+          <div class="compose-of">
+            <label for="composeUnit">of</label>
+            <select id="composeUnit"></select>
+          </div>
+        </div>
+        <p class="hint" id="composeHint"></p>
+      </div>
+      <!--
+        This control used to say "which way the sheet goes", and it was
+        wrong. The sheet does not go two ways. A4 fed in on its long edge is
+        297 mm of writing line, and an Olympia SM7's carriage scale ends at
+        98 - 249 mm - so the last nineteen columns of the paper are not
+        merely past the end of the numbering, they are past the end of the
+        machine. The app happily offered 116 columns and then worked out a
+        left stop of 7 and a right stop of 80 for them.
+
+        The paper goes in upright. What can be turned is the *motif*: laid
+        on its side, typed on an upright sheet with the letters upright, and
+        the finished sheet turned a quarter turn to be looked at. The type
+        bars still strike one way only, so the glyphs end up lying down -
+        which for a picture costs nothing, because what carries a picture is
+        how much ink is in each 2.54 x 4.23 mm cell.
+
+        It still belongs here, in "the paper", and not in any of the three
+        tabs. It is a decision about the finished sheet, not about where the
+        motif came from, it applies in all three modes, and it must not be
+        cleared or hidden when the mode changes.
       -->
       <div class="field">
-        <label for="orientation">Which way the sheet goes</label>
+        <label for="orientation">How it will be looked at</label>
         <!--
-          A stated choice, not a condition.
-
-          This was "Turn the sheet sideways if it helps", and the app decided
-          afterwards by comparing layouts. That reads well and works badly:
-          the same settings gave an upright sheet or a turned one depending
-          on the motif, so the width slider's ceiling moved on its own and
-          nobody could tell what the sheet would be until after the fact.
-          You are holding the paper. You know which way you put it in.
+          Both turns are offered because both are real. Which one you want
+          depends on nothing the app can see - how the sheet gets mounted,
+          which way you would rather work through the picture - and the two
+          are identical at the machine: same stops, same feed, same number
+          of keystrokes. Only the last step differs.
         -->
         <select id="orientation">
-          <option value="upright">Upright (portrait)</option>
-          <option value="sideways">Sideways (landscape)</option>
+          <option value="upright">Upright — read the way it is typed</option>
+          <option value="left">Sideways — turn the finished sheet left</option>
+          <option value="right">Sideways — turn the finished sheet right</option>
         </select>
         <p class="hint" id="orientationHint"></p>
       </div>
@@ -357,6 +395,18 @@
                   title="The whole sheet, scaled to fit on the screen.">fit</button>
           <button type="button" id="zoomReal" class="link"
                   title="Actual size: the sheet and every character at the size they come out of the machine.">original</button>
+          <!--
+            Only shown for a motif planned sideways, because for an upright
+            one it would answer a question nobody asked.
+
+            The sheet is drawn upright and then rotated whole, rather than
+            being redrawn the other way round, and that is deliberate: what
+            you see turned is the actual sheet, characters and all, so the
+            glyphs are visibly lying on their sides. Redrawing them upright
+            would promise letters the machine cannot strike.
+          -->
+          <button type="button" id="zoomTurn" class="link" hidden
+                  title="Hold the finished sheet the way it is meant to be looked at.">turned</button>
         </span>
       </h2>
       <dl class="facts" id="facts"></dl>
@@ -364,6 +414,14 @@
         <div class="paper-view">
           <p class="blank">Nothing to type yet. Choose a picture, or type a word.</p>
           <pre id="mini"></pre>
+          <!--
+            The joins, drawn where the paper actually ends rather than where
+            the cells do. A4 at pica holds 82 columns, which is 208.28 mm of
+            a 210 mm sheet, so the cells stop 1.72 mm short of every join -
+            visible at "original" size, and exactly the strip you close up by
+            overlapping the sheets when you lay them out.
+          -->
+          <div class="seams" id="seams" hidden></div>
         </div>
       </div>
       <div id="warnings"></div>
@@ -381,6 +439,25 @@
       <button id="pdf" class="link">pdf</button>
     </span>
   </h2>
+
+  <!--
+    One sheet at a time, and it is not a convenience.
+
+    On a composite two sheets wide, a single row of the motif is a hundred
+    and something columns long and no line on the machine is: the row is two
+    lines, on two different pieces of paper, typed on two separate visits.
+    So there is no arrangement in which the whole picture is one list of
+    lines to work down. The panel below always shows one physical sheet -
+    its own margin stops, its own wind-on, its own line numbers from one -
+    and this is how you say which.
+
+    Hidden for a single sheet, where it would be a chooser with one entry.
+  -->
+  <div id="sheetPickRow" hidden>
+    <div class="sheet-pick" id="sheetPick" role="group"
+         aria-label="Which sheet you are typing"></div>
+    <p class="hint" id="sheetPickHint"></p>
+  </div>
 
   <!--
     Setting the machine up used to be a section of its own, above this one.

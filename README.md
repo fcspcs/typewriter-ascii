@@ -47,6 +47,10 @@ A generator that ignores the machine produces art that cannot be typed:
 - **Lettering** → words, or several lines of them, drawn from scratch in
   forty-one faces — or set in a real FIGlet font
   ([see below](#lettering))
+- **Compose** → spread one motif over several sheets and lay them side by
+  side. A typewriter's cell is 2.54 × 4.23 mm and nothing makes it smaller,
+  so more paper is the only route to a bigger picture: 2 × 2 A4 is 164 × 140
+  cells instead of 82 × 70
 - **Sideways** → plan a motif to be *read* sideways. The paper still goes in
   upright — a typewriter cannot take A4 on its long edge — so the motif is
   laid down instead, typed on an upright sheet, and you turn the finished
@@ -258,6 +262,60 @@ node tools/cli.mjs text "HELLO" --flf fonts/Roman.flf
 How the faces are drawn, why the flourishes are derived rather than drawn
 in, how the stand-in engine works, and what each face owes to the classic
 FIGlet collection: **[docs/lettering.md](docs/lettering.md)**.
+
+## Compose
+
+A typewriter has one resolution. A cell is 2.54 mm by 4.23 mm at pica, the
+machine cannot make a smaller one, and an A4 therefore holds 82 columns by 70
+lines and never any more. Past that the only thing left to change is the
+amount of paper.
+
+So: pick **Compose — several sheets…** at the bottom of the sheet list, point
+at a shape in the matrix, and the motif is laid out across that many sheets.
+Each one is typed on its own, with its own margin stops and its own wind-on,
+and you lay them out afterwards.
+
+| A4 at 10 cpi | cells | paper |
+| --- | --- | --- |
+| 1 sheet | 82 × 70 | 210 × 297 mm |
+| 2 × 1 | 164 × 70 | 420 × 297 mm |
+| 2 × 2 | 164 × 140 | 420 × 594 mm |
+| 4 × 4 | 328 × 280 | 840 × 1188 mm |
+
+**No cell ever straddles a join.** This sounds obvious and it decides the
+whole design. Two A4 butted together are 420 mm, and 420 mm divided by the
+cell is 165 columns — one more than the 164 the two sheets hold between them.
+That extra column is real arithmetic and useless: it lands half on each sheet,
+where no type bar can reach it. So the composite grid is the single sheet's
+grid *multiplied*, never the composite's millimetres divided.
+
+**Overlap the sheets when you lay them out.** The leftover has to go
+somewhere, and it piles up at the joins: 82 columns is 208.28 mm of a 210 mm
+sheet, so butt two together and 1.72 mm of blank paper sits between the last
+column of one and the first of the next. Slide them over it and the picture
+closes up. The setup instructions give you the number for your machine and
+paper.
+
+**Sheets side by side are safer than sheets stacked.** The carriage reaches
+both edges of a sheet, so a side join costs only that millimetre and a half.
+A join *above and below* is different: the feed rollers have to grip the paper
+for the platen to turn it, and near the bottom of a sheet they let go — so the
+last lines of each row may not be typeable at all. How many depends on the
+machine, and this app has not measured it on any of them, so it says so and
+leaves the judgement to you rather than inventing a number.
+
+**One sheet at a time, and not as a convenience.** On a composite two sheets
+wide, a single row of the motif is a hundred and something columns and no
+line on the machine is: it is two lines, on two pieces of paper, typed on two
+separate visits. There is no arrangement in which the whole picture is one
+list of lines to work down. So the typing panel always shows one physical
+sheet, numbered from line one, and the sheet chooser sits above it in the
+shape of the paper.
+
+**Composing and turning are independent.** The matrix decides how much paper;
+*Sideways* decides which way the finished thing is read. Both at once is a
+perfectly ordinary thing to want — a wide panorama across three sheets, read
+sideways — and neither knows about the other.
 
 ## Sideways
 

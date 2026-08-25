@@ -442,6 +442,161 @@ a page with no build step every import is a real fetch.
 
 **Done:** removed. Both are still exported and still used by the tests.
 
+### 16. Landscape was a sheet the machine cannot take
+
+`src/core/machine.js:314` (before)
+
+```js
+export function landscape(paper) {
+  return { ...paper, w: paper.h, h: paper.w, landscape: true };
+}
+```
+
+Everything downstream believed it, and it was not true. A4 fed in on its long
+edge is 297 mm of writing line. The Olympia SM7's carriage scale runs 0 to
+98 — 249 mm — and its right margin stop reaches 80, which is 203 mm. There is
+no setting, no margin release and no paper guide that puts a type bar 297 mm
+from the left edge of that machine.
+
+The app did not notice. `setUp(116, 30, landscape(a4), sm7)`:
+
+```
+left: 7, right: 80        <- 73 columns of carriage
+warnings: 3 x level 'note', not one 'stop'
+```
+
+Seventy-three columns of travel for a hundred and sixteen columns of motif,
+and the third warning read *"The right edge of the paper sits past the end of
+the scale (116 against 98). Nothing is typed out there; it only means the
+scale stops telling you where you are."* That is exactly backwards: nothing
+**can** be typed out there. The width slider ran to 116, so a motif could be
+asked for, laid out, previewed and printed to PDF without anything in the
+chain saying it could not be struck. **Real fault, and the worst kind: the
+app was confidently wrong about the machine rather than merely unhelpful.**
+
+**Done:** `landscape()`, `wantsLandscape()` and `orient()` are gone, and a
+test asserts they have not come back. The paper is always the paper. What is
+planned sideways now is the *motif* — laid on its side in `src/core/turn.js`,
+typed on an upright sheet with the machine set up exactly as usual, and the
+finished sheet turned a quarter turn to be looked at. The type bars still
+strike one way only, so the glyphs end up lying down, which for a picture
+costs nothing: what carries a picture is how much ink sits in each 2.54 x
+4.23 mm cell.
+
+Three things fell out of it that are worth writing down, because two of them
+contradict what the app used to say:
+
+1. **Turning buys millimetres, not columns.** The same sheet with the same
+   margins holds the same cells either way. A4 at pica: 66 x 60 upright,
+   60 x 66 turned. The old hint offered 100 x 39 and the README sold "82
+   columns to 116"; both were describing paper the carriage cannot reach.
+   What does change is that the cells stand along the long axis, so 60 of
+   them reach 254 mm where 66 upright reach 168 — a 16:9 photograph goes
+   from 66 x 22 cells at 168 x 93 mm to 60 x 56 cells at 254 x 142 mm.
+
+2. **The width slider falls when you turn it.** "How wide" is how wide the
+   picture is when you look at it, which on a turned sheet is counted down
+   the paper: 70 cells of 4.23 mm against 82 of 2.54. It used to rise, which
+   was the same mistake wearing a different hat.
+
+3. **The picture is turned before it is measured, not after.** `prepare()`
+   lays the ink field on its side immediately after `toInk()`, so the blur
+   radius, the cell aspect in `fitGrid()` and the shape matching all work in
+   the machine's frame unchanged. Turning the finished characters instead
+   would apply the 2.54 x 4.23 mm correction along the wrong axis and match
+   every character against a part of the picture that had moved.
+
+Text and pasted art cannot be turned first — the mark faces choose `_`, `(`
+and `)` from the direction of the stroke, and those decisions are made in the
+frame the letter is *read* in — so the finished block is laid down and each
+mark swapped for the key that will look like it afterwards. Bars are mapped
+by direction and not by which side of the cell they sit on: an underscore
+turned is a bar up the left-hand edge, no typewriter has one, and at 2.54 mm
+the side is invisible where the direction is everything. Where nothing honest
+exists, and where the machine has not got the rotated mark, the original
+stands — so nothing this produces is untypeable that was not untypeable
+already.
+
+Faults 11 and 13 in this document are both about landscape, and both are now
+about something that does not exist. They are left as written: what they say
+about *the app not doing what its own control claimed* was true, and only the
+account of what the control should have done has changed.
+
+---
+
+### 17. The one number a typewriter cannot change
+
+Not a fault — the feature that fault 16 made possible, and the reasoning is
+worth keeping because it is all arithmetic and one of the numbers is a trap.
+
+A typewriter has exactly one resolution. A cell is 2.54 × 4.23 mm at pica,
+there is no setting that makes it smaller, and an A4 therefore holds 82 × 70
+cells and never any more. Turning the motif (fault 16) buys millimetres but
+not cells. Past that the only variable left is how much paper.
+
+**The trap.** A composite's grid must be the single sheet's grid multiplied,
+never the composite's millimetres divided:
+
+```
+82 columns × 2.54 mm     = 208.28 mm of a 210 mm sheet
+two sheets butted        = 420 mm
+floor(420 / 2.54)        = 165 columns
+2 × 82                   = 164 columns
+```
+
+The 165th column is real arithmetic and cannot be struck: it lands half on
+one sheet and half on the other. Divide rather than multiply and every
+composite is one column wider than any machine can type, in exactly the place
+where it is hardest to notice. `sheetGrid()` multiplies.
+
+**What that leaves over has to go somewhere**, and it goes to the joins:
+1.72 mm at each vertical join, 0.67 mm at each horizontal one. The
+instructions tell you to overlap the sheets by it, and the preview draws the
+result of having done so — cells running straight through, with a line where
+the paper changes hands. Which is why the drawn composite is slightly
+narrower than the paper box around it: 416.6 mm of cells inside a 420 mm A4
+pair. That gap is the overlap, not a rounding error.
+
+**Three things had to come apart to make it work.**
+
+1. *Placement from setup.* `placeOn()` is lifted out of `setUp()`, because
+   the picture is placed once on the whole composite and each sheet is then
+   told where its piece goes. A sheet that centred its own slice would make
+   the picture jump at every join, which is exactly where the eye goes.
+
+2. *Paper from machinery.* "Does it fit" is a question about the composite;
+   "does the carriage reach" is a question about one sheet. Asked together,
+   as `setUp()` used to, a 150-column picture across two sheets is refused
+   for exceeding an SM7's 98-column scale — when it is 75 columns per sheet
+   and perfectly typeable in two visits. `splitMotif()` answers the first,
+   `setUp()` still answers the second, once per sheet.
+
+3. *The picture from the sheet.* `app.motif` is the whole thing and
+   `app.lines` is the piece of paper in the machine. Everything above the
+   fold reads the first; everything about typing reads the second. On one
+   sheet they are the same array, which is what made the distinction so easy
+   to get wrong before there was ever a reason to draw it.
+
+**One sheet at a time is forced, not chosen.** On a composite two sheets
+wide a single motif row is 120-odd columns and no line on the machine is: it
+is two lines, on two pieces of paper, typed on separate visits. There is no
+arrangement in which the picture is one list of lines to work down. Which is
+also why nothing in `runs.js`, `sheet.js` or the listening code needed
+changing — hand them a slice and they are doing the job they always did.
+
+**What is stated rather than modelled.** A horizontal join lands where the
+feed rollers let go of the paper, so the bottom lines of each row may not be
+typeable at all. How many depends on the machine and this has not been
+measured on any of them, so the app says exactly that and recommends sheets
+side by side. A number nobody measured would be worse than no number.
+
+**What is called out rather than corrected.** The centre of a two-by-two is
+the point where all four sheets meet, so a small motif asked for *centred* is
+cut across every join. That is what "centred" means and quietly giving it a
+second meaning would be worse; it raises a note naming the two ways out.
+
+---
+
 ---
 
 ## Looked at, not a problem
@@ -537,8 +692,8 @@ directly but nothing exercises the button.
 
 - **The picture path is now covered, but only against a synthetic motif.**
   The canvas stub returns a dark bar (see fault 13), which is enough to prove
-  the pipeline runs end to end, that landscape works for a picture and that
-  the width ceiling follows. It is not a photograph: shape matching against a
+  the pipeline runs end to end, that a picture can be planned sideways and
+  that the width ceiling follows. It is not a photograph: shape matching against a
   real image, and whether the chosen characters flatter it, is still
   unverified here.
 - **Nothing has been typed on a real machine.** The claim that `B`/`2`/`-`

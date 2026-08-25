@@ -9,8 +9,15 @@ import {
   charset, makeTypeable, untypeable, standIns, PAPERS, paperById,
   textArea, sheetGrid, setUp, cellWidthMm, cellHeightMm,
   pitchFrom, expectedMm, PITCHES, LINE_PITCHES,
-  landscape, wantsLandscape, orient,
 } from '../src/core/machine.js';
+import * as machine from '../src/core/machine.js';
+import {
+  turnedGrid, planningGrid, turnRows, turnField, isTurned, TURNS, turnAdvice,
+} from '../src/core/turn.js';
+import {
+  tiled, tilesOf, isComposite, unitOf, unitGrid, sheetCount, seams,
+  splitMotif, layoutAdvice, MAX_ACROSS, MAX_DOWN,
+} from '../src/core/compose.js';
 import { PROFILES, profileById } from '../src/profiles/index.js';
 import {
   runsOf, runsToText, strikesInLine, colourMap, inkTally, parseRows,
@@ -29,6 +36,8 @@ const check = (name, fn) => {
 };
 
 const sm7 = profileById('olympia-sm7');
+/** Distinguishable, typeable, and no spaces — a space would be trimmed. */
+const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789';
 // The second stock machine, and a genuinely different one for this purpose:
 // it has no underscore, no acute and no section mark.
 const pica = profileById('generic-pica-qwerty');
@@ -670,78 +679,403 @@ check('a scrambled sentence is caught', () => {
 
 console.log('turning the sheet sideways');
 
-check('landscape swaps the paper, and only the paper', () => {
-  const a4 = paperById('a4');
-  const across = landscape(a4);
-  assert.strictEqual(across.w, a4.h);
-  assert.strictEqual(across.h, a4.w);
-  // The margin is a distance from the edge; the sheet has not changed size.
-  assert.strictEqual(across.margin, a4.margin);
-  assert.strictEqual(across.name, a4.name);
-  assert.ok(across.landscape);
-  assert.ok(!a4.landscape, 'the original was mutated');
-});
-
-check('turning it round is what the grid and the margins follow', () => {
-  // A4 at pica: 82 x 70 upright, 116 x 49 turned. If any of these did not
-  // move, something downstream would be laying out on the wrong sheet.
-  const a4 = paperById('a4');
-  const up = sheetGrid(a4, sm7);
-  const across = sheetGrid(landscape(a4), sm7);
-  assert.deepStrictEqual(up, { cols: 82, rows: 70 });
-  assert.deepStrictEqual(across, { cols: 116, rows: 49 });
-
-  const upArea = textArea(a4, sm7);
-  const acrossArea = textArea(landscape(a4), sm7);
-  assert.ok(acrossArea.cols > upArea.cols, 'no extra width from turning');
-  assert.ok(acrossArea.rows < upArea.rows, 'gained width for free');
-});
-
-check('the sheet turns only when it changes the answer', () => {
-  // Turning a sheet that already holds the motif buys nothing and loses the
-  // shape people expect.
-  const a4 = paperById('a4');
-  const cases = [
-    [95, 15, true,  'too wide upright, fits sideways'],
-    [60, 40, false, 'fits upright already'],
-    [82, 70, false, 'exactly fills the upright sheet'],
-    [100, 60, false, 'too tall sideways as well'],
-    [200, 10, false, 'too wide for either'],
-    [0, 0, false, 'nothing to type'],
-  ];
-  for (const [w, h, want, why] of cases) {
-    assert.strictEqual(wantsLandscape(w, h, a4, sm7), want,
-      `${w}x${h}: ${why}`);
+check('the paper never turns', () => {
+  // The mistake this replaced, kept as a test so it cannot come back.
+  // landscape() swapped the paper's width and height and everything
+  // downstream believed it: A4 became 297 mm of writing line on a machine
+  // whose scale ends at 249.
+  const M = machine;
+  assert.ok(!('landscape' in M), 'landscape() is back');
+  assert.ok(!('wantsLandscape' in M), 'wantsLandscape() is back');
+  assert.ok(!('orient' in M), 'orient() is back');
+  for (const p of PAPERS) {
+    assert.ok(p.h > p.w, `${p.name} is stored on its side`);
   }
 });
 
-check('the aspect ratio alone does not decide it', () => {
-  // A motif wider than it is tall can still sit happily upright, and one
-  // only slightly too wide may be too tall the other way round.
+check('turning buys shape, not room', () => {
+  // A4 at pica: 82 x 70 on the sheet, 66 x 60 inside the margins. Turned,
+  // that is 60 x 66 — the same cells, stood the other way up. The old model
+  // claimed 100 x 39, which was 297 mm of paper the carriage cannot reach.
   const a4 = paperById('a4');
-  assert.ok(!wantsLandscape(70, 40, a4, sm7), 'turned a sheet that fitted');
-  assert.ok(!wantsLandscape(90, 55, a4, sm7),
-    'turned for a motif too tall to go sideways');
+  const grid = sheetGrid(a4, sm7);
+  const area = textArea(a4, sm7);
+  assert.deepStrictEqual(grid, { cols: 82, rows: 70 });
+  assert.deepStrictEqual(area, { cols: 66, rows: 60 });
+  assert.deepStrictEqual(turnedGrid(area), { cols: 60, rows: 66 });
+  assert.deepStrictEqual(planningGrid(area, 'none'), area);
+  assert.deepStrictEqual(planningGrid(area, 'left'), turnedGrid(area));
+  assert.deepStrictEqual(planningGrid(area, 'right'), turnedGrid(area));
+
+  // What it does buy, in millimetres: a picture 60 cells wide on a turned
+  // sheet reaches 254 mm, against 168 for the 66 an upright one gives.
+  const across = turnedGrid(area).cols * cellHeightMm(sm7);
+  const up = area.cols * cellWidthMm(sm7);
+  assert.ok(across > up * 1.4, `${across.toFixed(0)} mm against ${up.toFixed(0)}`);
 });
 
-check('orient obeys the switch', () => {
+check('what cannot be typed is refused, not noted', () => {
+  // The failure in full. Under the old model a 116-column motif on "A4
+  // sideways" produced a left stop of 7 and a right stop of 80 — 73 columns
+  // of carriage — and reported it as three notes and no refusal.
   const a4 = paperById('a4');
-  assert.ok(!orient(a4, sm7, 95, 15, false).landscape,
-    'turned the sheet with the switch off');
-  assert.ok(orient(a4, sm7, 95, 15, true).landscape,
-    'left the sheet upright with the switch on and a motif that needs it');
-  assert.ok(!orient(a4, sm7, 40, 20, true).landscape,
-    'turned the sheet for a motif that fits');
+  const level = (w) => setUp(w, 20, a4, sm7).warnings.map((x) => x.level);
+  assert.ok(!level(66).includes('stop'), 'refused a motif inside the margins');
+  assert.ok(!level(82).includes('stop'), 'refused a motif that fits the sheet');
+  assert.ok(level(116).includes('stop'), '116 columns went through as a note');
+  assert.ok(level(99).includes('stop'), 'past the end of the scale, unrefused');
 });
 
-check('a motif that would not fit upright fits once the sheet is turned', () => {
-  // The point of the whole feature, stated as the thing the user sees.
+check('a turned grid is the same grid read the other way', () => {
+  const rows = ['abc', 'def'];
+  // Turn it left, then turn the result right: back where it started.
+  const there = turnRows(rows, 'left');
+  const back = turnRows(there, 'right');
+  assert.deepStrictEqual(back, rows);
+  // Rows and columns change places.
+  assert.strictEqual(there.length, 3);
+  assert.strictEqual(there[0].length, 2);
+});
+
+check('which corner is typed first is what the two turns differ in', () => {
+  // It decides the order you work through the picture in, which is the only
+  // thing a person notices before the sheet comes out. Turning the sheet
+  // left means the motif's left-hand column is the first line typed; turning
+  // it right means the right-hand column is.
+  //
+  //   T R      the motif: T top-left, R top-right,
+  //   b .      b bottom-left
+  const rows = ['TR', 'b.'];
+  assert.strictEqual(turnRows(rows, 'left')[0], 'bT',
+    'the left-hand column, bottom first');
+  assert.strictEqual(turnRows(rows, 'right')[0], 'R.',
+    'the right-hand column, top first');
+});
+
+check('marks are swapped for what will look right once turned', () => {
+  const have = new Set([...'-_!"/(nu ']);
+  // A bar is mapped by direction: a horizontal one has to be struck as a
+  // vertical one, because the sheet is going to turn under it.
+  assert.strictEqual(turnRows(['-'], 'left', have)[0], '!');
+  assert.strictEqual(turnRows(['_'], 'right', have)[0], '!');
+  // Nothing honest to swap to, so it stands.
+  assert.strictEqual(turnRows(['~'], 'left', have)[0], '~');
+  // Weight-bearing characters are chosen for how dark they are, and a B on
+  // its side is exactly as dark as a B.
+  assert.strictEqual(turnRows(['B'], 'left', have)[0], 'B');
+});
+
+check('a rotated mark the machine has not got is not used', () => {
+  // The output has to stay typeable. An SM7 has no backslash, so a slash
+  // stays a slash rather than becoming a key that is not there.
+  const sm7Keys = new Set(charset(sm7));
+  assert.ok(!sm7Keys.has(String.fromCharCode(92)), 'the SM7 grew a backslash');
+  assert.strictEqual(turnRows(['/'], 'left', sm7Keys)[0], '/');
+  for (const ch of turnRows(['-_/()'], 'left', sm7Keys)[0]) {
+    assert.ok(sm7Keys.has(ch) || ch === ' ', `${ch} is not on the machine`);
+  }
+});
+
+check('what turning helps is a motif that is too tall, not too wide', () => {
+  // This is the opposite of what the app used to claim, and it is worth
+  // being blunt about. A sheet is taller than it is wide, so laying a motif
+  // down gives it the long axis for its height: 82 cells down and 70 across,
+  // against 82 across and 70 down upright.
+  //
+  // What turning does *not* buy is columns. It buys millimetres — a turned
+  // cell is 4.23 mm wide against 2.54 — which is why a photograph gains from
+  // it and a long word does not.
   const a4 = paperById('a4');
-  const stop = (paper) => setUp(95, 15, paper, sm7).warnings
-    .some((w) => w.level === 'stop');
-  assert.ok(stop(a4), 'a 95-column motif was said to fit on upright A4');
-  assert.ok(!stop(orient(a4, sm7, 95, 15, true)),
-    'still refused after turning the sheet');
+  const stop = (w, h) => setUp(w, h, a4, sm7).warnings
+    .some((x) => x.level === 'stop');
+  assert.ok(stop(60, 78), '78 lines were said to fit an A4 that holds 70');
+  assert.ok(!stop(78, 60), 'the same motif laid down was refused');
+  // And the reverse, so nobody reads the above as "turning always helps".
+  assert.ok(!stop(78, 60), 'a wide, short motif was refused upright');
+  assert.ok(stop(60, 78), 'laying a wide motif down was said to fit');
+});
+
+check('the carriage refuses what the paper cannot', () => {
+  // Only reachable on a machine whose scale is narrower than its paper, so
+  // it is stated with one: no shipped profile is, which is exactly why the
+  // old model's 297 mm writing line went unchallenged for so long.
+  const narrow = { ...sm7, scale: { ...sm7.scale, max: 40 } };
+  const wide = { ...paperById('a4'), w: 210, h: 297 };
+  const stop = (w) => setUp(w, 10, wide, narrow).warnings
+    .filter((x) => x.level === 'stop');
+  assert.strictEqual(stop(30).length, 0, 'refused a motif inside the scale');
+  assert.ok(/carriage does not reach/i.test(stop(60)[0]?.text ?? ''),
+    'a motif past the end of the scale went through');
+  // One problem, not two: off the paper as well and the paper says it.
+  assert.strictEqual(stop(200).length, 1, 'two refusals for one motif');
+});
+
+check('turning a picture turns the picture, not the cells', () => {
+  // A field laid on its side comes back as itself when it is stood up.
+  const field = { w: 3, h: 2, data: Float32Array.from([1, 2, 3, 4, 5, 6]) };
+  const left = turnField(field, 'left');
+  assert.strictEqual(left.w, 2);
+  assert.strictEqual(left.h, 3);
+  const back = turnField(left, 'right');
+  assert.strictEqual(back.w, 3);
+  assert.strictEqual(back.h, 2);
+  assert.deepStrictEqual([...back.data], [...field.data]);
+});
+
+console.log('one motif across several sheets');
+
+check('a composite is the sheet multiplied, never the millimetres divided', () => {
+  /*
+   * The rule the whole feature rests on. A4 at pica holds 82 columns, which
+   * is 208.28 mm of a 210 mm sheet. Two sheets butted together are 420 mm,
+   * and 420 mm divided by the cell is 165 — one more column than the two
+   * sheets hold between them. That column lands across the join, half on
+   * each sheet, where no type bar can reach it.
+   */
+  const a4 = paperById('a4');
+  const two = tiled(a4, 2, 1);
+  assert.strictEqual(sheetGrid(a4, sm7).cols, 82);
+  assert.strictEqual(Math.floor(420 / cellWidthMm(sm7)), 165,
+    'the arithmetic this avoids has changed');
+  assert.deepStrictEqual(sheetGrid(two, sm7), { cols: 164, rows: 70 });
+  assert.deepStrictEqual(sheetGrid(tiled(a4, 2, 2), sm7), { cols: 164, rows: 140 });
+});
+
+check('the margins belong to the outside of the picture', () => {
+  // Subtracted once, not once per sheet. A margin down the inside of a join
+  // would be a white stripe through the middle of the picture.
+  const a4 = paperById('a4');
+  const one = textArea(a4, sm7);
+  const two = textArea(tiled(a4, 2, 1), sm7);
+  assert.deepStrictEqual(one, { cols: 66, rows: 60 });
+  assert.strictEqual(two.cols, 164 - (82 - 66), 'the margin was counted twice');
+  assert.strictEqual(two.rows, one.rows, 'a side join changed the top margin');
+});
+
+check('the leftover paper piles up at the joins', () => {
+  const a4 = paperById('a4');
+  const gap = seams(tiled(a4, 2, 2), sm7);
+  // 210 - 82 x 2.54 and 297 - 70 x 4.2333.
+  assert.ok(Math.abs(gap.across - 1.72) < 0.01, `${gap.across} across`);
+  assert.ok(Math.abs(gap.down - 0.67) < 0.01, `${gap.down} down`);
+});
+
+check('composing and uncomposing leaves the paper as it was', () => {
+  const a4 = paperById('a4');
+  const back = tiled(tiled(a4, 3, 2), 1, 1);
+  assert.strictEqual(back.w, a4.w);
+  assert.strictEqual(back.h, a4.h);
+  // The margin lives on the paper and not on the unit, so this is exactly
+  // the property a careless round trip loses.
+  assert.strictEqual(back.margin, a4.margin, 'the margin was dropped');
+  assert.ok(!isComposite(back));
+  assert.ok(!isComposite(a4));
+  assert.ok(isComposite(tiled(a4, 2, 1)));
+});
+
+check('the matrix cannot be pushed past what it offers', () => {
+  const a4 = paperById('a4');
+  assert.deepStrictEqual(tilesOf(tiled(a4, 99, 99)),
+    { across: MAX_ACROSS, down: MAX_DOWN });
+  assert.deepStrictEqual(tilesOf(tiled(a4, 0, -3)), { across: 1, down: 1 });
+});
+
+check('every cell of the motif lands on exactly one sheet', () => {
+  /*
+   * The property that makes the whole thing typeable, checked by putting the
+   * picture back together: read the slices out in the order they are typed
+   * and the original has to come back, cell for cell.
+   */
+  const a4 = paperById('a4');
+  const lines = Array.from({ length: 90 },
+    (_, r) => Array.from({ length: 120 }, (_, c) => CHARS[(r + c) % CHARS.length]).join(''));
+  const plan = splitMotif({ lines, paper: tiled(a4, 2, 2), machine: sm7 });
+
+  const back = Array.from({ length: 90 }, () => new Array(120).fill(null));
+  for (const sh of plan.sheets) {
+    sh.lines.forEach((line, y) => {
+      for (let x = 0; x < line.length; x++) {
+        // Where this cell sits in the motif: the sheet's corner on the
+        // composite, plus its own offset, less where the motif was placed.
+        const col = sh.col * plan.grid.cols + sh.at.col + x - plan.origin.col;
+        const row = sh.row * plan.grid.rows + sh.at.row + y - plan.origin.row;
+        assert.strictEqual(back[row][col], null,
+          `cell ${col},${row} landed on two sheets`);
+        back[row][col] = line[x];
+      }
+    });
+  }
+  for (let r = 0; r < 90; r++) {
+    assert.strictEqual(back[r].join(''), lines[r], `row ${r} came back wrong`);
+  }
+});
+
+check('the picture is placed once, and the sheets are told', () => {
+  // A sheet that centred its own slice would make the picture jump at every
+  // join. So the second sheet across starts at its own column 0, and it is
+  // the paper guide that carries the difference.
+  const a4 = paperById('a4');
+  const lines = Array.from({ length: 30 }, () => '#'.repeat(100));
+  const plan = splitMotif({ lines, paper: tiled(a4, 2, 1), machine: sm7 });
+  const [left, right] = plan.sheets;
+
+  assert.deepStrictEqual(plan.origin, { col: 32, row: 20 });
+  assert.deepStrictEqual(left.at, { col: 32, row: 20 });
+  assert.deepStrictEqual(right.at, { col: 0, row: 20 });
+  assert.strictEqual(left.lines[0].length, 50);
+  assert.strictEqual(right.lines[0].length, 50);
+
+  // What the machine is actually told, on both sheets: the margin stop is a
+  // carriage position and the paper guide slides the sheet under it, so the
+  // difference is where the ink lands on the paper.
+  for (const [sh, want] of [[left, 32], [right, 0]]) {
+    assert.strictEqual(sh.setup.left - sh.setup.paperGuide, want,
+      `${sh.name} puts its piece at the wrong column`);
+    assert.strictEqual(sh.setup.advance, 20, `${sh.name} winds on wrongly`);
+  }
+});
+
+check('a sheet the motif never reaches is listed, not dropped', () => {
+  // Somebody laying out four pieces of paper needs to know the fourth is
+  // blank, not that there are three.
+  const a4 = paperById('a4');
+  const lines = Array.from({ length: 8 }, () => '#'.repeat(20));
+  const plan = splitMotif({
+    lines, paper: tiled(a4, 2, 2), machine: sm7, align: 'topleft',
+  });
+  assert.strictEqual(plan.sheets.length, 4);
+  const used = plan.sheets.filter((sh) => !sh.blank);
+  assert.strictEqual(used.length, 1, 'a small motif reached more than one sheet');
+  assert.strictEqual(used[0].index, 0, 'top left did not land on the first sheet');
+  for (const sh of plan.sheets) {
+    assert.ok(sh.name.includes('of 4'), `unnamed sheet: ${sh.name}`);
+  }
+});
+
+check('the centre of four sheets is the point where they meet', () => {
+  /*
+   * Arithmetically right and almost never wanted: centred on a two-by-two,
+   * a motif that would fit one sheet is cut across all four. It is not
+   * corrected — "centred" has one meaning — but it is said out loud, because
+   * the preview at thumbnail size does not make it obvious.
+   */
+  const a4 = paperById('a4');
+  const lines = Array.from({ length: 8 }, () => '#'.repeat(20));
+  const plan = splitMotif({ lines, paper: tiled(a4, 2, 2), machine: sm7 });
+  assert.strictEqual(plan.sheets.filter((sh) => !sh.blank).length, 4);
+  const note = plan.warnings.find((w) => /would fit on one sheet/.test(w.text));
+  assert.ok(note, `nothing said about it: ${JSON.stringify(plan.warnings)}`);
+  assert.strictEqual(note.level, 'note', 'a positioning choice was made a refusal');
+  assert.ok(/top left/.test(note.text), `no way out offered: ${note.text}`);
+
+  // And it stays quiet when the split is the point of composing at all.
+  const big = splitMotif({
+    lines: Array.from({ length: 100 }, () => '#'.repeat(150)),
+    paper: tiled(a4, 2, 2), machine: sm7,
+  });
+  assert.ok(!big.warnings.some((w) => /would fit on one sheet/.test(w.text)),
+    'a motif that needs four sheets was told it fits on one');
+});
+
+check('paper the motif never reaches is pointed out', () => {
+  /*
+   * Easiest to walk into with a turn in play, where the axes are crossed:
+   * three sheets *across* give a turned picture three sheets of height and
+   * no extra width at all, because a turned sheet's width is counted down
+   * the paper. Somebody who has just asked for three sheets and got one
+   * needs to be told why, not left to count the dashed buttons.
+   */
+  const a4 = paperById('a4');
+  const plan = splitMotif({
+    lines: Array.from({ length: 40 }, () => '#'.repeat(50)),
+    paper: tiled(a4, 3, 1), machine: sm7, align: 'topleft',
+  });
+  assert.strictEqual(plan.sheets.filter((sh) => !sh.blank).length, 1);
+  const note = plan.warnings.find((w) => /stay blank/.test(w.text));
+  assert.ok(note, `nothing said: ${JSON.stringify(plan.warnings)}`);
+  assert.ok(/2 of the 3/.test(note.text), note.text);
+  assert.strictEqual(note.level, 'note');
+
+  // Quiet when every sheet earns its place.
+  const full = splitMotif({
+    lines: Array.from({ length: 60 }, () => '#'.repeat(240)),
+    paper: tiled(a4, 3, 1), machine: sm7,
+  });
+  assert.ok(!full.warnings.some((w) => /stay blank/.test(w.text)),
+    'a motif that reached every sheet was told it had not');
+});
+
+check('the sheets are numbered in the order they are typed', () => {
+  const a4 = paperById('a4');
+  const lines = Array.from({ length: 100 }, () => '#'.repeat(150));
+  const plan = splitMotif({ lines, paper: tiled(a4, 2, 2), machine: sm7 });
+  assert.deepStrictEqual(plan.sheets.map((sh) => [sh.col, sh.row]),
+    [[0, 0], [1, 0], [0, 1], [1, 1]], 'left to right, then down');
+});
+
+check('what fits the paper and what the carriage reaches are asked apart', () => {
+  /*
+   * On a composite these are different questions and the old single answer
+   * got one of them wrong. A hundred-column picture across two sheets is
+   * fifty columns per sheet — well inside an SM7's 98-column scale — so
+   * refusing it because no single line of 100 can be typed would refuse
+   * something perfectly typeable in two visits.
+   */
+  const a4 = paperById('a4');
+  const lines = Array.from({ length: 30 }, () => '#'.repeat(150));
+  const plan = splitMotif({ lines, paper: tiled(a4, 2, 1), machine: sm7 });
+  assert.deepStrictEqual(plan.warnings.filter((w) => w.level === 'stop'), [],
+    '150 columns over two sheets was refused');
+  for (const sh of plan.sheets) {
+    assert.deepStrictEqual(
+      (sh.setup?.warnings ?? []).filter((w) => w.level === 'stop'), [],
+      `${sh.name} refused its own slice`);
+  }
+
+  // And it is still refused when it genuinely does not fit the paper.
+  const huge = splitMotif({
+    lines: Array.from({ length: 30 }, () => '#'.repeat(400)),
+    paper: tiled(a4, 2, 1), machine: sm7,
+  });
+  assert.ok(huge.warnings.some((w) => w.level === 'stop'),
+    '400 columns was said to fit two A4');
+});
+
+check('a single sheet is a composite of one, and says nothing extra', () => {
+  // The single-sheet case has to come out of the same code, or the two drift
+  // apart. What it must not do is start talking about joins.
+  const a4 = paperById('a4');
+  const lines = Array.from({ length: 20 }, () => '#'.repeat(60));
+  const plan = splitMotif({ lines, paper: a4, machine: sm7 });
+  assert.strictEqual(plan.sheets.length, 1);
+  assert.deepStrictEqual(plan.sheets[0].lines, lines);
+  assert.strictEqual(plan.sheets[0].name, 'A4');
+  assert.deepStrictEqual(layoutAdvice(a4, sm7), []);
+  assert.strictEqual(sheetCount(a4), 1);
+  assert.strictEqual(unitGrid(a4, sm7).cols, sheetGrid(a4, sm7).cols);
+});
+
+check('laying out is explained, and the horizontal join is warned about', () => {
+  const a4 = paperById('a4');
+  const side = layoutAdvice(tiled(a4, 2, 1), sm7).map(([head]) => head).join(' | ');
+  assert.ok(/Overlap 1\.7 mm/.test(side), side);
+  assert.ok(!/bottom lines/i.test(side), `a side join warned about the feed: ${side}`);
+
+  const stacked = layoutAdvice(tiled(a4, 1, 2), sm7);
+  const heads = stacked.map(([head]) => head).join(' | ');
+  assert.ok(/bottom lines/i.test(heads), heads);
+  // The feed is the reason, and no number is invented for it.
+  const body = stacked.map(([, b]) => b).join(' ');
+  assert.ok(/feed rollers/i.test(body) && /not been measured/i.test(body), body);
+});
+
+check('a turned composite is the composite turned', () => {
+  // The two compose: the tiling decides how much paper, the turn decides
+  // which way the finished thing is read. Neither knows about the other.
+  const a4 = paperById('a4');
+  const g = sheetGrid(tiled(a4, 2, 1), sm7);
+  assert.deepStrictEqual(planningGrid(g, 'left'), { cols: 70, rows: 164 });
+  assert.deepStrictEqual(planningGrid(g, 'none'), g);
 });
 
 console.log('choosing characters for a tone');
@@ -901,18 +1235,30 @@ check('it fits, unless a single word cannot be broken', () => {
   }
 });
 
-check('more room means fewer rows', () => {
-  // What turning the sheet actually buys. A4 landscape gives 100 columns
-  // inside the margins against 66 upright.
+check('a word planned sideways wraps narrower and comes out wider', () => {
+  // Both halves matter, and the first one reads like a regression until you
+  // see the second. Turning gives a word *fewer* columns to wrap into — 60
+  // inside the margins against 66 — so it takes more rows. What it gets back
+  // is millimetres: those 60 cells reach 254 mm of paper where the 66 reach
+  // 168, because a turned cell is 4.23 mm wide and an upright one is 2.54.
   const a4 = paperById('a4');
   const up = textArea(a4, sm7).cols;
-  const across = textArea(landscape(a4), sm7).cols;
+  const across = planningGrid(textArea(a4, sm7), 'left').cols;
+  assert.ok(across < up, `${across} columns turned against ${up} upright`);
+
   const text = 'HALLO WELT WIE GEHT ES DIR';
   const tall = letter(text, { style: 'block', tones: ['B'], maxCols: up });
   const wide = letter(text, { style: 'block', tones: ['B'], maxCols: across });
-  assert.ok(wide.length < tall.length,
-    `${wide.length} rows across against ${tall.length} upright`);
-  assert.ok(Math.max(...wide.map((l) => l.length)) <= across);
+  assert.ok(Math.max(...wide.map((l) => l.length)) <= across,
+    'wrapped past the width it was given');
+  assert.ok(across * cellHeightMm(sm7) > up * cellWidthMm(sm7) * 1.4,
+    'turning did not buy the millimetres it is for');
+
+  // And once it is laid down, what was its width is a count of typed lines.
+  const laid = turnRows(wide, 'left', new Set([...'B ']));
+  assert.strictEqual(laid.length, Math.max(...wide.map((l) => l.length)));
+  assert.ok(laid.length <= sheetGrid(a4, sm7).rows,
+    `${laid.length} lines on a sheet that holds ${sheetGrid(a4, sm7).rows}`);
 });
 
 check('a single word too wide to break is left whole', () => {
