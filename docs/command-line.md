@@ -50,9 +50,12 @@ Everywhere:
 `\n` in the word starts a second line of letters, since a shell makes a
 real newline awkward to type. Marks the machine has not got are typed as
 their stand-ins and named; a mark with no stand-in is left blank, by name.
-With `--turn` the word is set as a picture rather than laid down cell by
-cell — see [lettering.md](lettering.md#sideways-the-word-becomes-a-picture)
-— which means `--atlas` applies to it too.
+With `--turn` the word is laid down rather than typed cell by cell, in the
+font's own marks, scaled to the paper where it will not go whole and told
+how many columns that cost — see
+[lettering.md](lettering.md#sideways-give-the-block-back-the-lines-the-turn-takes).
+A word more than twice too big is set as a picture instead, which is the
+one case where `--atlas` applies to it too.
 
 `--width` is the same flag and the same default a picture is fitted to,
 because the page offers one control for both. It is a real cap: lines break
@@ -125,6 +128,13 @@ sheet to look at it. Turning buys millimetres rather than columns: on A4 at
 pica the margins hold 66 × 60 cells upright and 60 × 66 turned, but those 60
 reach 254 mm of paper against 168 for the 66.
 
+`text` and `file` are both laid down *in proportion*: a turn swaps the cell's
+2.54 mm width and its 4.23 mm height, so each line is repeated 2.77 times to
+give back what the turn takes. Where that will not go on the paper, columns
+are merged into their neighbours — the mark with ink in it wins, so a stroke
+thickens rather than vanishes — and a note says how many. See
+[lettering.md](lettering.md#sideways-give-the-block-back-the-lines-the-turn-takes).
+
 `--width` stopped at the usable area, which on an upright A4 at pica is 66
 columns. That made a perfectly typeable 78-column motif unaskable. The limit
 is now the edge of the paper, and the margins are a note instead:
@@ -132,7 +142,12 @@ is now the edge of the paper, and the margins are a note instead:
 | A4 at 10 cpi | inside the margins | edge to edge |
 | --- | --- | --- |
 | upright | 66 | 82 |
-| sideways | 100 | 116 |
+| turned (`--turn left`) | 60 | 70 |
+
+The turned row is the same sheet stood the other way up, which is why it is
+*smaller* rather than larger. The 100 and 116 this table used to give were
+the feed-it-on-the-long-edge figures — 297 ÷ 2.54 — describing paper the
+carriage cannot reach, and they contradicted the paragraph above.
 
 Past the margins, `setUp()` returns a `note` saying the stops move in less.
 Past the edge of the paper it returns a `stop`, because no margin technique

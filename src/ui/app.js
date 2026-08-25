@@ -13,10 +13,10 @@ import {
   pitchFrom, expectedMm, PITCHES, LINE_PITCHES, cellWidthMm, cellHeightMm,
 } from '../core/machine.js';
 import {
-  isTurned, planningGrid, turnedGrid, turnRows, turnType, turnAdvice,
+  isTurned, planningGrid, turnedGrid, turnRows, turnType, turnFit, turnAdvice,
 } from '../core/turn.js';
 import {
-  tiled, tilesOf, isComposite, unitOf, sheetCount, unitGrid, splitMotif,
+  tiled, isComposite, unitOf, sheetCount, splitMotif,
   layoutAdvice, MAX_ACROSS, MAX_DOWN,
 } from '../core/compose.js';
 import { buildAtlas, nearestChar } from '../core/glyphs.js';
@@ -29,7 +29,7 @@ import {
 import {
   letter, STYLES, usesTwo, tonesOf, charsUsed, marksOf, widestWord,
 } from '../core/lettering.js';
-import { toneRamp } from '../core/ink.js';
+import { toneRamp, inkWeights } from '../core/ink.js';
 import { parseFlf, flfLetter } from '../core/figlet.js';
 import { StrikeListener, LineTracker, METER_FULL_SCALE } from '../core/listen.js';
 import { buildSheetPdf, downloadPdf } from '../core/pdf.js';
@@ -39,6 +39,34 @@ import {
 import { renderKeyboard, pick, learnByTyping } from './keyboard.js';
 
 const $ = (id) => document.getElementById(id);
+
+/**
+ * Which ribbon scheme is wanted.
+ *
+ * The menu when there is one, and the restored wish before that. The order
+ * matters: convert() plans the ink at the top and rebuilds the menu further
+ * down, so on the first pass of a session the <select> is still empty markup
+ * when the plan is made. Reading it directly gave `''`, which inkPlan() does
+ * not recognise and quietly renders as everything-black — the setting was
+ * saved faithfully and then thrown away on the way back in.
+ */
+const inkScheme = () => $('ink').value || app.ink;
+
+/**
+ * Is this a finger rather than a mouse?
+ *
+ * Only ever asked about *wording* — the sizes are settled in styles.css,
+ * where `pointer: coarse` belongs. Guarded because a page rendered without a
+ * layout engine has no media queries to answer with, and a hint that reads
+ * as though there were a mouse is a far smaller fault than a page that will
+ * not start.
+ */
+const coarsePointer = () =>
+  window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
+
+/** Has this reader asked for less movement on screen? See the strike lamp. */
+const steadyLamp = () =>
+  window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
 
 const app = {
   machine: PROFILES[0],
@@ -71,6 +99,12 @@ const app = {
   // How the preview is shown: the whole sheet scaled to the column, or the
   // sheet at the size it comes out of the machine.
   zoom: 'fit',
+  // The ribbon scheme, for as long as the menu cannot hold it. `#ink` is
+  // empty markup until syncInkControls() builds it from the motif, and
+  // assigning to an option-less <select> is a no-op — so a scheme restored
+  // from storage had nowhere to live and was read back as ''. See
+  // inkScheme(): once the menu exists it is the menu that answers.
+  ink: '',
   at: 0,              // current line
   strike: 0,          // keystrokes done in the current line
   els: [],
@@ -97,7 +131,7 @@ const save = () => {
       contrast: $('contrast').value,
       detail: $('detail').value,
       redRows: $('redRows').value,
-      ink: $('ink').value,
+      ink: inkScheme(),
       useRed: $('useRed').checked,
       inkAmount: $('inkAmount').value,
       invert: $('invert').value,
@@ -182,7 +216,7 @@ function fillSelects(saved) {
   if (saved.contrast) $('contrast').value = saved.contrast;
   if (saved.detail) $('detail').value = saved.detail;
   if (saved.redRows) $('redRows').value = saved.redRows;
-  if (saved.ink) $('ink').value = saved.ink;
+  if (saved.ink) app.ink = saved.ink;
   if (saved.useRed) $('useRed').checked = true;
   if (saved.inkAmount) $('inkAmount').value = saved.inkAmount;
   if (saved.invert) $('invert').value = saved.invert;
@@ -288,19 +322,46 @@ function syncInkControls() {
     return;
   }
 
-  // An imported font has no second surface to colour: like pasted art, it
-  // is marks on a page, so red goes by lines or amount, not by face parts.
-  const twoSurface = currentTab() === 'text'
-    && !isFlf($('letterStyle').value) && usesTwo($('letterStyle').value);
   // Depth and accent grade a motif from faint to heavy. With a single ink
   // level there is nothing to grade: the slider would travel its whole
   // length and either do nothing or turn everything red. Leave them out.
   const graded = inkLevels(app.motif, app.atlas) > 1;
+
+  /*
+   * Shadow reddens everything lighter than the heaviest character present,
+   * so it wants art built as a face plus a second surface — and it is
+   * offered exactly where such a surface can exist.
+   *
+   * A drawn face qualifies when it strikes two weights. None ships today:
+   * the thirty-nine redrawn faces went in favour of the real fonts, and the
+   * two that remain are one weight plus projection marks. The clause stays
+   * because the machinery it asks about does — `tones` is still honoured
+   * all the way through letter().
+   *
+   * Pasted art qualifies whenever it arrives in two weights, which is the
+   * ordinary case for art built by hand: a face in one character and its
+   * shadow in a lighter one. That was always the intent — it is what the
+   * scheme was kept for when the faces went — but the condition read
+   * `currentTab() === 'text'`, so the one tab it was meant to serve was the
+   * one tab it excluded, and with no two-weight face left it could not
+   * appear anywhere at all.
+   *
+   * An imported FIGlet font does not qualify: it is a file of marks rather
+   * than a face with a projection. Nor does a photograph, where "not the
+   * heaviest character" is most of the picture — depth is the scheme that
+   * grades a photograph, and it does it with a tonal cut rather than a
+   * single threshold.
+   */
+  const tab = currentTab();
+  const twoSurface =
+    (tab === 'text' && !isFlf($('letterStyle').value)
+      && usesTwo($('letterStyle').value))
+    || (tab === 'paste' && graded);
   const offered = INK_SCHEMES.filter((s) => s.id !== 'none'
     && (s.id !== 'shadow' || twoSurface)
     && (!['depth', 'accent'].includes(s.id) || graded));
 
-  const wanted = $('ink').value;
+  const wanted = inkScheme();
   const ids = offered.map((s) => s.id).join(',');
   if (ids !== app.inkOffered) {
     app.inkOffered = ids;
@@ -502,8 +563,14 @@ function syncComposeHint() {
     ? `${app.paper.h} × ${app.paper.w}` : `${app.paper.w} × ${app.paper.h}`;
 
   if (n === 1) {
-    el.textContent = `One sheet — the same as choosing ${app.base.name} above. ` +
-      `Point at a shape to spread the motif over more of them.`;
+    // "Point at a shape" is a sentence about a mouse. On a touchscreen
+    // there is no pointing at anything — the first thing a finger does is
+    // choose — so the instruction names the action that device actually
+    // has. The matrix still previews on hover wherever hovering exists.
+    el.textContent = `One sheet — the same as choosing ${app.base.name} above. `
+      + (coarsePointer()
+        ? `Tap a shape to spread the motif over more of them.`
+        : `Point at a shape to spread the motif over more of them.`);
     return;
   }
   const gap = app.plan?.seams;
@@ -740,8 +807,10 @@ function convert() {
 
   let lines = [];
   let ghost = false;
-  // Set again below when a turned word has to go through the picture path.
+  // Set again below when a turned word has to go through the picture path,
+  // and with what the turn cost it when it does not. See turnedSideways().
   app.turnedAsPicture = false;
+  app.turnedFit = null;
 
   if (tab === 'text') {
     // Only the ends are trimmed. A blank line in the middle is a gap the
@@ -820,12 +889,20 @@ function convert() {
           block = block.map((row) => [...row]
             .map((c) => swaps.get(c) ?? (gone.has(c) ? ' ' : c)).join(''));
         }
-        const kept = turnType(block, turn, {
+        const laying = {
           aspect: cellAspect(app.machine),
           readCols: plan.cols,
           readRows: plan.rows,
           have,
-        });
+          // Where two columns have to become one, the heavier mark is the
+          // one that stands for both — measured against this machine's own
+          // keys where the atlas could measure them.
+          weight: inkWeights(app.atlas),
+        };
+        // The same arithmetic turnType() is about to do, kept so the hint
+        // can say what the turn cost rather than leaving it to be noticed.
+        app.turnedFit = turnFit(block, laying);
+        const kept = turnType(block, turn, laying);
         app.turnedAsPicture = !kept;
         if (kept) {
           lines = kept;
@@ -895,7 +972,27 @@ function convert() {
     const raw = $('pasted').value.replace(/\t/g, '    ');
     if (raw.trim()) {
       const { text, dropped } = makeTypeable(raw, app.machine);
-      lines = turnRows(text.split('\n'), turn, have);
+      const art = text.split('\n');
+      /*
+       * Foreign art is laid down in proportion too, and for a while it was
+       * the one thing that was not.
+       *
+       * A turn swaps the cell's 2.54 mm width and its 4.23 mm height
+       * whatever is printed in it — a pasted picture is no more exempt from
+       * that than a word is — and this path did nothing about it. What came
+       * out was the 2.77 times smear turnType() exists to prevent, on the
+       * one tab that cannot resample its way out of trouble, and nothing on
+       * the page said so.
+       *
+       * Where it will not go in proportion at all — art more than twice too
+       * big for the turned sheet — it keeps what it always did rather than
+       * being merged into something else, because there is no font here to
+       * re-set it from. syncPasteFit() says which of the two happened, and
+       * what it cost.
+       */
+      lines = isTurned(turn)
+        ? turnType(art, turn, { ...pasteLaying(), have }) ?? turnRows(art, turn, have)
+        : turnRows(art, turn, have);
       if (dropped.size) {
         note(`Swapped out: ${[...dropped.keys()].join(' ')} — no equivalent ` +
              `on this machine, so those cells are blank.`);
@@ -974,7 +1071,7 @@ function convert() {
   app.ghost = ghost && app.motif.length > 0;
   app.motifColours = inkPlan(app.motif, {
     scheme: $('useRed').checked && app.machine.twoColour !== false
-      ? $('ink').value : 'none',
+      ? inkScheme() : 'none',
     atlas: app.atlas,
     amount: +$('inkAmount').value / 100,
     rows: parseRows($('redRows').value, app.motif.length),
@@ -1376,8 +1473,31 @@ function layTurned(el, box, real) {
  * because someone comparing two motifs at real size does not want to ask
  * for it again after every reload.
  */
+/**
+ * Is the screen too small for a sheet of paper to be shown at its own size?
+ *
+ * Width rather than pointer, because this is a question about millimetres:
+ * an A4 at true size is 210 mm across and a phone is about 65 mm of glass.
+ * A touchscreen laptop can show a real sheet perfectly well.
+ */
+const tooSmallForReal = () =>
+  window.matchMedia?.('(max-width: 640px)')?.matches ?? false;
+
 function setZoom(zoom) {
-  app.zoom = zoom === 'original' ? 'original' : 'fit';
+  /*
+   * Actual size means "the sheet and every character at the size they come
+   * out of the machine", which is a thing you hold up against paper. On a
+   * screen narrower than a third of the sheet it is not that any more —
+   * it is the same fitted view with most of it off the side and a scrollbar
+   * where the argument used to be. So the control goes, and with it the
+   * chance of arriving in a mode with nothing on screen to leave it by:
+   * `zoom` is stored between visits, and a phone opened after a desktop
+   * session would otherwise restore a view it could not offer a way out of.
+   */
+  const real = zoom === 'original' && !tooSmallForReal();
+  $('zoomReal').hidden = tooSmallForReal();
+
+  app.zoom = real ? 'original' : 'fit';
   $('zoomFit').classList.toggle('on', app.zoom === 'fit');
   $('zoomReal').classList.toggle('on', app.zoom === 'original');
   $('zoomFit').setAttribute('aria-pressed', String(app.zoom === 'fit'));
@@ -1473,9 +1593,10 @@ function syncLetterHint() {
       opt.textContent = `${name} — no stand-in for ${missing.join(' ')}`;
       continue;
     }
-    // Planned sideways nothing is too wide: the word is set as a picture
-    // and scaled to the sheet, so the label would warn about a fit that
-    // cannot fail.
+    // Planned sideways nothing is too wide: a block that will not go down
+    // whole is scaled to the sheet — with its marks where that is possible
+    // and as a picture where it is not — so the label would warn about a
+    // fit that cannot fail.
     const w = widestWord(word, opt.value);
     opt.textContent = !isTurned(app.turn) && w > room
       ? `${name} — too wide, ${w} of ${room} columns` : name;
@@ -1502,9 +1623,10 @@ function syncLetterHint() {
     }
     const parts = [];
     if (isTurned(app.turn)) {
-      // Sideways there are no stand-ins and no refusals to report: the word
-      // is set as a picture, scaled to the sheet, and every mark on it was
-      // picked from this machine's keys by the matcher.
+      // Sideways there is no refusal to report — a block that will not go
+      // down whole is scaled until it does — and the stand-ins are named by
+      // convert() as it makes them, at the sheet rather than at the picker.
+      // What is left to say is what the turn cost, which is one sentence.
       parts.push(turnedSideways());
     } else {
       const have = new Set(charset(app.machine).filter((c) => app.chosen.has(c)));
@@ -1642,21 +1764,34 @@ function syncSentenceFit() {
 }
 
 /**
- * What planning a word sideways did to it — and the two are not the same
+ * What planning a word sideways did to it — and the three are not the same
  * promise, so they do not get the same sentence.
  *
- * Keeping the marks is the good case and the usual one: the word is set
+ * Keeping the marks is the good case and now the usual one: the word is set
  * exactly as the font says and the lines are repeated to give back what the
- * turn takes, so what goes on the paper is the font's own marks. Only a
- * block too big for the sheet that way becomes a picture, and then the
- * marks are the matcher's — worth saying plainly, because somebody who
- * chose Caligraphy2 is owed the news that they are no longer getting it.
+ * turn takes, so what goes on the paper is the font's own marks. A block
+ * too big for the sheet that way is scaled to it rather than abandoned,
+ * which costs columns and says how many — a merged column is a heavier
+ * stroke, and somebody comparing the sheet with the preview should know why
+ * it thickened. Only past half the width does the word become a picture,
+ * and then the marks are the matcher's — worth saying plainly, because
+ * somebody who chose Caligraphy2 is owed the news that they are no longer
+ * getting it.
  */
-const turnedSideways = () => (app.turnedAsPicture
-  ? 'Planned sideways and too big to keep the marks, so the word is set as ' +
-    'a picture — the shapes survive, struck in marks matched from your keys.'
-  : 'Planned sideways: set as the font says, then laid down with its lines ' +
-    'repeated so the letters keep their proportions.');
+const turnedSideways = () => {
+  if (app.turnedAsPicture) {
+    return 'Planned sideways and more than twice too wide for the paper, so ' +
+      'the word is set as a picture — the shapes survive, struck in marks ' +
+      'matched from your keys.';
+  }
+  const laid = 'Planned sideways: set as the font says, then laid down with ' +
+    'its lines repeated so the letters keep their proportions.';
+  const fit = app.turnedFit;
+  if (!fit?.lost) return laid;
+  return `${laid} ${fit.lost} of its ${fit.wide} columns met the edge of the ` +
+    'paper and were merged into their neighbours — every mark is still the ' +
+    'one the font set, the strokes a little heavier.';
+};
 
 /**
  * Whether what is in the words box will go on the paper — said at the box.
@@ -1790,21 +1925,70 @@ function fitFixes(word, wide, cap, style) {
  * picture it is. Stating the two numbers is the honest version of a control
  * that would otherwise have to resample the art to mean anything.
  */
+/**
+ * How pasted art is laid down on a turned sheet — in one place, because
+ * convert() does it and syncPasteFit() has to describe it.
+ *
+ * The same floor as a word, and for the same reason read the other way
+ * round. Past half its width a block has been merged into something that is
+ * no longer quite the picture that arrived, and foreign art has nowhere
+ * else to go: there is no font to re-set it from and the shape matcher
+ * would be answering a question nobody asked. So that one case keeps what
+ * it always did — laid down cell for cell, reading stretched — and
+ * syncPasteFit() says so, which leaves the choice where it belongs. A
+ * portrait picture on a landscape sheet is a decision, not a fault.
+ */
+function pasteLaying() {
+  const plan = planningGrid(sheetGrid(app.paper, app.machine), app.turn);
+  return {
+    aspect: cellAspect(app.machine),
+    readCols: plan.cols,
+    readRows: plan.rows,
+    weight: inkWeights(app.atlas),
+  };
+}
+
 function syncPasteFit() {
   const el = $('pasteFit');
   if (!el) return;
   const cap = planningGrid(sheetGrid(app.paper, app.machine), app.turn).cols;
-  const wide = Math.max(0, ...$('pasted').value.replace(/\t/g, '    ')
-    .split('\n').map((l) => l.replace(/\s+$/, '').length));
+  const art = $('pasted').value.replace(/\t/g, '    ').split('\n');
+  const wide = Math.max(0, ...art.map((l) => l.replace(/\s+$/, '').length));
   const paper = `${app.paper.name}${isTurned(app.turn) ? ' turned' : ''}`;
-  el.textContent =
-    `Art arrives at its own size, so there is no width to set here. ` +
-    (wide ? `${wide} of ${cap} columns on ${paper}.` +
-      (wide > cap
-        ? ` Wider than the paper, and art cannot be re-wrapped — a larger ` +
-          `sheet, or several, is the only way to make room.`
-        : '')
-      : `${paper} holds ${cap} columns across.`);
+
+  const said = ['Art arrives at its own size, so there is no width to set here.'];
+  if (!wide) {
+    said.push(`${paper} holds ${cap} columns across.`);
+  } else {
+    said.push(`${wide} of ${cap} columns on ${paper}.`);
+    if (isTurned(app.turn)) {
+      /*
+       * Turned, the width is no longer the thing that can fail: the art is
+       * laid down to fit, and what it costs is columns rather than a
+       * refusal. So the sentence about a larger sheet would be advice about
+       * a problem the app has already dealt with, and the honest number is
+       * how much of the art survived the laying down.
+       */
+      const fit = turnFit(art, pasteLaying());
+      if (!fit) {
+        said.push('More than twice too big to be laid down in proportion, ' +
+          'so it goes down cell for cell and will read stretched — a larger ' +
+          'sheet, or several, is the way to keep its shape.');
+      } else if (fit.lost) {
+        said.push(`Laid down in proportion, and ${fit.lost} of its ` +
+          `${fit.wide} columns were merged into their neighbours to reach ` +
+          `the paper — every mark is the one that arrived, the strokes a ` +
+          `little heavier.`);
+      } else {
+        said.push('Laid down in proportion: every line repeated to give ' +
+          'back what the turn takes, every mark as it arrived.');
+      }
+    } else if (wide > cap) {
+      said.push('Wider than the paper, and art cannot be re-wrapped — a ' +
+        'larger sheet, or several, is the only way to make room.');
+    }
+  }
+  el.textContent = said.join(' ');
 }
 
 /**
@@ -1952,6 +2136,19 @@ function draw() {
   // placeholder is faded in the box it came from, and keeps the setup and
   // typing sections away.
   document.body.classList.toggle('ghost', app.ghost);
+
+  /*
+   * Both of those hide the typing panel, and the microphone lives inside it.
+   *
+   * `toggleListen()` is the only thing that stops the listener, and its
+   * button goes off screen with the panel — so clearing the pasted box or
+   * emptying the words box while listening left the stream open with no
+   * control anywhere on the page to close it, and `app.listener` still set,
+   * which changes what a strike does. The microphone counts keystrokes on a
+   * sheet; with no sheet there is nothing for it to count.
+   */
+  if (app.listener && (!lines.length || app.ghost)) toggleListen();
+
   /*
    * Before the early return, because this one describes the *input* rather
    * than the motif — and because refusing a sentence is exactly what empties
@@ -2077,6 +2274,11 @@ function draw() {
   // rotated at all — and because the button has to appear and disappear with
   // the orientation rather than with the next click on it.
   setTurnedView(app.showTurned);
+  // Same reason, for the same kind of button: "actual size" belongs to
+  // screens wide enough to show one, so it has to come and go with the
+  // window rather than with the next click on it. This is what makes a
+  // desktop narrowed to a phone's width let go of the view as well.
+  setZoom(app.zoom);
   syncComposeHint();
   drawSheetPick();
 
@@ -2122,12 +2324,26 @@ function draw() {
   const typing = app.lines;
   const typingInk = app.colours;
 
-  // size the sheet so the widest line fits without scrolling, where possible
+  /*
+   * Size the sheet so the widest line fits without scrolling, where possible.
+   *
+   * Where it is not possible, the floor decides what gives — and a finger
+   * needs a different answer from a mouse. Eight pixels of monospace is a
+   * legible sheet at arm's length on a desk and a grey smear held at reading
+   * distance, and the cells are also what you tap to say where you are:
+   * eight pixels makes each one about five across. So a touchscreen stops
+   * shrinking sooner and lets the sheet run off the side instead, which now
+   * costs nothing — the scale travels with it, and scrolling sideways
+   * through a wide motif is the ordinary way to read one on a phone.
+   */
   const ch = Math.max(20, Math.max(0, ...typing.map((l) => l.length)));
+  const floor = coarsePointer() ? 11 : 8;
   document.documentElement.style.setProperty(
-    '--sheet-size', `${clamp(Math.floor((window.innerWidth - 80) / ch * 1.7), 8, 15)}px`);
+    '--sheet-size',
+    `${clamp(Math.floor((window.innerWidth - 80) / ch * 1.7), floor, 15)}px`);
   document.documentElement.style.setProperty(
-    '--sheet-full', `${clamp(Math.floor((window.innerWidth - 40) / ch * 1.7), 9, 22)}px`);
+    '--sheet-full',
+    `${clamp(Math.floor((window.innerWidth - 40) / ch * 1.7), floor + 1, 22)}px`);
 
   app.els = renderSheet($('sheet'), typing, typingInk);
   app.els.forEach((el, i) => {
@@ -2340,23 +2556,47 @@ function drawMachineSet() {
   const from = s.left;
   const nums = Array(width).fill(' ');
   const ticks = Array(width).fill(' ');
-  const put = (at, text) => {
-    const start = Math.min(Math.max(0, at), Math.max(0, width - text.length));
-    for (let k = 0; k < text.length && start + k < width; k++) {
-      nums[start + k] = text[k];
-    }
-  };
 
   for (let i = 0; i < width; i++) {
     const col = from + i;
     ticks[i] = col % 10 === 0 ? '|' : col % 5 === 0 ? '·' : ' ';
-    if (col % 10 === 0) put(i, String(col));
   }
-  // The stops last, so they win where a ten-mark would have sat on them.
-  put(0, String(s.left));
-  if (width > 1) put(width - String(s.right).length, String(s.right));
   ticks[0] = '▼';
   if (width > 1) ticks[width - 1] = '▼';
+
+  /*
+   * The numbers: both stops, then the tens that still have room.
+   *
+   * The stops go down first and a ten-mark is dropped where it would touch
+   * one, rather than being overwritten by it. Overwriting looked like it
+   * worked — the digits that landed on top were the stop's — but a label
+   * merely *adjacent* to another is not overwritten by anything, so a
+   * 47-column motif printed `6064` at the right-hand end: the ten-mark 60
+   * and the stop 64 with nothing between them, reading as one number.
+   *
+   * A stop is the instruction and a ten-mark is a convenience, so where
+   * only one of the two fits it is the stop. pdf.js applies the same rule
+   * in millimetres, so the ruled page and this scale name the same cells.
+   */
+  const taken = Array(width).fill(false);
+  const put = (at, text) => {
+    const start = Math.min(Math.max(0, at), Math.max(0, width - text.length));
+    // One blank column each side, or the two numbers run together.
+    for (let k = start - 1; k <= start + text.length; k++) {
+      if (k >= 0 && k < width && taken[k]) return false;
+    }
+    for (let k = 0; k < text.length && start + k < width; k++) {
+      nums[start + k] = text[k];
+      taken[start + k] = true;
+    }
+    return true;
+  };
+
+  put(0, String(s.left));
+  if (width > 1) put(width - String(s.right).length, String(s.right));
+  for (let i = 0; i < width; i++) {
+    if ((from + i) % 10 === 0) put(i, String(from + i));
+  }
 
   scale.innerHTML =
     `<span class="nums">${esc(nums.join(''))}</span>` +
@@ -2496,15 +2736,60 @@ function showCount(r) {
 /* ── events ──────────────────────────────────────────────────── */
 
 function wire() {
-  // tabs
-  document.querySelectorAll('.tab').forEach((t) => {
-    t.onclick = () => {
-      document.querySelectorAll('.tab').forEach((x) => x.classList.remove('on'));
+  /*
+   * The tabs, and the state a screen reader can hear.
+   *
+   * `role="tablist"` and `role="tab"` were in the markup, and nothing else
+   * was: no `aria-selected`, no `aria-controls`, no `role="tabpanel"`. Three
+   * buttons announced as tabs with none of them selected and none of them
+   * controlling anything is worse than three plain buttons would have been,
+   * because the roles promise a relationship the page then does not state.
+   *
+   * Wired here rather than written into the HTML so the two halves cannot
+   * drift: the same line that moves `.on` moves `aria-selected` with it.
+   */
+  const tabs = [...document.querySelectorAll('.tab')];
+  tabs.forEach((t) => {
+    const panel = document.querySelector(`[data-panel="${t.dataset.tab}"]`);
+    if (!t.id) t.id = `tab-${t.dataset.tab}`;
+    if (panel) {
+      panel.id ||= `panel-${t.dataset.tab}`;
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('aria-labelledby', t.id);
+      t.setAttribute('aria-controls', panel.id);
+    }
+
+    const choose = () => {
+      tabs.forEach((x) => {
+        x.classList.remove('on');
+        x.setAttribute('aria-selected', 'false');
+        // Roving tabindex: the strip is one stop on the way through the
+        // page, and the arrows move within it. Tabbing through three
+        // buttons to reach the panel is not what a tablist is for.
+        x.tabIndex = -1;
+      });
       document.querySelectorAll('.panel').forEach((x) => x.classList.remove('on'));
       t.classList.add('on');
-      document.querySelector(`[data-panel="${t.dataset.tab}"]`).classList.add('on');
+      t.setAttribute('aria-selected', 'true');
+      t.tabIndex = 0;
+      panel?.classList.add('on');
       convert();
     };
+
+    t.onclick = choose;
+    t.onkeydown = (e) => {
+      const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (!step) return;
+      e.preventDefault();
+      const next = tabs[(tabs.indexOf(t) + step + tabs.length) % tabs.length];
+      next.click();
+      next.focus();
+    };
+
+    // The state the markup arrives in, so the first render already agrees.
+    const on = t.classList.contains('on');
+    t.setAttribute('aria-selected', String(on));
+    t.tabIndex = on ? 0 : -1;
   });
 
   // image
@@ -2573,10 +2858,22 @@ function wire() {
   $('restart').onclick = () => go(0);
 
   document.addEventListener('keydown', (e) => {
-    // `matches` only exists on elements, and a key event does not always
-    // have one for a target — a keypress that arrives before anything on
-    // the page has focus lands on the document itself.
-    if (e.target?.matches?.('input, textarea, select')) return;
+    /*
+     * Anything that does its own thing with a key keeps it.
+     *
+     * `matches` only exists on elements, and a key event does not always
+     * have one for a target — a keypress that arrives before anything on
+     * the page has focus lands on the document itself.
+     *
+     * Buttons, links and summaries were missing from this list, and Space
+     * and Enter are how a button is pressed from the keyboard. So tabbing
+     * to `pdf` and pressing Space advanced the line and never saved a PDF:
+     * every control on the page was reachable and none of them could be
+     * operated. `[contenteditable]` is not used here today and costs
+     * nothing to allow for.
+     */
+    if (e.target?.matches?.(
+      'input, textarea, select, button, a, summary, [contenteditable]')) return;
     if (e.key === ' ' || e.key === 'ArrowDown' || e.key === 'Enter') {
       e.preventDefault(); go(app.at + 1);
     } else if (e.key === 'ArrowUp') {
@@ -2642,7 +2939,43 @@ function wire() {
     $(id).onkeydown = (e) => { if (e.key === 'Enter') applyMeasurement(); };
   });
 
-  window.addEventListener('resize', () => draw());
+  /*
+   * The `?` notes beside the measuring instructions. One handler for all of
+   * them: the button names the paragraph it opens in `aria-controls`, so
+   * adding another needs no JavaScript.
+   */
+  document.querySelectorAll('button.why').forEach((b) => {
+    b.onclick = () => {
+      const note = $(b.getAttribute('aria-controls'));
+      if (!note) return;
+      const open = b.getAttribute('aria-expanded') === 'true';
+      b.setAttribute('aria-expanded', String(!open));
+      note.hidden = open;
+    };
+  });
+
+  /*
+   * Redraw when the window changes size, but not once per pixel of it.
+   *
+   * `draw()` rebuilds every line of the sheet, re-attaches a click handler
+   * to each of them and rewrites four panels of innerHTML. On a phone the
+   * address bar sliding away fires `resize` continuously while the page is
+   * being flicked, so this was a full DOM rebuild several times a second
+   * during exactly the gesture that most needs to stay smooth.
+   *
+   * Two guards. The frame callback collapses a burst into one redraw, and
+   * the width check drops the resizes that cannot change the layout at all:
+   * the sheet is fitted to `innerWidth` alone, so a change of height — which
+   * is all the address bar ever does — has nothing to redraw for.
+   */
+  let pending = 0;
+  let lastWidth = window.innerWidth;
+  window.addEventListener('resize', () => {
+    if (window.innerWidth === lastWidth) return;
+    lastWidth = window.innerWidth;
+    if (pending) cancelAnimationFrame(pending);
+    pending = requestAnimationFrame(() => { pending = 0; draw(); });
+  });
 }
 
 /* ── measuring ───────────────────────────────────────────── */
@@ -2878,8 +3211,20 @@ async function toggleListen() {
   const l = new StrikeListener({
     sensitivity: +$('sens').value / 100,
     onStrike: () => {
-      $('lamp').classList.add('on');
-      setTimeout(() => $('lamp').classList.remove('on'), 60);
+      /*
+       * The lamp blinks once per strike, which at typing speed is about
+       * five flashes a second for as long as a sheet takes. That is a
+       * flashing light, and nobody who has asked their system for less
+       * motion should be shown one — so where that has been asked, the
+       * lamp simply stays lit for the length of the session. It still
+       * says "something is being heard"; the strike count beside it is
+       * where the per-keystroke detail was always meant to be read.
+       */
+      if (steadyLamp()) $('lamp').classList.add('on');
+      else {
+        $('lamp').classList.add('on');
+        setTimeout(() => $('lamp').classList.remove('on'), 60);
+      }
       strike();
     },
     onReturn: ({ strikesInside }) => lineEnd(strikesInside),
@@ -3003,16 +3348,33 @@ function openCharset() {
     $('learnNote').textContent = 'Press every key your machine has.';
   };
 
+  /*
+   * Only `done` commits, and every other way out puts the set back.
+   *
+   * It used to be the other way round — anything that was not the `cancel`
+   * button counted as agreement — and the ways out that are not buttons are
+   * the common ones on a phone: Escape, the Android back gesture and a tap
+   * on the backdrop all close a modal <dialog> with `returnValue` left at
+   * `''`. Backing out of a dialog is the one gesture that unambiguously
+   * means "leave things as they were", and it was rebuilding the atlas and
+   * re-converting the motif against a character set nobody had agreed to.
+   */
   dlg.onclose = () => {
     learning?.stop();
-    if (dlg.returnValue === 'cancel') {
-      app.chosen = before;
-    } else {
+    if (dlg.returnValue === 'ok') {
       rebuildAtlas();
       convert();
       save();
+    } else {
+      app.chosen = before;
     }
   };
+  // `cancel` is a plain button now, so that Enter in the character field
+  // reaches `done` rather than the first submit button in the markup.
+  $('charsetCancel').onclick = () => dlg.close('cancel');
+
+  // A dialog opened a second time still carries the answer from the first.
+  dlg.returnValue = '';
   dlg.showModal();
 }
 

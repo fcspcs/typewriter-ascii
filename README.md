@@ -304,10 +304,10 @@ So a wide picture comes out half as big again, and gains its detail down the
 other axis — two and a third times the keystrokes for one and a half times
 the picture. Which way you turn the finished sheet is offered, because both
 are real: identical at the machine, differing only in which corner is typed
-first. And marks in turned pasted art are swapped for what will look right
-afterwards — an underscore has to be struck as something that *looks* like
-an underscore once the sheet has moved under it; where no honest swap
-exists, the original stands.
+first. Pasted art is laid down in proportion too, and its marks are swapped
+for what will look right afterwards — an underscore has to be struck as
+something that *looks* like an underscore once the sheet has moved under
+it; where no honest swap exists, the original stands.
 
 **A word planned sideways keeps its own marks.** A quarter turn swaps the
 cell's 2.54 mm width and its 4.23 mm height, so a block laid down cell for
@@ -321,10 +321,13 @@ is held, and nothing about a turn is a reason to go looking for another one.
 
 <div align="center"><sub><code>Type</code> in Caligraphy2 again — 124 × 80 mm upright, 207 × 135 mm read sideways. Two thirds again as big, in proportion, in the same marks.</sub></div>
 
-A block too deep to be laid down that way would run off the paper, and
-squeezing it back would drop whole strokes — a hairline is one cell wide.
-That one case goes through the picture pipeline instead, matched cell by
-cell against your keys, and the app says so rather than quietly changing
+A block too deep to be laid down that way would run off the paper. It is
+scaled to the paper rather than given up on: the lines still grow, the
+columns give, and where two columns have to become one the mark with ink
+in it is the one that comes through — a stroke can thicken, it cannot
+vanish. The app says how many columns that cost. Only a word more than
+twice too big goes through the picture pipeline instead, matched cell by
+cell against your keys, and it says that too rather than quietly changing
 the alphabet.
 
 ## Typing it
@@ -465,7 +468,17 @@ node tools/cli.mjs image drawing.png --mode shape --atlas atlas-olympia-sm7.json
 ```sh
 npm test               # core, pictures, png, the cli itself, sheet, pdf, strikes
 npm run test:browser   # loads the real page in jsdom and drives it
+npm run test:mobile    # the same page, told it is being touched
+npm run test:all       # all three
 ```
+
+`test:mobile` is the page on a telephone: the app is loaded with a 360 px
+window and a `matchMedia` that answers as a touchscreen, so the paths only a
+finger reaches actually run. jsdom does no layout, so the sizing half reads
+the declarations out of `styles.css` — every target at least 44 px, every
+field at least 16 px so Safari does not zoom the page, the gutters making
+room for a notch. Weaker than measuring a rendered phone, and stronger than
+nothing: each of those was once wrong in a way you could feel.
 
 Among other things the suite proves the promise the whole project makes:
 nothing reaches the sheet that the machine cannot type.
@@ -480,6 +493,7 @@ nothing reaches the sheet that the machine cannot type.
 | [docs/machine-tricks.md](docs/machine-tricks.md) | Things the machine can do that a printer cannot |
 | [docs/listening-research.md](docs/listening-research.md) | The listening maths: measurements, sources, open questions |
 | [fonts/README.md](fonts/README.md) | The FIGlet fonts: whose they are, and how to add more |
+| [docs/audit.md](docs/audit.md) | A pass through every control, and what it turned up. A dated record, not a reference |
 
 ## Prior art
 

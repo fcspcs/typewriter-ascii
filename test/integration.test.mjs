@@ -334,6 +334,78 @@ await check('shadow is not offered where there is no shadow to colour', async ()
   await wait(300);
 });
 
+await check('a saved ribbon scheme survives the menu not existing yet', () => {
+  /*
+   * convert() plans the ink near the top and rebuilds the ribbon menu
+   * further down, so on the first pass of a page load the <select> is still
+   * the empty markup it was written as. Assigning a restored value to an
+   * option-less select is a no-op and reading one back gives `''`, which
+   * inkPlan() does not recognise and renders as everything-black. The
+   * setting was saved faithfully every time and thrown away on the way in.
+   *
+   * Read out of the source, because the fault can only show on the very
+   * first convert() of a page load and this page has had a hundred.
+   */
+  const src = fs.readFileSync(path.join(ROOT, 'src/ui/app.js'), 'utf8');
+  assert(/const inkScheme = \(\)/.test(src),
+    'there is no single answer to "which scheme", so the two readers can differ');
+
+  const at = src.indexOf('inkPlan(app.motif');
+  assert(at > 0, 'the ink is not planned anywhere');
+  const plan = src.slice(at, src.indexOf('});', at));
+  assert(/inkScheme\(\)/.test(plan) && !/\$\('ink'\)\.value/.test(plan),
+    `the plan still reads the menu directly: ${plan}`);
+
+  const saved = src.slice(src.indexOf('localStorage.setItem'),
+    src.indexOf('} catch { /* private mode */ }'));
+  assert(/ink:\s*inkScheme\(\)/.test(saved),
+    'what is written to storage is not what the rest of the app asks for');
+});
+
+await check('shadow comes back where there is a second surface to colour',
+  async () => {
+    /*
+     * The other half of the same rule, and the half that was never true.
+     *
+     * The check above says where the scheme does not belong; this one says
+     * where it does — which the comment above has claimed all along: "the
+     * scheme itself stays for pasted art that arrives in two weights". It
+     * did not. The gate insisted on `currentTab() === 'text'`, so the one
+     * tab it was kept for was the one tab it excluded, and once the faces
+     * with a second surface went there was no tab left where a two-weight
+     * motif could be made. A menu entry that no path could reach.
+     */
+    $('useRed').checked = true;
+    $('useRed').dispatchEvent(new window.Event('change'));
+    [...window.document.querySelectorAll('.tab')]
+      .find((t) => t.dataset.tab === 'paste').click();
+    await wait(300);
+
+    // A face and its shadow, in two characters the SM7 actually has.
+    $('pasted').value = 'BBBB\nB..B\nBBBB';
+    $('pasted').dispatchEvent(new window.Event('input'));
+    await wait(400);
+    assert([...$('ink').options].some((o) => o.value === 'shadow'),
+      'not offered for pasted art in two weights, only: ' +
+      [...$('ink').options].map((o) => o.value).join(', '));
+
+    // And one weight still gets nothing, so the rule is about the motif
+    // rather than about which tab happens to be open.
+    $('pasted').value = 'BBBB\nBBBB';
+    $('pasted').dispatchEvent(new window.Event('input'));
+    await wait(400);
+    assert(![...$('ink').options].some((o) => o.value === 'shadow'),
+      'offered for a single-weight block, which has no shadow in it');
+
+    $('pasted').value = '';
+    $('pasted').dispatchEvent(new window.Event('input'));
+    $('useRed').checked = false;
+    $('useRed').dispatchEvent(new window.Event('change'));
+    [...window.document.querySelectorAll('.tab')]
+      .find((t) => t.dataset.tab === 'text').click();
+    await wait(300);
+  });
+
 await check('the amount slider only shows where it is read', async () => {
   $('letterStyle').value = 'oblique';
   $('letterStyle').dispatchEvent(new window.Event('change'));
@@ -1572,14 +1644,55 @@ await check('planning sideways keeps the marks and gains the lines', async () =>
   await setOrientation('upright');
 });
 
+await check('a word that will not go down whole is scaled, not surrendered',
+  async () => {
+    /*
+     * The middle case, and the one the app used to have no answer for.
+     *
+     * Three lines of oblique want 2.77 times their own depth in typed
+     * columns and A4 has not got them, so this went straight to the shape
+     * matcher and came back in the matcher's marks — a word drawn in `B`
+     * arriving struck in `W` and `M`, which is a different word. Keeping
+     * the proportion is what a turn is for; keeping every column is not.
+     * The block is scaled to the paper instead, columns merging into their
+     * neighbours where they have to, and every mark on the sheet is still
+     * one of the marks it was set in.
+     */
+    await setOrientation('upright');
+    await typeWord('HALLO WELT WIE', 'oblique');
+    const marks = new Set($('mini').textContent.replace(/\s/g, ''));
+
+    await setOrientation('left');
+    const hint = $('letterStyleHint').textContent;
+    assert(!/as a picture/i.test(hint),
+      `given up on rather than scaled: "${hint}"`);
+    assert(/merged into their neighbours/i.test(hint),
+      `the hint does not say what the turn cost: "${hint}"`);
+
+    const { turnedMarks } = await import(
+      pathToFileURL(path.join(ROOT, 'src/core/turn.js')).href);
+    const twins = new Set(Object.entries(turnedMarks('left'))
+      .filter(([from]) => marks.has(from)).map(([, to]) => to));
+    const laid = new Set($('mini').textContent.replace(/\s/g, ''));
+    const strangers = [...laid].filter((c) => !marks.has(c) && !twins.has(c));
+    assert(strangers.length === 0,
+      `characters the word was never set in: ${strangers.join('')}`);
+    assert(window.document.querySelectorAll('.sheet .ln').length <= 70,
+      'the scaled block ran off the bottom of the paper');
+    assert(motifCols() <= 82,
+      `${motifCols()} columns typed, more than the sheet holds`);
+    await setOrientation('upright');
+  });
+
 await check('a word too big to lay down is set as a picture, and says so',
   async () => {
     /*
-     * The other promise. A block 2.77 times its own depth can outgrow the
-     * paper, and squeezing it back would drop whole strokes — a hairline is
-     * one cell wide and nearest neighbour cannot halve it. So it goes
-     * through the picture path instead, which fits anything, and the hint
-     * says the marks are the matcher's rather than the font's.
+     * The other promise, and now the last resort rather than the second
+     * step. Scaling costs columns, and past half of them a merged column
+     * closes the counter of an `o` and the word stops being the word. This
+     * block wants three times the paper, so it goes through the picture
+     * path instead, which fits anything, and the hint says the marks are
+     * the matcher's rather than the font's.
      */
     await setOrientation('upright');
     await typeWord('HALLO WELT WIE GEHT ES DIR', 'oblique');
@@ -1677,26 +1790,40 @@ await check('a word lies down, in proportion', async () => {
     'no instruction to turn the finished sheet');
 });
 
-await check('pasted art lies down too', async () => {
-  // Nothing about pasted art is special, which is the point: the choice
-  // belongs to the sheet and applies wherever the motif came from. A block
-  // 100 wide and 6 deep does not fit an 82-column A4; laid down it is 6
-  // columns by 100 lines, which does not fit either — so this is about the
-  // block turning, not about rescuing it.
+await check('pasted art lies down too, and in proportion', async () => {
+  /*
+   * Nothing about pasted art is special, which is the point: the choice
+   * belongs to the sheet and applies wherever the motif came from — and so
+   * does the correction. A turn swaps the cell's 2.54 mm width and its 4.23
+   * mm height whatever is printed in it, so a block laid down cell for cell
+   * comes out stretched 2.77 times over, and this was the one path that
+   * still let that happen: the word next door was laid down in proportion
+   * and the picture beside it was not.
+   *
+   * Forty across by six deep is a strip four times as wide as it is tall.
+   * Laid down it is six times 2.77 — seventeen typed columns by forty
+   * lines — and reads as the same strip, half again as big.
+   */
   await setOrientation('upright');
   [...window.document.querySelectorAll('.tab')]
     .find((t) => t.dataset.tab === 'paste').click();
   await wait(350);
-  $('pasted').value = (`${'x'.repeat(40)}\n`).repeat(6).trim();
+  $('pasted').value = (`${'x'.repeat(40)}
+`).repeat(6).trim();
   $('pasted').dispatchEvent(new window.Event('input'));
   await wait(450);
   assert(motifCols() === 40, `pasted art came out ${motifCols()} wide`);
 
   await setOrientation('left');
-  assert(motifCols() === 6,
-    `${motifCols()} columns typed for a block six deep`);
+  assert(motifCols() === 17,
+    `${motifCols()} columns typed for a block six deep, which laid down in `
+    + `proportion is six times 2.77`);
   assert(window.document.querySelectorAll('.sheet .ln').length === 40,
     'the block did not lie down');
+  assert(/laid down in proportion/i.test($('pasteFit').textContent),
+    `the tab does not say what the turn did: "${$('pasteFit').textContent}"`);
+  assert(new Set($('mini').textContent.replace(/\s/g, '')).size === 1,
+    'a mark appeared that was never in the art');
   assert(/turn the finished sheet/i.test($('instructions').textContent),
     'no instruction to turn the finished sheet');
   assert(/turned left/i.test($('facts').textContent),
@@ -2141,6 +2268,72 @@ await check('Space, Enter and the arrows drive the line', async () => {
   press('Enter');
   assert(line() === start + 1, 'enter did not advance the line');
   press('ArrowUp');
+});
+
+await check('but a button that has the focus keeps its own keys', async () => {
+  /*
+   * Space and Enter are how a button is pressed from the keyboard. The
+   * guard on the line-advance shortcut skipped `input, textarea, select`
+   * and nothing else, so the shortcut swallowed both from every button on
+   * the page: tabbing to `pdf` and pressing Space advanced the line and
+   * never saved a PDF. Every control reachable, none of them operable.
+   */
+  $('restart').click();
+  await wait(60);
+  const line = () => [...window.document.querySelectorAll('.sheet .ln')]
+    .findIndex((e) => e.classList.contains('now'));
+
+  const start = line();
+  for (const id of ['pdf', 'full', 'next']) {
+    $(id).dispatchEvent(new window.KeyboardEvent('keydown',
+      { key: ' ', bubbles: true }));
+    assert(line() === start,
+      `space on #${id} moved the line instead of pressing the button`);
+  }
+
+  // And the shortcut still works when nothing in particular has the focus.
+  window.document.dispatchEvent(new window.KeyboardEvent('keydown',
+    { key: ' ', bubbles: true }));
+  assert(line() === start + 1, 'space no longer advances the line at all');
+  $('restart').click();
+  await wait(60);
+});
+
+await check('Enter in the character list means done, not cancel', () => {
+  /*
+   * Inside a <form method=dialog>, Enter in a text field submits through the
+   * first submit button in tree order. `cancel` sits to the left of `done`
+   * because that is the order those two belong in — so finishing the list
+   * and pressing Enter threw it away. Making `cancel` a plain button leaves
+   * `done` as the only thing Enter can reach.
+   */
+  const menu = window.document.querySelector('#charsetDialog menu');
+  const submits = [...menu.querySelectorAll('button')]
+    .filter((b) => (b.getAttribute('type') ?? 'submit') === 'submit');
+  assert(submits.length === 1,
+    `${submits.length} submit buttons: Enter would reach ` +
+    submits.map((b) => b.value).join(', '));
+  assert(submits[0].value === 'ok',
+    `Enter reaches "${submits[0].value}"`);
+});
+
+await check('the microphone is not left running with nothing to count', () => {
+  /*
+   * `toggleListen()` is the only thing that stops the listener, and its
+   * button lives inside the typing panel — which `body.empty` and
+   * `body.ghost` both hide. So clearing the pasted box while listening left
+   * the stream open with no control on the page able to close it.
+   *
+   * Read out of the source: starting a real listener needs a microphone,
+   * and what is being checked is that draw() closes the one door that the
+   * user can no longer reach.
+   */
+  const src = fs.readFileSync(path.join(ROOT, 'src/ui/app.js'), 'utf8');
+  const at = src.indexOf("classList.toggle('ghost'");
+  assert(at > 0, 'the ghost state is not set anywhere');
+  const after = src.slice(at, at + 900);
+  assert(/app\.listener\s*&&/.test(after) && /toggleListen\(\)/.test(after),
+    'nothing stops the listener when the panel holding its button goes away');
 });
 
 await check('clicking a character in the open line moves the count there', async () => {

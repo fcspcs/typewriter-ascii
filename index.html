@@ -6,6 +6,17 @@
 <title>Typewriter ASCII</title>
 <meta name="description" content="Turn images and text into ASCII art you can actually type on a mechanical typewriter.">
 <meta name="color-scheme" content="light dark">
+<!--
+  The address bar takes the ground the page is standing on, in each theme.
+  Without these the bar stays white above a dark page, which puts a bright
+  strip across the top of a screen somebody has deliberately dimmed.
+
+  Both values are `--paper` from styles.css, written out because a meta tag
+  cannot read a custom property. If that colour changes, these change with
+  it — test/mobile.test.mjs checks that they still agree.
+-->
+<meta name="theme-color" content="#faf9f6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15140f" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.ico" sizes="32x32">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/styles.css">
@@ -232,10 +243,25 @@
           screen this needs to be short enough to act on without reading a
           paragraph first — it sits in a column of settings, not in a manual.
         -->
+        <!--
+          The `?` opens a note rather than carrying one in a `title`.
+
+          A tooltip is a hover, and a hover is a mouse. This is the single
+          measurement the whole page's geometry hangs off, and on a phone
+          its explanation could not be reached at all — the `?` was not even
+          styled, so it read as a typo in the sentence. See .why in
+          styles.css and the handler in app.js.
+        -->
         <p class="hint">
           Type <b>40 capital M</b>. Measure the <b>left edge of the first</b>
-          to the <b>left edge of the last</b><span class="why"
-            title="Same edge on both, not the width of the ink. That way the letter's own side spacing cancels out and what is left is pure carriage travel.">?</span>
+          to the <b>left edge of the last</b><button type="button" class="why"
+            aria-expanded="false" aria-controls="whyPitch"
+            aria-label="Why the same edge on both">?</button>
+        </p>
+        <p class="hint why-note" id="whyPitch" hidden>
+          Same edge on both, not the width of the ink. That way the letter's
+          own side spacing cancels out and what is left is pure carriage
+          travel.
         </p>
 
         <div class="measure-row">
@@ -254,8 +280,19 @@
 
         <p class="hint">
           Optional: type <b>40 lines</b> of capital M. Measure the
-          <b>top of the first</b> to the <b>top of the last</b>.<span
-            class="why" title="Top to top, not top to bottom: the same edge on both lines cancels the height of the letter itself and leaves pure paper feed. Measuring to the bottom of the last line adds one capital, which on a typewriter is very nearly a whole line — the reading comes out about a line too long. Line spacing is six to the inch on very nearly every machine ever built, so this rarely tells you anything new.">?</span>
+          <b>top of the first</b> to the <b>top of the last</b>.<button
+            type="button" class="why" aria-expanded="false"
+            aria-controls="whyFeed"
+            aria-label="Why top to top, not top to bottom">?</button>
+        </p>
+        <p class="hint why-note" id="whyFeed" hidden>
+          Top to top, not top to bottom: the same edge on both lines cancels
+          the height of the letter itself and leaves pure paper feed.
+          Measuring to the bottom of the last line adds one capital, which on
+          a typewriter is very nearly a whole line — the reading comes out
+          about a line too long. Line spacing is six to the inch on very
+          nearly every machine ever built, so this rarely tells you anything
+          new.
         </p>
 
         <div class="measure-row">
@@ -641,8 +678,19 @@
       <button type="button" id="learn" class="link">learn from typing</button>
       <span class="hint" id="learnNote"></span>
     </div>
+    <!--
+      `cancel` is type=button, and that is not a detail.
+
+      Inside a <form method=dialog>, pressing Enter in a text field submits
+      through the *first submit button in tree order* — which was `cancel`,
+      sitting to the left of `done` because that is the order the two belong
+      in. So finishing the character list and pressing Enter threw the list
+      away. Now the only submit button is `done`, so Enter means done; the
+      handler in app.js closes with 'cancel' for the other one.
+    -->
     <menu>
-      <button value="cancel" class="link">cancel</button>
+      <button type="button" value="cancel" id="charsetCancel"
+              class="link">cancel</button>
       <button value="ok" id="charsetOk">done</button>
     </menu>
   </form>

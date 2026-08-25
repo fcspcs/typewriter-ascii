@@ -46,8 +46,14 @@ If it is neither pitch, divide `39 × 25.4` by the measurement in millimetres.
 
 ### Lines per inch
 
-Same trick downwards: wind on forty lines and measure the first baseline to
-the last. 169 mm means `6`, which almost every machine ever built uses.
+Same trick downwards: wind on forty lines of capital M and measure the **top
+of the first** to the **top of the fortieth**. 165 mm means `6`, which almost
+every machine ever built uses.
+
+Top to *top*, and thirty-nine steps rather than forty — the same off-by-one
+this page warns about for the pitch. Measuring to the *bottom* of the last
+line adds a capital's height, and a typewriter capital is very nearly a whole
+line, so the reading comes out about a line too long.
 
 ### The scale
 

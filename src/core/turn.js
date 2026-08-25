@@ -31,9 +31,6 @@
  * clockwise to survive that. 'none' is an upright sheet read upright.
  */
 
-/** The three ways a finished sheet can be read. */
-export const TURNS = ['none', 'left', 'right'];
-
 export const isTurned = (turn) => turn === 'left' || turn === 'right';
 
 /**
@@ -205,12 +202,145 @@ export function turnRows(rows, turn, have = null) {
  * not, and there is no such thing as half a `+`. Blending is what a picture
  * does, and this exists precisely so that set type does not have to become
  * a picture to be turned.
+ *
+ * It resamples either way — a `want` below the block's own depth drops
+ * lines rather than repeating them — but turnFit() never asks for that.
+ * Above the floor it keeps, a turn still hands the block more lines than it
+ * started with.
  */
 export function stretchRows(rows, want) {
   const h = rows.length;
   if (!(want > 0) || !h || want === h) return rows.slice();
   return Array.from({ length: want },
     (_, y) => rows[Math.min(h - 1, Math.floor((y * h) / want))]);
+}
+
+/**
+ * Merge columns until a block is `want` wide, and let the ink decide which
+ * mark comes through.
+ *
+ * The counterpart to stretchRows(), and the harder half. Dropping a line
+ * from a stretched block costs nothing, because the line above it is the
+ * same line. Dropping a column costs a column — so the rule here is not
+ * "take the nearest" but "take the heaviest": where two columns become one,
+ * the cell with ink in it beats the cell with none. A hairline therefore
+ * cannot vanish, which is exactly the failure that made the first version
+ * of this refuse to squeeze at all. What it *can* do is move by half a cell,
+ * and two strokes one column apart can close up into one.
+ *
+ * That is the true cost, and it is the right way round for a typewriter: a
+ * stroke that disappears is a hole in a letter, a stroke that thickens is a
+ * bolder letter. Above the floor turnFit() keeps, no more than one column in
+ * two is ever merged away.
+ *
+ * `weight` is how much ink a mark carries, for a machine that has measured
+ * its keys: a `+` then beats a `.` where both fall in the same merge.
+ * Without one, ink beats paper and that is the whole rule.
+ *
+ * @param {string[]} rows
+ * @param {number} want
+ * @param {((ch: string) => number)|null} [weight]
+ */
+export function squeezeCols(rows, want, weight = null) {
+  const wide = Math.max(0, ...rows.map((r) => r.length));
+  if (!(want > 0) || !wide || want >= wide) return rows.slice();
+  const ink = weight || ((ch) => (ch === ' ' ? 0 : 1));
+
+  return rows.map((row) => {
+    const from = row.padEnd(wide, ' ');
+    let line = '';
+    for (let x = 0; x < want; x++) {
+      // The span of the drawn block this one column has to stand for. Never
+      // empty, so no column of the original goes unlooked at.
+      const a = Math.floor((x * wide) / want);
+      const b = Math.max(a + 1, Math.floor(((x + 1) * wide) / want));
+      let mark = ' ';
+      let most = -1;
+      for (let i = a; i < b; i++) {
+        const w = ink(from[i]);
+        // Strictly greater, so that where two marks weigh the same the left
+        // one stays and a squeeze cannot drift a stroke rightwards.
+        if (w > most) { most = w; mark = from[i]; }
+      }
+      line += mark;
+    }
+    return line.replace(/\s+$/, '');
+  });
+}
+
+/**
+ * How much of a block's width is worth keeping before it stops being type.
+ *
+ * Half. At that point every second column has been merged into its
+ * neighbour, a one-column gap can no longer be relied on to stay open, and
+ * the counter of an `o` fills in. Below this the shape matcher genuinely
+ * does the better job — it resamples ink smoothly and picks a lighter key
+ * where a stroke thins — so the caller takes that path instead.
+ */
+const KEEP_AT_LEAST = 0.5;
+
+/**
+ * What laying a block down will cost it, worked out before anything moves.
+ *
+ * Its own function because two callers need the same arithmetic for two
+ * different reasons: turnType() to do it, and the page to say what was
+ * done. Which way the sheet turns makes no difference to the sizing, so
+ * `turn` is not asked for.
+ *
+ * The answer:
+ *
+ *   wide, deep   the block as the font set it
+ *   cols, rows   the block as it has to be laid out to read in proportion
+ *   lost         columns merged away; 0 when nothing was given up
+ *   keep         cols ÷ wide — the whole cost in one number
+ *
+ * Null when the squeeze would go past KEEP_AT_LEAST, or when there is
+ * nothing to lay out at all.
+ *
+ * @param {string[]} rows
+ * @param {Object} [opt] as turnType()
+ */
+export function turnFit(rows, opt = {}) {
+  const {
+    aspect = 0.6, readCols = 0, readRows = 0, keepAtLeast = KEEP_AT_LEAST,
+  } = opt;
+  const deep = rows.length;
+  // Trailing spaces are not columns. flfLetter() pads its rows out to the
+  // widest glyph and letter() pads a centred line, and counting that padding
+  // as width refused blocks that would have gone down untouched.
+  const wide = Math.max(0, ...rows.map((r) => r.replace(/\s+$/, '').length));
+  if (!deep || !wide || !(aspect > 0)) return null;
+
+  // What the turn takes and has to be handed back: (4.23/2.54)², 2.77 at pica.
+  const grow = 1 / (aspect * aspect);
+
+  /*
+   * Every column kept if the paper allows it, and that is tried first: a
+   * block small enough to be laid down whole is laid down whole, exactly as
+   * it was before this function existed.
+   *
+   * Where it will not go, the two ways out are not equal. Handing back fewer
+   * lines than 2.77 keeps every mark and reads as the smear this file exists
+   * to prevent, so the proportion is not the part that gives. The block is
+   * scaled instead — both ways at once, until it is inside the paper — and
+   * that costs columns and nothing else, because the lines it is given are
+   * still more lines than it started with.
+   */
+  let keep = 1;
+  if (readCols > 0) keep = Math.min(keep, readCols / wide);
+  if (readRows > 0) keep = Math.min(keep, readRows / (deep * grow));
+  if (!(keep > 0) || keep < keepAtLeast) return null;
+
+  const cols = Math.max(1, Math.min(wide, Math.floor(wide * keep)));
+  // Read off the columns that actually survived rather than off `keep`, so
+  // the proportion follows the block that will be laid down rather than the
+  // one that was asked for.
+  let deepOut = Math.max(1, Math.round(deep * grow * (cols / wide)));
+  if (readRows > 0) deepOut = Math.min(deepOut, readRows);
+
+  return {
+    wide, deep, cols, rows: deepOut, lost: wide - cols, keep: cols / wide,
+  };
 }
 
 /**
@@ -230,11 +360,19 @@ export function stretchRows(rows, want) {
  * the same mark whichever way the paper is held; matching it against a
  * grid of ink would have thrown it away and picked something else.
  *
- * Null when it cannot be done. Filling more lines than the paper has is not
- * a turn any more, and squeezing back down would drop whole strokes — a
- * hairline is one cell wide and nearest neighbour cannot halve it. The
- * caller then has an honest choice to make, and app.js makes it: set the
- * word as a picture and say the marks are the matcher's.
+ * A block with 2.77 times its own lines is a big block, and A4 at pica has
+ * the room for about twenty-nine lines of type that way — past that the
+ * motif runs off the end of the paper. That used to be the end of it: the
+ * word went to the shape matcher and came back in the matcher's marks,
+ * which is how a word set in `+` arrived struck in `W` and `M`. It is not
+ * the end of it. Keeping the proportion is what a turn is about; keeping
+ * every column is not. So the block is scaled down to the paper first —
+ * squeezeCols() merges columns and lets the ink say which mark stands for
+ * each merge — and the marks come through the turn as the font set them.
+ *
+ * Null only when that squeeze would go too far, below half the width; see
+ * KEEP_AT_LEAST. The caller then has an honest choice to make, and app.js
+ * makes it: set the word as a picture and say the marks are the matcher's.
  *
  * @param {string[]} rows the block as it is read, upright
  * @param {'none'|'left'|'right'} turn
@@ -243,20 +381,32 @@ export function stretchRows(rows, want) {
  * @param {number} [opt.readCols] the turned sheet, as the eye meets it
  * @param {number} [opt.readRows]
  * @param {Set<string>|null} [opt.have] the machine's characters
+ * @param {((ch: string) => number)|null} [opt.weight] ink per mark, if known
+ * @param {number} [opt.keepAtLeast] least of the width worth keeping
  * @returns {string[]|null} lines to type, or null if it will not go
  */
 export function turnType(rows, turn, opt = {}) {
-  const { aspect = 0.6, readCols = 0, readRows = 0, have = null } = opt;
+  const { aspect = 0.6, have = null, weight = null } = opt;
   if (!isTurned(turn) || !rows.length) return rows;
 
-  const wide = Math.max(0, ...rows.map((r) => r.length));
+  /*
+   * Padding off first, and before anything is measured.
+   *
+   * A row padded out to the widest glyph is not a wider row, and every step
+   * below counts columns: turnFit() would charge the block for padding it
+   * could have dropped, squeezeCols() would spend part of the squeeze on
+   * blank cells, and turnRows() would lay each padded column down as a line
+   * of typing with nothing on it.
+   */
+  const block = rows.map((r) => r.replace(/\s+$/, ''));
+  const wide = Math.max(0, ...block.map((r) => r.length));
   if (!wide || !(aspect > 0)) return rows;
 
-  const want = Math.round(rows.length / (aspect * aspect));
-  if (readCols && wide > readCols) return null;
-  if (readRows && want > readRows) return null;
+  const fit = turnFit(block, opt);
+  if (!fit) return null;
 
-  return turnRows(stretchRows(rows, want), turn, have);
+  const scaled = fit.lost ? squeezeCols(block, fit.cols, weight) : block;
+  return turnRows(stretchRows(scaled, fit.rows), turn, have);
 }
 
 /**

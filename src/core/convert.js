@@ -236,25 +236,6 @@ export function contrast(field, amount) {
   return { data: out, w: field.w, h: field.h };
 }
 
-/** Sobel edges, full resolution — used to rescue thin lines. */
-export function edges(field) {
-  const { w, h, data } = field;
-  const out = new Float32Array(w * h);
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const i = y * w + x;
-      const gx =
-        -data[i - w - 1] - 2 * data[i - 1] - data[i + w - 1] +
-        data[i - w + 1] + 2 * data[i + 1] + data[i + w + 1];
-      const gy =
-        -data[i - w - 1] - 2 * data[i - w] - data[i - w + 1] +
-        data[i + w - 1] + 2 * data[i + w] + data[i + w + 1];
-      out[i] = Math.min(1, Math.hypot(gx, gy) / 4);
-    }
-  }
-  return { data: out, w, h };
-}
-
 /**
  * Outline: the motif minus an eroded copy of itself.
  * Far fewer keystrokes than filling the shape, and it reads as a drawing.
@@ -549,5 +530,3 @@ export function keystrokes(lines) {
   return lines.reduce(
     (n, l) => n + [...l].filter((c) => c !== ' ').length, 0);
 }
-
-export { buildAtlas };

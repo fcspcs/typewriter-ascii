@@ -100,6 +100,15 @@ Pasted art is the one thing with no width to set. Its spacing is what makes
 it the picture it is, so that tab states the numbers instead of offering a
 control that would have to resample the art to mean anything.
 
+Turned, it is laid down in proportion like everything else — see below. A
+quarter turn swaps the cell's width and height whatever is printed in it,
+and for a while this was the one path that pretended otherwise: the word
+next door came out in proportion and the picture beside it came out
+stretched 2.77 times over, with nothing on the page saying so. Art more
+than twice too big for the turned sheet still goes down cell for cell,
+because there is no font here to re-set it from, and the tab says that is
+what happened.
+
 ## Sideways: give the block back the lines the turn takes
 
 A typewriter cell is 2.54 mm wide and 4.23 mm tall. A quarter turn swaps
@@ -138,10 +147,36 @@ What it buys, measured — `Type` in Caligraphy2 on an SM7:
 Two thirds again as big in each direction, in proportion, in the font's own
 marks, for two and four fifths the typing.
 
-**One case still becomes a picture.** A block 2.77 times its own depth can
-outgrow the paper, and squeezing it back down would drop whole strokes —
-a hairline is one cell wide and nearest neighbour cannot halve it. So a
-word too big to lay down goes through the picture pipeline instead: the
+### Too big for the paper: scale the block, not the alphabet
+
+A block with 2.77 times its own lines is a big block. A4 at pica has the
+room for about twenty-nine lines of type that way, and past that the motif
+runs off the end of the paper — which for a while was the end of the story:
+the word went to the shape matcher and came back in the matcher's marks,
+which is how a word set in `+` arrived struck in `W` and `M`. The
+arithmetic was right and the conclusion was wrong. **Keeping the proportion
+is what a turn is about; keeping every column is not.**
+
+So the block is scaled to the paper first, both ways at once — the lines
+still grow, the columns give — and `squeezeCols()` merges the columns that
+have to go. Which mark comes through a merge is decided by ink: where two
+columns become one, the cell with ink in it beats the cell with none, and
+where the machine has measured its keys the heavier mark beats the lighter.
+That way round matters. Nearest neighbour would drop whichever column it
+landed between, and a hairline is one column wide, so a stroke could vanish
+outright — a hole in a letter. Ink first means a stroke can thicken or
+shift half a cell, and that is all it can do.
+
+The page says what it cost: *20 of its 82 columns met the edge of the paper
+and were merged into their neighbours — every mark is still the one the
+font set, the strokes a little heavier.*
+
+**One case still becomes a picture.** Past half the width the squeeze stops
+being honest: every second column has been merged, a one-column gap can no
+longer be relied on to stay open, and the counter of an `o` fills in. Below
+that floor the shape matcher genuinely does the better job — it resamples
+ink smoothly and picks a lighter key where a stroke thins — so a word more
+than twice too big goes through the picture pipeline instead: the
 block is drawn as ink (in the browser each mark as the glyph it is, so a
 hairline survives; on the command line a 3 × 5 patch per cell, the cell's
 own shape), laid on its side, and matched cell by cell against the

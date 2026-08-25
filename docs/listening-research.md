@@ -340,6 +340,9 @@ the platen — sharp, loud, broadband" then "the type bar falling back —
 softer, slightly later", and sets `refractoryMs: 85` because "the type bar
 rebounds within roughly 30–70 ms".
 
+*(Quoted as it stood when this section was written. The setting is called
+`minIntervalMs` now, defaults to 90, and is what `calibrate()` fits.)*
+
 The literature describes a two-peak structure, but a *different* one. Asonov
 & Agrawal: the click "lasts for approximately 100 ms" with two peaks
 corresponding to **pushing** and **releasing the key**, with relative silence
@@ -749,7 +752,7 @@ of each take** — that is the ground truth, and it costs nothing.
    carriage return. Say "forty" first. This is the end-to-end test case.
 7. **Type until the bell rings**, twice. Isolates the bell.
 8. **One line typed as fast as he can.** Establishes the true minimum
-   inter-onset interval on this machine — the thing `refractoryMs` guesses.
+   inter-onset interval on this machine — the thing `minIntervalMs` guesses.
 9. **Repeat (6) with the phone across the room** (2–3 m), and once **with
    background noise** (radio, window open).
 10. **Backspace ×5, shift ×5** — the remaining mechanism sounds.
@@ -840,7 +843,7 @@ prototype], plus much better behaviour in a noisy room.
 
 ### Third — needs Lorenz's recordings first
 
-8. **Run the §6.3 session** and re-fit `refractoryMs`, the rebound delay, and
+8. **Run the §6.3 session** and re-fit `minIntervalMs`, the rebound delay, and
    the band from real SM7 audio instead of assumptions. `calibrate()` is
    already the right idea; feed it real data.
 9. **Test whether the space bar is separable** from a typebar strike. If it

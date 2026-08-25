@@ -43,18 +43,51 @@
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 
+/*
+ * `hidden` means hidden, whatever else the element was given.
+ *
+ * The browser's own `[hidden] { display: none }` sits in the user-agent
+ * origin, so any author `display` at all beats it no matter how weak the
+ * selector — `#preview { display: block }` was quietly showing an empty
+ * 300x150 canvas inside the drop area before a picture had been chosen.
+ * Half the panels on this page are shown and hidden by setting `.hidden`
+ * from JavaScript, so this is worth stating once here rather than being
+ * careful in every rule that sets a display.
+ */
+[hidden] { display: none !important; }
+
+/*
+ * Room for the parts of the screen that are not rectangular.
+ *
+ * `viewport-fit=cover` in index.html asks for the whole display, notch and
+ * home indicator included, which is what makes the page ground reach the
+ * edges instead of stopping at a letterboxed strip. Asking for it without
+ * then padding for it is the worst of both, and that is what was here: in
+ * landscape on a rounded screen the left-hand column of the sheet sat under
+ * the notch, and the footer sat under the home indicator.
+ *
+ * `env()` is zero on every screen that has no such cut-out, so this costs a
+ * desktop nothing and needs no media query.
+ */
+:root {
+  --gut-left: env(safe-area-inset-left, 0px);
+  --gut-right: env(safe-area-inset-right, 0px);
+}
+
 body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
   font: 14px/1.6 var(--mono);
-  padding-bottom: 4rem;
+  padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
 }
 
 /* ── page frame ──────────────────────────────────────────────── */
 
 .bar {
   padding: 1.7rem clamp(1rem, 4vw, 3rem) 1.3rem;
+  padding-left: calc(clamp(1rem, 4vw, 3rem) + var(--gut-left));
+  padding-right: calc(clamp(1rem, 4vw, 3rem) + var(--gut-right));
   border-bottom: 1px solid var(--ink);
 }
 h1 {
@@ -66,7 +99,12 @@ h1 {
 }
 .lede { margin: 0.5rem 0 0; color: var(--faint); font-size: 13px; }
 
-main { padding: 0 clamp(1rem, 4vw, 3rem); max-width: 82rem; margin: 0 auto; }
+main {
+  padding: 0 clamp(1rem, 4vw, 3rem);
+  padding-left: calc(clamp(1rem, 4vw, 3rem) + var(--gut-left));
+  padding-right: calc(clamp(1rem, 4vw, 3rem) + var(--gut-right));
+  max-width: 82rem; margin: 0 auto;
+}
 
 section { padding: 2.4rem 0; border-bottom: 1px solid var(--hair); }
 section:last-of-type { border-bottom: 0; }
@@ -81,13 +119,30 @@ h2 {
   display: flex;
   align-items: baseline;
   gap: 1rem;
+  /*
+   * The heading and its tools wrap rather than overflowing the page.
+   *
+   * Both headings sit within about fifteen pixels of the edge of a 360px
+   * screen, and two ordinary state changes push them over it: `full screen`
+   * becomes `exit full screen`, and `turned` becomes `as typed`. The page
+   * then scrolls sideways as a whole — the one kind of scrolling that makes
+   * a layout feel broken, because the thing that moved is everything.
+   */
+  flex-wrap: wrap;
 }
-h2 .tools { margin-left: auto; display: flex; gap: 1.2rem; }
+h2 .tools {
+  margin-left: auto;
+  display: flex;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+}
 
 footer {
   max-width: 82rem;
   margin: 2.5rem auto 0;
   padding: 1.4rem clamp(1rem, 4vw, 3rem);
+  padding-left: calc(clamp(1rem, 4vw, 3rem) + var(--gut-left));
+  padding-right: calc(clamp(1rem, 4vw, 3rem) + var(--gut-right));
   border-top: 1px solid var(--hair);
   color: var(--faint);
   font-size: 12px;
@@ -259,6 +314,35 @@ input[type=range]::-moz-range-thumb {
   border: 0; border-radius: 50%; cursor: pointer;
 }
 
+/*
+ * The `?` that opens a note, and the note it opens.
+ *
+ * It sits inside a sentence, so it is drawn as a mark of punctuation rather
+ * than as a control: a ringed question mark, raised slightly, in the faint
+ * ink the rest of the hint uses. It had no rule at all before and rendered
+ * as a bare `?` at body size, which read as a typo rather than as something
+ * to press.
+ */
+button.why {
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  padding: 0;
+  width: 1.25em; height: 1.25em;
+  margin-left: 0.35em;
+  font-size: 0.85em; line-height: 1;
+  color: var(--faint);
+  vertical-align: 0.15em;
+  display: inline-grid; place-items: center;
+}
+button.why:hover, button.why[aria-expanded='true'] {
+  border-color: var(--ink); color: var(--ink);
+}
+.why-note {
+  border-left: 2px solid var(--hair);
+  padding-left: 0.8rem;
+  margin-top: 0.5rem;
+}
+
 .row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;
        margin-top: 0.9rem; }
 .row label { font-size: 11.5px; color: var(--faint); }
@@ -343,7 +427,14 @@ input[type=range]::-moz-range-thumb {
  */
 .paper-scroll.real {
   overflow: auto;
-  max-height: min(72vh, 900px);
+  /*
+   * `dvh`, not `vh`. On a phone `vh` is the *large* viewport — the height
+   * the page would have if the address bar were collapsed — so 72vh with
+   * the bar showing is more than 72% of what you can actually see, and the
+   * box a sheet is meant to be looked at through hung off the bottom of the
+   * screen. `dvh` is whatever is on show at the moment, bar and all.
+   */
+  max-height: min(72dvh, 900px);
   /* The scrollbars belong to a sheet of paper, not to the page around it. */
   color-scheme: light;
 }
@@ -594,12 +685,42 @@ ol.setup span { display: block; color: var(--faint); font-size: 12px; }
  * to be a numbered list of places, it is now the places.
  */
 .typing { display: grid; grid-template-columns: auto minmax(0, 1fr); }
-.typing-main { min-width: 0; }
+
+/*
+ * One scroller for both, and that is the whole point of the arrangement.
+ *
+ * The scale only means anything while it is over the cells it names, so it
+ * has to travel with them. It used to be a sibling of the sheet with
+ * `overflow: hidden` of its own while the sheet scrolled separately, which
+ * broke in two ways at once on any motif wider than the window: the ticks
+ * stayed put while the characters slid out from under them, and the right
+ * margin stop — drawn at the last column — could not be reached at all,
+ * because a clipped box has no scrollbar.
+ *
+ * So the scroll lives here, on the box that holds both, and the two rows
+ * below are sized to their content rather than to the window.
+ */
+.typing-main {
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/*
+ * As wide as the characters, never narrower than the window.
+ *
+ * `max-content` is what puts the far end of a wide motif inside the scroll
+ * range; `min-width: 100%` keeps the border and the paper ground stretching
+ * the full width of a narrow one, so a short motif still reads as a sheet
+ * rather than as a label floating in the column.
+ */
+.scale, .sheet { width: max-content; min-width: 100%; }
 
 /*
  * The scale is the sheet's grid, one row up, so a tick sits over the cell
  * it names rather than near it: same font, same size, same left padding as
- * a line. It scrolls with the sheet because it is inside the same box.
+ * a line.
  */
 .scale {
   font-size: var(--sheet-size, 12px);
@@ -610,7 +731,6 @@ ol.setup span { display: block; color: var(--faint); font-size: 12px; }
   border: 1px solid var(--hair);
   border-bottom: 0;
   background: var(--raised);
-  overflow: hidden;
 }
 /*
  * Both rows at the sheet's own size, and that is not a detail: a number
@@ -649,23 +769,24 @@ ol.setup span { display: block; color: var(--faint); font-size: 12px; }
 }
 .feed .facts b { color: var(--ink); font-weight: 400; }
 
-@media (max-width: 40em) {
-  /* The feed's labels cost more width than they are worth on a phone. */
-  .feed .facts { display: none; }
-}
-
 .sheet {
   border: 1px solid var(--hair);
   background: var(--raised);
   padding: 1.2rem 0;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
   font-size: var(--sheet-size, 12px);
   line-height: 1.18;
 }
 
+/*
+ * `min-width: 100%` so the open line's ground reaches the end of the widest
+ * line rather than stopping at the fold. A block child of a scroller is as
+ * wide as the *visible* box, not as wide as its own text, so the mark under
+ * `.ln.now` used to stop where the window did and the rest of the line you
+ * are typing sat on plain paper.
+ */
 .ln {
   display: block; white-space: pre; padding: 0 1.2rem;
+  min-width: 100%;
   color: var(--faint); opacity: 0.38; cursor: pointer;
 }
 .ln .r { font-style: normal; }
@@ -737,6 +858,21 @@ body.counting .run .c.hit {
   background: var(--ink); color: var(--paper);
 }
 
+/*
+ * A count that has admitted it is lost must stop looking authoritative.
+ *
+ * Filled solid, the cursor says "you are here". Once the ear and the line
+ * have disagreed that is exactly the claim it cannot stand behind — so it
+ * becomes an outline: still visible as where the count *thinks* you are,
+ * no longer a statement about the paper. `#lost` says the rest in words,
+ * and clicking a character settles it. The class was being toggled on the
+ * body all along with nothing listening for it.
+ */
+body.counting.lost .run .c.hit {
+  background: none; color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
 /* ── nothing to type yet ─────────────────────────────────────── */
 /*
  * An empty motif still produces arithmetic - setUp() dutifully centres
@@ -765,20 +901,64 @@ body.full > header,
 body.full .compose,
 body.full footer { display: none; }
 body.full main { max-width: none; padding: 0; }
-body.full #stepSheet { padding: 0.8rem clamp(0.6rem, 2vw, 2rem); border: 0; }
+body.full #stepSheet {
+  padding: 0.8rem clamp(0.6rem, 2vw, 2rem);
+  padding-left: calc(clamp(0.6rem, 2vw, 2rem) + var(--gut-left));
+  padding-right: calc(clamp(0.6rem, 2vw, 2rem) + var(--gut-right));
+  border: 0;
+}
 body.full h2 { margin-bottom: 0.9rem; }
 body.full .sheet { border: 0; font-size: var(--sheet-full, 15px); }
 
 /* ── characters dialog ───────────────────────────────────────── */
 
+/*
+ * The dialog says how tall it may be, rather than leaving it to the browser.
+ *
+ * The keyboard inside it is one button per key and a second for the shifted
+ * character, so on a phone held sideways the whole thing comes to roughly
+ * twice the height of the screen — and `done` is the last element in it.
+ * Neither `max-height` nor `overflow` was declared, which left whether that
+ * button could be reached at all up to each engine's default.
+ *
+ * `dvh` for the same reason as the preview box: the address bar is part of
+ * what is covering the screen.
+ */
 dialog {
   border: 1px solid var(--ink); background: var(--paper); color: var(--ink);
   padding: 1.7rem; max-width: 40rem; width: calc(100% - 2rem);
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  /* Clear of the notch in landscape and the home indicator in portrait. */
+  margin: auto;
+  padding-left: calc(1.7rem + var(--gut-left));
+  padding-right: calc(1.7rem + var(--gut-right));
+  padding-bottom: calc(1.7rem + env(safe-area-inset-bottom, 0px));
 }
 dialog::backdrop { background: rgba(0,0,0,.45); }
 dialog h2 { margin-bottom: 0.5rem; }
+
 dialog menu { display: flex; justify-content: flex-end; gap: 1.3rem;
               margin: 1.5rem 0 0; padding: 0; align-items: center; }
+
+/*
+ * On a small screen `done` and `cancel` stay on screen while the keyboard
+ * scrolls behind them. A commit button that has to be hunted for below
+ * eighteen rows of keys is a commit button people give up on.
+ *
+ * Only here: on a desktop the dialog fits without scrolling, so a sticky
+ * footer would be a rule and a background drawn for a fold that is never
+ * reached.
+ */
+@media (max-width: 640px) {
+  dialog menu {
+    position: sticky; bottom: 0;
+    padding: 0.7rem 0 0;
+    background: var(--paper);
+    border-top: 1px solid var(--hair);
+  }
+}
 
 #keyboard { margin: 1.1rem 0 0; }
 .krow { display: flex; gap: 3px; margin-bottom: 3px; flex-wrap: wrap; }
@@ -792,11 +972,153 @@ dialog menu { display: flex; justify-content: flex-end; gap: 1.3rem;
 .key.on { border-color: var(--ink); color: var(--ink); }
 .key:hover { border-color: var(--ink); }
 
+/* ── narrow screens ──────────────────────────────────────────── */
+
+/*
+ * Three widths, and no more: 900px drops the two-column page to one, 640px
+ * is a phone held upright, 480px is a small one. They were previously four,
+ * because 640px was written once as `640px` and once as `40em` a hundred
+ * lines apart and maintained as though they were different numbers.
+ *
+ * Everything about the *finger* is in the `pointer: coarse` block below
+ * instead. A phone in landscape is 900px wide and still a phone, and a
+ * touchscreen laptop is 1400px wide and still wants a target it can hit —
+ * so size is the wrong question to ask about a tap.
+ */
 @media (max-width: 640px) {
   body { font-size: 13px; }
   section { padding: 1.8rem 0; }
-  .key { width: 1.7rem; height: 1.7rem; font-size: 11px; }
-  .paper-view { max-height: none; }
+
+  /* The feed's labels cost more width than they are worth; the rule beside
+     the sheet still shows the wind-on in proportion. */
+  .feed .facts { display: none; }
+
+  /*
+   * The pairs go one under another. Both hold a <select> whose options are
+   * whole phrases — "Compose — several sheets", "Sideways — turn the
+   * finished sheet right" — and half of 328px shows about eight characters
+   * of them, which is not a choice anybody can make.
+   */
+  .two { grid-template-columns: 1fr; }
+
+  /* The matrix and the sheet it counts in stack rather than sitting side
+     by side, so neither has to give up width to the other. */
+  .compose-pick { flex-direction: column; align-items: flex-start; }
+}
+
+/* ── touch ───────────────────────────────────────────────────── */
+
+/*
+ * The finger, rather than the screen.
+ *
+ * Nothing in this block reaches a mouse-and-keyboard page: `pointer: coarse`
+ * describes the input, not the window, so every rule above stands exactly as
+ * written on the desktop. What is here is the two things a touchscreen
+ * changes — how big a target has to be before it can be hit, and what a
+ * browser does to a page when a small field takes focus.
+ */
+@media (pointer: coarse) {
+  /*
+   * 16px is not a matter of taste. Safari zooms the whole page in when a
+   * field under 16px takes focus and does not zoom back out, so naming a
+   * sheet leaves the typist pinching the page back into shape afterwards.
+   * The labels around the controls keep their own sizes.
+   */
+  button, select, input, textarea, output { font-size: 16px; }
+
+  /*
+   * 44px is about the smallest thing a finger hits reliably. Boxed controls
+   * simply grow to it.
+   */
+  button:not(.link):not(.why), select, summary,
+  input[type=text], input[type=number] { min-height: 44px; }
+
+  /*
+   * The two kinds that cannot be boxed up. `fit`, `original`, `pdf`, `−1`,
+   * `all`, `none` are words inside a sentence or a heading, and the `?` is
+   * a mark of punctuation inside one — growing either to 44px would turn
+   * every heading into a toolbar and push the sentences apart. So the *hit
+   * area* grows and the ink stays where it is: an empty pseudo-element,
+   * centred on the label, at least 44px each way. The gaps around them —
+   * 1rem in a row, 1.2rem in a heading — are wide enough that the grown
+   * areas do not reach each other.
+   */
+  button.link, button.why { position: relative; }
+  button.link::after, button.why::after {
+    content: '';
+    position: absolute; left: 50%; top: 50%;
+    translate: -50% -50%;
+    width: 100%; height: 100%;
+    min-width: 44px; min-height: 44px;
+  }
+
+  /*
+   * The slider's track is one pixel tall, which is a line to look at and
+   * nothing to grab. The line stays exactly one pixel — it is painted as a
+   * background rather than being the element's own box — and the box around
+   * it becomes something a thumb can land on.
+   */
+  input[type=range] {
+    height: 44px;
+    margin-top: 0;
+    background: linear-gradient(var(--rule), var(--rule)) center / 100% 1px
+                no-repeat;
+    touch-action: pan-y;
+  }
+  input[type=range]::-webkit-slider-thumb { width: 20px; height: 20px; }
+  input[type=range]::-moz-range-thumb { width: 20px; height: 20px; }
+
+  /* Grids of small squares grow rather than gaining invisible margins:
+     these sit shoulder to shoulder, so an overlapping hit area would take
+     its neighbour's taps. */
+  .matrix .cell { width: 44px; height: 44px; }
+  .sheet-pick { grid-template-columns: repeat(var(--across), 2.75rem); }
+  .sheet-pick .pick { height: 2.75rem; }
+  .key { width: 2.75rem; height: 2.75rem; font-size: 15px; }
+
+  /*
+   * A tap that missed has to look different from a tap that landed.
+   * `-webkit-tap-highlight-color: transparent` is right on a page where
+   * every button changes some visible state, but `next`, `−1`, `apply` and
+   * the rest change something further down the page or nothing you can see
+   * from where you tapped. The platform flash comes back for those.
+   */
+  button { -webkit-tap-highlight-color: rgba(127, 127, 127, 0.3); }
+}
+
+/* ── motion, contrast ────────────────────────────────────────── */
+
+/*
+ * The lamp is the reason this block exists. It flashes on every keystroke
+ * heard — about five times a second, for as long as a sheet takes — which
+ * is a light nobody with a photosensitivity should be shown without having
+ * asked for it. Where motion is not wanted it holds steady instead and the
+ * count beside it still tells the truth.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  button:active { transform: none; }
+}
+
+/*
+ * In forced colours the author's backgrounds are thrown away, and on this
+ * page several of them are the whole message: which cells are spaces to be
+ * crossed, where the count thinks you are, which sheet is in the machine.
+ * Each one is restated as a border or a system colour, which forced-colours
+ * mode keeps.
+ */
+@media (forced-colors: active) {
+  .run.gap .c { border-bottom: 2px dotted CanvasText; }
+  body.counting .run .c.hit { outline: 2px solid Highlight; }
+  .ln.now { outline: 1px solid CanvasText; }
+  .sheet-pick .pick.on, .matrix .cell.in, .matrix .cell.on,
+  .key.on, .tab.on { outline: 2px solid Highlight; }
+  .feed .rule i { background: Highlight; }
 }
 
 @media print {
@@ -804,4 +1126,7 @@ dialog menu { display: flex; justify-content: flex-end; gap: 1.3rem;
   h2 .tools { display: none; }
   .ln, .ln.now { opacity: 1; color: #000; background: none; }
   .sheet { border: 0; }
+  /* The scale is a tool for setting the machine up, and the sheet that
+     comes out of the printer is for carrying to it. */
+  .scale, .feed { display: none; }
 }

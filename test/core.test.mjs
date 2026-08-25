@@ -13,8 +13,8 @@ import {
 } from '../src/core/machine.js';
 import * as machine from '../src/core/machine.js';
 import {
-  turnedGrid, planningGrid, turnRows, turnField, isTurned, TURNS, turnAdvice,
-  turnType, stretchRows,
+  turnedGrid, planningGrid, turnRows, turnField, turnType, turnFit,
+  stretchRows, squeezeCols,
 } from '../src/core/turn.js';
 import {
   tiled, tilesOf, isComposite, unitOf, unitGrid, sheetCount, seams,
@@ -26,7 +26,7 @@ import {
   columnOfStrike, inkPlan, INK_SCHEMES,
 } from '../src/core/runs.js';
 import {
-  letter, STYLES, charsUsed, tonesOf, usesTwo, marksOf,
+  letter, STYLES, charsUsed, marksOf,
 } from '../src/core/lettering.js';
 import { toneRamp, inkLadder, inkWeights } from '../src/core/ink.js';
 import {
@@ -1307,17 +1307,106 @@ check('and it gains the lines the turn is about to take from it', () => {
     `read ${read.toFixed(2)}:1 against drawn ${drawn.toFixed(2)}:1`);
 });
 
-check('a block with no room to be laid down says so, rather than shrinking', () => {
-  // Squeezing it back down would drop whole strokes: a hairline is one cell
-  // wide and nearest neighbour cannot halve it. Null is the caller's cue to
-  // take the other path, which is a different promise about the marks.
+check('a block with no room to be laid down whole is squeezed, not surrendered', () => {
+  /*
+   * The case the user meets, and the one this used to give up on. A block
+   * that wants 2.77 times its own lines is a big block, and past about
+   * twenty-nine lines of type A4 has not got the room. Refusing then sent
+   * the word to the shape matcher, which threw away every mark it was set
+   * in — a word drawn in `+` came back struck in `W` and `M`. Keeping the
+   * proportion is what a turn is for; keeping every column is not, so the
+   * block is scaled to the paper and the marks come through.
+   */
   const aspect = cellWidthMm(sm7) / cellHeightMm(sm7);
   const tall = Array.from({ length: 40 }, () => '####');
-  assert.strictEqual(
-    turnType(tall, 'left', { aspect, readCols: 80, readRows: 80 }), null);
+  const laid = turnType(tall, 'left', { aspect, readCols: 80, readRows: 80 });
+  assert.ok(laid, 'a block that only needed scaling was refused');
+  assert.deepStrictEqual(
+    [...new Set(laid.join('').replace(/ /g, ''))], ['#'],
+    'the marks were exchanged for something else');
+  assert.ok(laid.length <= 80 && Math.max(...laid.map((l) => l.length)) <= 80,
+    'the squeezed block still runs off the paper');
+
   const wide = ['#'.repeat(90)];
+  assert.ok(turnType(wide, 'left', { aspect, readCols: 80, readRows: 80 }),
+    'ninety columns into eighty is a squeeze, not a refusal');
+});
+
+check('a squeeze keeps the proportion the block was drawn in', () => {
+  /*
+   * The whole reason the block is scaled both ways at once. Losing columns
+   * costs detail; losing the proportion costs the letterforms, which is
+   * the smear turnType() exists to prevent.
+   */
+  const aspect = cellWidthMm(sm7) / cellHeightMm(sm7);
+  const block = Array.from({ length: 39 }, () => '#'.repeat(82));
+  const laid = turnType(block, 'left', { aspect, readCols: 70, readRows: 82 });
+  assert.ok(laid, 'a block a quarter too wide was refused');
+
+  // Read frame: a typed line runs across the picture, a typed column down it.
+  const readWide = laid.length;
+  const readDeep = Math.max(...laid.map((l) => l.length));
+  const drawn = (82 * cellWidthMm(sm7)) / (39 * cellHeightMm(sm7));
+  const read = (readWide * cellHeightMm(sm7)) / (readDeep * cellWidthMm(sm7));
+  assert.ok(Math.abs(read - drawn) < drawn * 0.05,
+    `read ${read.toFixed(2)}:1 against drawn ${drawn.toFixed(2)}:1`);
+});
+
+check('past half its width a block stops being type and becomes a picture', () => {
+  /*
+   * The floor, and the one case that still answers null. Merge every second
+   * column and a one-column gap can no longer be relied on to stay open —
+   * the counter of an `o` fills in and the word is no longer the word. The
+   * matcher resamples ink smoothly and does the better job below this, so
+   * the caller is handed the choice rather than a mangled block.
+   */
+  const aspect = cellWidthMm(sm7) / cellHeightMm(sm7);
+  const huge = Array.from({ length: 60 }, () => '#'.repeat(60));
   assert.strictEqual(
-    turnType(wide, 'left', { aspect, readCols: 80, readRows: 80 }), null);
+    turnType(huge, 'left', { aspect, readCols: 60, readRows: 60 }), null);
+});
+
+check('what a turn costs is worked out before anything moves', () => {
+  // Two callers need the same arithmetic: turnType() to do it, and the page
+  // to say what was done. A block with room to spare gives up nothing.
+  const aspect = cellWidthMm(sm7) / cellHeightMm(sm7);
+  const roomy = turnFit(['####', '#  #', '####'],
+    { aspect, readCols: 80, readRows: 80 });
+  assert.strictEqual(roomy.lost, 0, 'a block that fits was charged for it');
+  assert.strictEqual(roomy.keep, 1);
+  assert.strictEqual(roomy.rows, Math.round(3 / (aspect * aspect)),
+    'the lines the turn takes were not handed back');
+
+  // Trailing spaces are padding, not columns: flfLetter() pads its rows out
+  // to the widest glyph, and counting that refused blocks that would go down
+  // untouched.
+  const padded = turnFit(['##      ', '##      '],
+    { aspect, readCols: 2, readRows: 80 });
+  assert.ok(padded && padded.lost === 0,
+    'padding was counted as width and cost the block columns');
+});
+
+check('a merged column keeps the ink, and the heavier mark carries it', () => {
+  /*
+   * The rule that makes a squeeze survivable. Nearest neighbour would drop
+   * whichever column it landed between, and a hairline is one column wide —
+   * so a stroke could vanish outright, which is a hole in a letter. Ink
+   * beating paper means a stroke can thicken or shift half a cell, and that
+   * is all it can do.
+   */
+  assert.deepStrictEqual(squeezeCols(['# #  #'], 3), ['###'],
+    'a stroke was merged away into paper');
+  assert.deepStrictEqual(squeezeCols(['  '], 1), [''],
+    'ink appeared where there was none');
+
+  // Ties go to the left, so a squeeze cannot drift a stroke rightwards.
+  assert.deepStrictEqual(squeezeCols(['ab'], 1), ['a']);
+  // And a machine that has measured its keys picks the darker of the two.
+  const weight = (ch) => (ch === '#' ? 1 : ch === '.' ? 0.2 : 0);
+  assert.deepStrictEqual(squeezeCols(['.#'], 1, weight), ['#']);
+
+  // Nothing to do is nothing done.
+  assert.deepStrictEqual(squeezeCols(['####'], 9), ['####']);
 });
 
 check('stretching repeats lines, and never invents one', () => {

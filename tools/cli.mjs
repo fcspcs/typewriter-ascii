@@ -29,9 +29,9 @@ import {
 import { colourMap, inkTally, parseRows, runsOf, runsToText } from '../src/core/runs.js';
 import { letter, tonesOf, marksOf, STYLES } from '../src/core/lettering.js';
 import { parseFlf, flfLetter } from '../src/core/figlet.js';
-import { toneRamp } from '../src/core/ink.js';
+import { toneRamp, inkWeights } from '../src/core/ink.js';
 import {
-  isTurned, planningGrid, turnRows, turnType, turnAdvice,
+  isTurned, planningGrid, turnRows, turnType, turnFit, turnAdvice,
 } from '../src/core/turn.js';
 import {
   tiled, isComposite, unitOf, sheetCount, splitMotif, layoutAdvice,
@@ -172,7 +172,10 @@ if (!PAPERS.some((p) => p.id === paperId)) {
 }
 const basePaper = paperById(paperId);
 
-const align = opt('align', 'centre');
+const align = String(opt('align', 'centre'));
+if (!['centre', 'topleft'].includes(align)) {
+  die(`--align wants centre or topleft — got "${align}".`);
+}
 
 /*
  * Which way the finished sheet gets turned. Never which way it goes in.
@@ -263,6 +266,35 @@ function picturePaper() {
   // the sheet. A4 at pica gives 82 upright and 70 turned.
   const room = textArea(sheet, machine);
   return { room, maxCols: Math.min(num('width', 60), planEdge.cols) };
+}
+
+/**
+ * A text file, or a refusal that comes through the same door as the rest.
+ *
+ * `loadPicture()` and `pictureAtlas()` both wrap their read; the two places
+ * that take `--flf` and the `file` command did not, so a path with a typo
+ * in it left node's own ENOENT stack on the terminal. Under `--json` that
+ * is worse than untidy: an uncaught throw means no `{ok:false}` object is
+ * printed at all, and an object on both doors is the one thing a script
+ * reading this output is entitled to expect.
+ */
+function readTextFile(path) {
+  try {
+    return fs.readFileSync(path, 'utf8');
+  } catch (e) {
+    return die(
+      `Cannot read ${path}: ${e.code === 'ENOENT' ? 'no such file' : e.message}`);
+  }
+}
+
+/** A FIGlet font file, read and parsed, or a refusal saying which it was. */
+function loadFlf(path) {
+  const raw = readTextFile(path);
+  try {
+    return parseFlf(raw, path.replace(/^.*[\\/]/, '').replace(/\.flf$/i, ''));
+  } catch (e) {
+    return die(`${path} is not a FIGlet font file: ${e.message}`);
+  }
 }
 
 /**
@@ -629,9 +661,42 @@ if (cmd === 'image') {
 } else if (cmd === 'file') {
   const path = args[1];
   if (!path) die('Which file?');
-  const raw = fs.readFileSync(path, 'utf8').replace(/\t/g, '    ');
+  const raw = readTextFile(path).replace(/\t/g, '    ');
   const { text, dropped } = makeTypeable(raw, machine);
-  lines = turnRows(text.split('\n'), turn, new Set(charset(machine)));
+  const art = text.split('\n');
+  const have = new Set(charset(machine));
+  /*
+   * Laid down in proportion, the same as the page does it.
+   *
+   * A turn swaps the cell's 2.54 mm width and its 4.23 mm height whatever
+   * is printed in it, so art laid down cell for cell comes out stretched
+   * 2.77 times over. Where that will not go on the paper the columns give
+   * and it is said; where the art is more than twice too big for the turned
+   * sheet there is nothing honest left to merge, so it goes down cell for
+   * cell as it always did and that is said too.
+   */
+  if (isTurned(turn)) {
+    const laying = {
+      aspect: cellAspect(machine),
+      readCols: planEdge.cols,
+      readRows: planEdge.rows,
+      have,
+      weight: inkWeights(pictureAtlas()),
+    };
+    const fit = turnFit(art, laying);
+    lines = (fit && turnType(art, turn, laying)) || turnRows(art, turn, have);
+    if (!fit) {
+      console.error('note: more than twice too big to be laid down in ' +
+        'proportion, so it goes down cell for cell and will read stretched - ' +
+        'a larger sheet, or several, keeps its shape');
+    } else if (fit.lost) {
+      console.error(`note: ${fit.lost} of the ${fit.wide} columns met the ` +
+        `edge of the paper and were merged into their neighbours - every ` +
+        `mark is the one that arrived, the strokes a little heavier`);
+    }
+  } else {
+    lines = turnRows(art, turn, have);
+  }
   if (dropped.size) {
     console.error(`note: ${[...dropped.keys()].join(' ')} cannot be typed on ` +
       `this machine and were left blank`);
@@ -655,8 +720,7 @@ if (cmd === 'image') {
      */
     let block;
     if (flfPath) {
-      const font = parseFlf(fs.readFileSync(flfPath, 'utf8'),
-        flfPath.replace(/^.*[\\\/]/, '').replace(/\.flf$/i, ''));
+      const font = loadFlf(flfPath);
       const fset = flfLetter(font, word.replace(/\\n/g, '\n'),
         { maxCols: textWidth() });
       if (fset.unknown.size) {
@@ -698,19 +762,32 @@ if (cmd === 'image') {
     }
     if (!block.some((l) => l.trim())) die('Nothing to type.');
 
-    const kept = turnType(block, turn, {
+    // Read once, and used for both halves of the choice below: which mark
+    // survives a merged column, and which key matches a patch of ink.
+    const atlas = pictureAtlas();
+    const laying = {
       aspect: cellAspect(machine),
       readCols: planEdge.cols,
       readRows: planEdge.rows,
       have: new Set(charset(machine)),
-    });
+      // Where two columns have to become one, the heavier mark stands for
+      // both. Without --atlas that is the measured table in ink.js, which
+      // is enough to tell ink from paper and a `+` from a `.`.
+      weight: inkWeights(atlas),
+    };
+    const fit = turnFit(block, laying);
+    const kept = turnType(block, turn, laying);
     if (kept) {
+      if (fit.lost) {
+        console.error(`note: ${fit.lost} of the ${fit.wide} columns met the ` +
+          `edge of the paper and were merged into their neighbours - the ` +
+          `marks are the font's, the strokes a little heavier`);
+      }
       lines = kept;
     } else {
 
-    const atlas = pictureAtlas();
     const maxCols = Math.min(num('width', planEdge.cols), planEdge.cols);
-    console.error('note: too big to keep the marks laid down, so the word ' +
+    console.error('note: more than twice too wide for the paper, so the word ' +
       'was set as a picture and matched to the keys instead');
     const { field } = prepare(blockImage(block), {
       invert: false, contrast: 1, mode: 'shape', maxCols, turn,
@@ -738,8 +815,7 @@ if (cmd === 'image') {
      * blank what has no stand-in, saying so either way. Table stand-ins
      * only, out here: the measured half of the engine needs a canvas.
      */
-    const font = parseFlf(fs.readFileSync(flfPath, 'utf8'),
-      flfPath.replace(/^.*[\\\/]/, '').replace(/\.flf$/i, ''));
+    const font = loadFlf(flfPath);
     const fset = flfLetter(font, word.replace(/\\n/g, '\n'),
       { maxCols: textWidth() });
     if (fset.unknown.size) {

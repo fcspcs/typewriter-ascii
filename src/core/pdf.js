@@ -398,24 +398,81 @@ function typingSheets({ lines, colours, paper, setup, runsOf, label = null }) {
       }
     });
 
-    // Verticals every five columns, stronger every ten.
-    for (let c = 0; c <= cols; c += 5) {
+    /*
+     * The column ruler, in the machine's own numbers.
+     *
+     * This used to count the motif — 5, 10, 15 from the first character —
+     * on the grounds that the margin stop has already done the centring, so
+     * column 1 is wherever the carriage returns to. True, and it made the
+     * ruled page disagree with the scale drawn above the sheet on screen,
+     * which counts the carriage. Two rulers over the same row of cells,
+     * giving a different number for the same box.
+     *
+     * The carriage wins, for the reason the screen already gives: the
+     * numbers are engraved on the machine. Reading 34 off the page and
+     * finding 34 on the carriage is one action; reading "column 17 of the
+     * motif" and working out where that falls is two, done with a sheet
+     * half typed. It also makes both margin stops nameable, and the right
+     * one is where the bell rings.
+     */
+    const left = setup.left ?? 0;
+    const carriage = (c) => left + c;
+
+    // Verticals on the carriage's fives, stronger on its tens, and heaviest
+    // at the two stops. The first group is a part group whenever the stop
+    // does not land on a five, which is the honest shape: the paper starts
+    // where the stop is and not at a tick.
+    for (let c = 0; c <= cols; c++) {
+      const stop = c === 0 || c === cols;
+      if (!stop && carriage(c) % 5 !== 0) continue;
       const x = x0 + c * cellW;
-      p.line(x, y0 - 1.6, x, ye + 1.4,
-        { colour: c % 10 === 0 ? SHEET.grid10 : SHEET.grid, width: 0.3 });
+      p.line(x, y0 - 1.6, x, ye + 1.4, {
+        colour: stop || carriage(c) % 10 === 0 ? SHEET.grid10 : SHEET.grid,
+        width: stop ? 0.5 : 0.3,
+      });
     }
 
-    // Column ruler, top and bottom. Numbered from the motif, not from the
-    // carriage scale: the margin stop already did the centring, so column 1
-    // is wherever the carriage returns to.
-    for (let c = 5; c <= cols; c += 5) {
-      const x = x0 + c * cellW;
+    /*
+     * The numbers: both stops, and the tens between them.
+     *
+     * The stops are taken from `setup` rather than counted off the motif,
+     * so they say what the screen says. They are not always `left + cols`:
+     * where the lines run past the end of the carriage scale, `setUp()`
+     * clamps the right stop to what the machine can actually reach and
+     * warns about it, and the number worth printing is the one you can set.
+     *
+     * Labels are dropped where they would collide, nearest-to-a-stop first,
+     * because a ten-mark is a convenience and a stop is the instruction.
+     */
+    const wide = (s) => s.length * 0.6 * labelSize / PT_PER_MM;
+    const marks = [{ c: 0, text: String(left), stop: true }];
+    for (let c = 1; c < cols; c++) {
+      if (carriage(c) % 10 === 0) {
+        marks.push({ c, text: String(carriage(c)), stop: false });
+      }
+    }
+    if (cols > 0) {
+      marks.push({ c: cols, text: String(setup.right ?? carriage(cols)), stop: true });
+    }
+
+    const kept = [];
+    for (const m of marks) {
+      const prev = kept[kept.length - 1];
+      const clear = prev
+        && (m.c - prev.c) * cellW < (wide(prev.text) + wide(m.text)) / 2 + 0.7;
+      if (!clear) { kept.push(m); continue; }
+      // Too close to keep both: the stop is the one that has to be readable.
+      if (m.stop && !prev.stop) { kept.pop(); kept.push(m); }
+    }
+
+    for (const m of kept) {
+      const x = x0 + m.c * cellW;
       const style = {
         size: labelSize, font: 'F1', align: 'centre',
-        colour: c % 10 === 0 ? SHEET.label5 : SHEET.label,
+        colour: m.stop || carriage(m.c) % 10 === 0 ? SHEET.label5 : SHEET.label,
       };
-      p.text(x, y0 - 2.6, String(c), style);
-      p.text(x, ye + 4.4, String(c), style);
+      p.text(x, y0 - 2.6, m.text, style);
+      p.text(x, ye + 4.4, m.text, style);
     }
 
     slice.forEach((line, i) => {

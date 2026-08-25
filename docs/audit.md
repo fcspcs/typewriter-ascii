@@ -6,6 +6,11 @@ typing sheet all describe the same sheet of paper?
 
 Line numbers are as of the commit that fixed each item.
 
+**This is a record of one pass, not a description of the app as it stands.**
+Everything below was true when it was written and some of it has since been
+overtaken — see the notes marked *Since*. Read it for the reasoning; check
+the code for the facts.
+
 Two files are deliberately untouched: `src/core/listen.js` and
 `src/core/tap-worklet.js`. Anything found in them is listed under *Not
 touched* at the end.
@@ -442,6 +447,10 @@ a page with no build step every import is a real fetch.
 
 **Done:** removed. Both are still exported and still used by the tests.
 
+*Since:* `edges` is gone altogether. The tests stopped calling it at some
+point after this was written, which left a Sobel operator exported, imported
+by nobody and called by nothing — the same fault one level up.
+
 ### 16. Landscape was a sheet the machine cannot take
 
 `src/core/machine.js:314` (before)
@@ -669,6 +678,13 @@ the box and do not advance the line. Correct as it stands.
 Exported and unused by `app.js`. `usesTwo` is used (`app.js:193`);
 `columnOfStrike`, `runsToText` and `colourMap` are used by the CLI and the
 tests. `charsUsed` had no caller at all — it does now, in the style hint.
+
+*Since:* `usesTwo` very nearly became dead a second time. The thirty-nine
+redrawn faces went, both survivors declare `tones: 1`, and the gate that
+asks the question also insisted on the lettering tab — so the Shadow ribbon
+scheme could not be offered anywhere at all, though its own test says it is
+kept "for pasted art that arrives in two weights". The gate now asks the
+paste tab too, which is what that sentence always described.
 
 ---
 
