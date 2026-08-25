@@ -65,8 +65,6 @@ h1 {
   text-transform: uppercase;
 }
 .lede { margin: 0.5rem 0 0; color: var(--faint); font-size: 13px; }
-.lede-sm { margin: -0.6rem 0 1.4rem; color: var(--faint); font-size: 12.5px;
-           max-width: 52rem; }
 
 main { padding: 0 clamp(1rem, 4vw, 3rem); max-width: 82rem; margin: 0 auto; }
 
@@ -532,19 +530,13 @@ label.check input { width: auto; margin: 0; }
 /* ── setup list ──────────────────────────────────────────────── */
 
 /*
- * Setting up sits inside “type it” rather than above it, folded away once
- * the first line is done. Marked off with a rule so a shut panel still reads
- * as a thing you can open, not as a stray line of text.
+ * What is left of the setup list once the places are drawn as places: the
+ * steps a ruler cannot show. Which way the sheet goes in, which way to turn
+ * it at the end, how a composite is laid out. Short enough now to sit in the
+ * open above the sheet rather than behind a disclosure nobody reopened.
  */
-#stepSetup {
-  border: 1px solid var(--hair);
-  padding: 0.5rem 1rem;
-  margin-bottom: 1.4rem;
-  background: var(--raised);
-}
-#stepSetup .lede-sm { margin-top: 0; }
-
-ol.setup { margin: 0; padding-left: 1.5rem; max-width: 50rem; }
+ol.setup { margin: 0 0 1.2rem; padding-left: 1.5rem; max-width: 50rem; }
+ol.setup:empty { margin: 0; }
 ol.setup li { margin-bottom: 0.9rem; }
 ol.setup b { font-weight: 600; }
 ol.setup span { display: block; color: var(--faint); font-size: 12px; }
@@ -595,7 +587,72 @@ ol.setup span { display: block; color: var(--faint); font-size: 12px; }
 .meter u { position: absolute; top: -3px; bottom: -3px; width: 1px;
            background: var(--red); left: 50%; }
 
-/* ── the sheet ───────────────────────────────────────────────── */
+/* ── the sheet, and the machine set around it ────────────────── */
+
+/*
+ * The scale along the top and the feed down the side: where the setup used
+ * to be a numbered list of places, it is now the places.
+ */
+.typing { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+.typing-main { min-width: 0; }
+
+/*
+ * The scale is the sheet's grid, one row up, so a tick sits over the cell
+ * it names rather than near it: same font, same size, same left padding as
+ * a line. It scrolls with the sheet because it is inside the same box.
+ */
+.scale {
+  font-size: var(--sheet-size, 12px);
+  line-height: 1.18;
+  white-space: pre;
+  color: var(--faint);
+  padding: 0.5rem 1.2rem 0.35rem;
+  border: 1px solid var(--hair);
+  border-bottom: 0;
+  background: var(--raised);
+  overflow: hidden;
+}
+/*
+ * Both rows at the sheet's own size, and that is not a detail: a number
+ * set even slightly smaller has a narrower character, so by column twenty
+ * it has drifted off the tick it belongs to and the scale is worse than no
+ * scale at all. The numbers recede by ink instead.
+ */
+.scale .nums, .scale .ticks { display: block; }
+.scale .nums { opacity: 0.7; }
+
+/*
+ * The feed: the shaded head is paper wound past before the first line, the
+ * rest is what you type. In proportion, so how far down the sheet the motif
+ * starts is something you see rather than a number you carry.
+ */
+/* The rule last, so it stands against the sheet the way a paper edge does;
+   the labels read in from the outside. */
+.feed {
+  display: flex; align-items: stretch; gap: 0.55rem;
+  padding-right: 0.7rem;
+}
+.feed .facts { text-align: right; }
+.feed .rule {
+  position: relative; display: block; width: 3px;
+  background: var(--hair);
+}
+.feed .rule i {
+  position: absolute; inset: 0 0 auto; height: var(--fed);
+  background: var(--space);
+}
+.feed .facts {
+  display: flex; flex-direction: column; justify-content: flex-start;
+  gap: 0.3rem; padding-top: 0.5rem;
+  font-size: 11px; line-height: 1.3; color: var(--faint);
+  white-space: nowrap;
+}
+.feed .facts b { color: var(--ink); font-weight: 400; }
+
+@media (max-width: 40em) {
+  /* The feed's labels cost more width than they are worth on a phone. */
+  .feed .facts { display: none; }
+}
 
 .sheet {
   border: 1px solid var(--hair);
@@ -633,20 +690,29 @@ ol.setup span { display: block; color: var(--faint); font-size: 12px; }
 .run.rep { border-bottom: 1px solid var(--ink); }
 .run .c { display: inline-block; }
 
-/* A space you must type. Shown as a tinted cell with a faint middle dot,
-   because an empty box reads as "nothing here" — the exact misreading that
-   makes people lose count. */
+/*
+ * A space you must type: a tinted cell, and nothing in it.
+ *
+ * It used to carry a faint middle dot, on the grounds that an empty box
+ * reads as "nothing here". The dot was worse: at this size two of them side
+ * by side read as a character, and the run of spaces looked like a run of
+ * punctuation rather than like paper you cross.
+ *
+ * What the dot was really there for is counting, and a hairline between
+ * cells does that better. Without it a run of tinted cells fuses into one
+ * bar and eighteen spaces look exactly like fifteen; with it the cells stay
+ * countable at a glance, and the five-marks still cut the run into fives.
+ */
 .run.gap .c {
   background: var(--space);
-  position: relative;
-}
-.run.gap .c::after {
-  content: '\00b7';
-  position: absolute; inset: 0;
-  display: grid; place-items: center;
-  opacity: 0.45;
+  box-shadow: inset -1px 0 0 var(--raised);
 }
 .run .c.five { box-shadow: inset 1px 0 0 var(--ink); }
+/* Both, where a five-mark lands inside a run of spaces: the divider is the
+   grid, the five-mark is the count, and neither replaces the other. */
+.run.gap .c.five {
+  box-shadow: inset 1px 0 0 var(--ink), inset -1px 0 0 var(--raised);
+}
 .run .c.past { opacity: 0.3; }
 
 /* The typing cursor only appears while something is actually counting
@@ -655,7 +721,6 @@ ol.setup span { display: block; color: var(--faint); font-size: 12px; }
 body.counting .run .c.hit {
   background: var(--ink); color: var(--paper);
 }
-body.counting .run.gap .c.hit::after { opacity: 0.5; }
 
 /* ── nothing to type yet ─────────────────────────────────────── */
 /*
@@ -667,7 +732,6 @@ body.counting .run.gap .c.hit::after { opacity: 0.5; }
 .blank { display: none; color: var(--faint); font-size: 12px; margin: 0;
          text-align: center; padding: 2.5rem 1rem; }
 body.empty .blank { display: block; }
-body.empty #stepSetup,
 body.empty #stepSheet { display: none; }
 
 /*
@@ -678,16 +742,13 @@ body.empty #stepSheet { display: none; }
  * not a job to do.
  */
 body.ghost #mini { opacity: .55; }
-body.ghost #stepSetup,
 body.ghost #stepSheet { display: none; }
 
 /* ── full screen ─────────────────────────────────────────────── */
 
 body.full > header,
 body.full .compose,
-body.full #stepSetup,
-body.full footer,
-body.full .lede-sm { display: none; }
+body.full footer { display: none; }
 body.full main { max-width: none; padding: 0; }
 body.full #stepSheet { padding: 0.8rem clamp(0.6rem, 2vw, 2rem); border: 0; }
 body.full h2 { margin-bottom: 0.9rem; }
@@ -724,8 +785,8 @@ dialog menu { display: flex; justify-content: flex-end; gap: 1.3rem;
 }
 
 @media print {
-  .bar, footer, .compose, .controls, .progress, #ear, h2 .tools,
-  .lede-sm { display: none; }
+  .bar, footer, .compose, .controls, .progress, #ear,
+  h2 .tools { display: none; }
   .ln, .ln.now { opacity: 1; color: #000; background: none; }
   .sheet { border: 0; }
 }

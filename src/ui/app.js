@@ -2097,15 +2097,17 @@ function draw() {
     return;
   }
 
-  const steps = instructions();
+  /*
+   * Only the steps that are not positions. Where the stop goes and how far
+   * to wind on are drawn on the scale and the feed instead — see
+   * drawMachineSet() — and printing the same numbers underneath as a
+   * sentence would be the same fact twice, in the form that is harder to
+   * act on. The PDF asks for the whole list, because paper has no ruler.
+   */
+  const steps = instructions({ positional: false });
   $('instructions').innerHTML = steps.map(
     ([a, b]) => `<li><b>${a}</b><span>${b}</span></li>`).join('');
-
-  // The summary carries the settings itself, so a shut panel still answers
-  // "what did it say again?" without being opened.
-  $('setupSummary').textContent = steps.length
-    ? `Before you start — ${steps.map(([a]) => a.toLowerCase()).join(', ')}`
-    : 'Before you start — set the machine up';
+  drawMachineSet();
 
   /*
    * From here down the panel is about typing, so it is about one sheet.
@@ -2196,7 +2198,21 @@ function drawSheetPick() {
     : '';
 }
 
-function instructions() {
+/**
+ * The setup steps, in words.
+ *
+ * `positional` is the difference between the two places this is read. On
+ * screen the stop, the wind-on, the spacing and the paper guide are drawn
+ * as places — on the scale above the sheet and the feed beside it — so
+ * repeating them as sentences underneath would be the same numbers twice,
+ * in the form that is harder to act on. The PDF has no ruler, so it takes
+ * the lot.
+ *
+ * What is left either way are the steps a ruler cannot draw: which way the
+ * sheet goes in, which way to turn it at the end, how a composite is laid
+ * out, whether this sheet is typed at all.
+ */
+function instructions({ positional = true } = {}) {
   const s = app.setup;
   const out = [];
   const m = app.machine;
@@ -2246,17 +2262,21 @@ function instructions() {
       `${app.lines.length} lines down. Nothing about the machine changes.`]);
   }
 
-  if (s.paperGuide) {
+  if (positional && s.paperGuide) {
     out.push([`Paper guide to ${s.paperGuide}`,
       'Lay the sheet against it. This shifts the whole sheet along the scale.']);
   }
-  out.push([`Left margin stop to ${s.left}`,
-    'The carriage returns here every line, so leading spaces are never typed.']);
-  if (s.advance) {
+  if (positional) {
+    out.push([`Left margin stop to ${s.left}`,
+      'The carriage returns here every line, so leading spaces are never typed.']);
+  }
+  if (positional && s.advance) {
     out.push([`Wind on ${s.advance} lines`,
       'Feed the paper without typing.']);
   }
-  out.push(['Line spacing 1', 'Anything wider breaks the picture.']);
+  if (positional) {
+    out.push(['Line spacing 1', 'Anything wider breaks the picture.']);
+  }
 
   const tally = inkTally(app.lines, app.colours);
   if (tally.red && m.twoColour) {
@@ -2282,6 +2302,85 @@ function instructions() {
         `first, then turn the whole thing.` : advice.long]);
   }
   return out;
+}
+
+/**
+ * The machine's settings as places rather than sentences.
+ *
+ * A scale along the top and a feed down the side — the two things a
+ * typewriter shows you on the paper itself, and the two a word processor
+ * draws on its ruler. They used to be a numbered list above the sheet:
+ * "left margin stop to 7, wind on 14 lines", read once, translated onto the
+ * machine by hand, and then scrolled past forever.
+ *
+ * The scale is numbered in the machine's own scale rather than from one,
+ * which is the whole point of drawing it: the first character of every line
+ * sits under the number you set the stop to, and the last sits under the
+ * number where the bell rings. Nothing has to be counted to use it.
+ */
+function drawMachineSet() {
+  const scale = $('scale');
+  const feed = $('feed');
+  if (!scale || !feed) return;
+
+  const s = app.setup;
+  const lines = app.lines;
+  const width = Math.max(0, ...lines.map((l) => l.length));
+  if (!s || !width) {
+    scale.innerHTML = '';
+    feed.innerHTML = '';
+    return;
+  }
+
+  /*
+   * Two rows in the sheet's own grid, so a tick sits over the cell it
+   * names. Ticks every five and a rule every ten, which is how a carriage
+   * scale is engraved, and the two stops marked where they actually fall.
+   */
+  const from = s.left;
+  const nums = Array(width).fill(' ');
+  const ticks = Array(width).fill(' ');
+  const put = (at, text) => {
+    const start = Math.min(Math.max(0, at), Math.max(0, width - text.length));
+    for (let k = 0; k < text.length && start + k < width; k++) {
+      nums[start + k] = text[k];
+    }
+  };
+
+  for (let i = 0; i < width; i++) {
+    const col = from + i;
+    ticks[i] = col % 10 === 0 ? '|' : col % 5 === 0 ? '·' : ' ';
+    if (col % 10 === 0) put(i, String(col));
+  }
+  // The stops last, so they win where a ten-mark would have sat on them.
+  put(0, String(s.left));
+  if (width > 1) put(width - String(s.right).length, String(s.right));
+  ticks[0] = '▼';
+  if (width > 1) ticks[width - 1] = '▼';
+
+  scale.innerHTML =
+    `<span class="nums">${esc(nums.join(''))}</span>` +
+    `<span class="ticks">${esc(ticks.join(''))}</span>`;
+
+  /*
+   * The feed, down the side: the shaded part is paper wound past before the
+   * first line, the rest is what gets typed. Drawn in proportion, so how far
+   * down the sheet the motif starts is a thing you see rather than a number
+   * you hold in your head.
+   */
+  const fed = s.advance ?? 0;
+  const total = fed + lines.length;
+  const facts = [
+    fed ? `wind on <b>${fed}</b>` : 'no wind-on',
+    `spacing <b>1</b>`,
+  ];
+  if (s.paperGuide) facts.push(`guide <b>${s.paperGuide}</b>`);
+  if (s.marginRelease) facts.push('margin release');
+
+  feed.innerHTML =
+    `<span class="facts">${facts.map((f) => `<span>${f}</span>`).join('')}</span>` +
+    `<span class="rule" style="--fed:${total ? (fed / total) * 100 : 0}%">` +
+    `<i></i></span>`;
 }
 
 const ORDINAL_WORDS = ['first', 'second', 'third', 'fourth'];
@@ -2315,10 +2414,6 @@ function go(i, scroll = true, byHand = true) {
     app.tracker.begin(strikesInLine(app.lines[i] ?? ''));
     showCount(null);
   }
-  // Moving off the first line means the paper is in and the stops are set.
-  // Folding the setup away at that moment is the one point where it is
-  // certainly finished with, and it costs a click to get back.
-  if (i > 0 && prev === 0) $('stepSetup').open = false;
   app.at = clamp(i, 0, Math.max(0, app.lines.length - 1));
   app.strike = 0;
   paint(prev);
@@ -2755,6 +2850,8 @@ function savePdf() {
     turn: app.turn,
     machine: app.machine,
     setup: app.setup,
+    // Everything, positions included: there is no scale drawn on a sheet
+    // of paper you carry to the machine.
     instructions: instructions(),
     tally: inkTally(app.motif, app.motifColours),
     runsOf,

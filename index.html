@@ -524,19 +524,22 @@
   </div>
 
   <!--
-    Setting the machine up used to be a section of its own, above this one.
-    That put a wall of numbers between seeing the picture and typing it, and
-    it was read once and then scrolled past forever. It belongs here: open
-    when you arrive, shut once the paper is in, one click away afterwards.
+    What is left of the setup list: the steps that are not positions.
+
+    Where to set the stop, how far to wind on, what spacing to use and where
+    to put the paper guide are all *places*, and they are drawn as places
+    now - on the scale above the sheet and the feed beside it, the way a
+    typewriter shows them on the paper and a word processor shows them on a
+    ruler. Reading a number out of a sentence and then finding it on the
+    machine is a translation nobody should have to do twice.
+
+    These are the ones a ruler cannot draw: which way the sheet goes in,
+    which way to turn it at the end, how a composite is laid out. They are
+    actions, so they stay sentences. The PDF still carries the whole list,
+    because a sheet of paper at the machine has no ruler on it - see
+    instructions() in app.js.
   -->
-  <details id="stepSetup" open>
-    <summary id="setupSummary">Before you start — set the machine up</summary>
-    <p class="lede-sm">
-      Set these once, then you never think about them again. The margin stop
-      does the centring for you — that is why you never type leading spaces.
-    </p>
-    <ol class="setup" id="instructions"></ol>
-  </details>
+  <ol class="setup" id="instructions"></ol>
 
   <div class="progress"><i id="bar"></i></div>
   <div class="controls">
@@ -586,7 +589,26 @@
     </p>
   </div>
 
-  <div class="sheet" id="sheet"></div>
+  <!--
+    The machine's own settings, drawn where you are looking anyway.
+
+    The scale runs along the top in the machine's own numbering, starting at
+    the margin stop, so the first character of every line sits under the
+    number you set the stop to and the last sits under the number where the
+    bell will ring. The feed runs down the side: the shaded part is the
+    paper you wind past before the first line, the rest is what you type.
+
+    Both are in the sheet's own grid, which is why they can be trusted -
+    the scale is the same monospace column width as the characters under
+    it, so a tick is over the cell it names rather than near it.
+  -->
+  <div class="typing" id="typing">
+    <div class="feed" id="feed"></div>
+    <div class="typing-main">
+      <div class="scale" id="scale" aria-hidden="true"></div>
+      <div class="sheet" id="sheet"></div>
+    </div>
+  </div>
 </section>
 
 </main>

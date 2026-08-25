@@ -168,8 +168,13 @@ await check('facts are reported', () => {
   assert(/keystrokes/.test(t), `facts read: ${t}`);
 });
 
-await check('setup instructions are produced', () => {
-  assert($('instructions').children.length > 0, 'no instructions');
+await check('the machine is set up, on the scale and the feed', () => {
+  // An upright single sheet with no turn has no steps left to spell out:
+  // the stop, the wind-on and the spacing are all places, and places are
+  // drawn. So what is checked is that they were drawn, not that a list of
+  // sentences exists.
+  assert($('scale').textContent.trim(), 'no scale above the sheet');
+  assert($('feed').textContent.trim(), 'no feed beside the sheet');
 });
 
 console.log('navigation');
@@ -810,7 +815,7 @@ await check('the instructions come back once there is something to type', async 
   assert(!window.document.body.classList.contains('empty'), 'still empty');
   assert(!window.document.body.classList.contains('ghost'),
     'a typed word is still marked as a ghost');
-  assert($('instructions').children.length > 0, 'no instructions');
+  assert($('scale').textContent.trim(), 'the scale did not come back');
   assert(/keystrokes/.test($('facts').textContent), 'no facts');
 });
 
@@ -1380,10 +1385,10 @@ await check('the typing panel works one sheet at a time', async () => {
 
 await check('each sheet is set up for itself, and the joins line up', async () => {
   // The second sheet across starts at its own column 0 and the paper guide
-  // carries the difference — which is what makes the two halves meet.
-  const stop = () => [...$('instructions').children]
-    .map((li) => li.querySelector('b').textContent)
-    .find((t) => /Left margin stop/.test(t));
+  // carries the difference — which is what makes the two halves meet. Read
+  // off the scale, because that is where the stop is stated now.
+  const stop = () => $('scale').querySelector('.nums').textContent.trim()
+    .split(/\s+/)[0];
 
   picks()[0].click();
   await wait(400);
@@ -1984,34 +1989,60 @@ await check('a three-dimensional word carries its projection marks', async () =>
 
 console.log('setting up sits with the typing');
 
-await check('the setup panel lives inside the typing step', () => {
-  const setup = $('stepSetup');
-  assert(setup, 'no setup panel');
-  assert(setup.tagName === 'DETAILS', `it is a ${setup.tagName}, not foldable`);
-  assert($('stepSheet').contains(setup),
-    'still a section of its own above the typing');
+await check('the places are drawn as places, not read out as numbers',
+  async () => {
+    /*
+     * Where the stop goes and how far to wind on used to be a numbered list
+     * above the sheet — read once, translated onto the machine by hand, and
+     * scrolled past forever. They are the scale along the top and the feed
+     * down the side now, which is where a typewriter shows them on the paper
+     * and a word processor shows them on a ruler.
+     */
+    [...window.document.querySelectorAll('.tab')]
+      .find((t) => t.dataset.tab === 'text').click();
+    $('letterText').value = 'HI';
+    $('letterText').dispatchEvent(new window.Event('input'));
+    await wait(400);
+
+    const scale = $('scale').textContent;
+    assert(scale.trim(), 'no scale above the sheet');
+    assert(/▼/.test(scale), `the stops are not marked: "${scale}"`);
+    assert(/\d/.test(scale), 'the scale carries no numbers');
+    assert($('feed').textContent.trim(), 'no feed beside the sheet');
+
+    // And the same numbers are not also spelled out underneath.
+    const steps = [...$('instructions').children].map((e) => e.textContent);
+    assert(!steps.some((t) => /margin stop to/i.test(t)),
+      `the stop is given twice: ${steps.join(' | ')}`);
+    assert(!steps.some((t) => /wind on/i.test(t)),
+      `the wind-on is given twice: ${steps.join(' | ')}`);
+  });
+
+await check('the scale is numbered in the machine\'s own scale', async () => {
+  /*
+   * The whole point of drawing it. The first character of every line sits
+   * under the number you set the stop to, so nothing has to be counted to
+   * use it — a scale numbered from one would be a second coordinate system
+   * to hold in your head while looking at the machine's.
+   */
+  const nums = $('scale').querySelector('.nums').textContent;
+  const ticks = $('scale').querySelector('.ticks').textContent;
+  assert(ticks.startsWith('▼'), `the left stop is not marked: "${ticks}"`);
+  assert(/^\s*\d/.test(nums), `the scale does not open with a number: "${nums}"`);
+  assert(nums.length === ticks.length,
+    `the two rows are ${nums.length} and ${ticks.length} wide, so they cannot line up`);
 });
 
-await check('a shut panel still says what the settings were', async () => {
-  [...window.document.querySelectorAll('.tab')]
-    .find((t) => t.dataset.tab === 'text').click();
-  $('letterText').value = 'HI';
-  $('letterText').dispatchEvent(new window.Event('input'));
-  await wait(400);
-
-  const summary = $('setupSummary').textContent;
-  assert(/margin stop to \d+/i.test(summary),
-    `the summary carries no numbers: "${summary}"`);
-});
-
-await check('it folds away once the first line is done', async () => {
-  $('stepSetup').open = true;
-  $('restart').click();
-  await wait(60);
-  $('next').click();
-  await wait(60);
-
-  assert(!$('stepSetup').open, 'still open after moving off the first line');
+await check('the feed shows how much paper is wound past', async () => {
+  const rule = $('feed').querySelector('.rule');
+  assert(rule, 'nothing drawn for the wind-on');
+  assert(rule.querySelector('i'), 'the wound-past part is not drawn');
+  const pct = parseFloat((rule.getAttribute('style') ?? '')
+    .replace(/^.*--fed:\s*/, ''));
+  assert(Number.isFinite(pct) && pct >= 0 && pct < 100,
+    `the shaded head is "${rule.getAttribute('style')}" of the feed`);
+  assert(/wind on|no wind-on/.test($('feed').textContent),
+    `the feed does not say what it is: "${$('feed').textContent}"`);
 });
 
 console.log('measuring the machine');
