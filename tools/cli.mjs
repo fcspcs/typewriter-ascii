@@ -23,12 +23,17 @@
 import fs from 'node:fs';
 import { PROFILES, profileById } from '../src/profiles/index.js';
 import {
-  makeTypeable, standIns, PAPERS, paperById, setUp, charset, textArea, landscape,
+  makeTypeable, standIns, PAPERS, paperById, setUp, charset, textArea,
   sheetGrid,
 } from '../src/core/machine.js';
 import { colourMap, inkTally, parseRows, runsOf, runsToText } from '../src/core/runs.js';
 import { letter, tonesOf, marksOf, STYLES } from '../src/core/lettering.js';
+import { parseFlf, flfLetter } from '../src/core/figlet.js';
 import { toneRamp } from '../src/core/ink.js';
+import { isTurned, planningGrid, turnRows, turnAdvice } from '../src/core/turn.js';
+import {
+  tiled, isComposite, unitOf, sheetCount, splitMotif, layoutAdvice,
+} from '../src/core/compose.js';
 import { buildSheetPdf } from '../src/core/pdf.js';
 import { tableAtlas } from '../src/core/glyphs.js';
 import {
@@ -78,9 +83,18 @@ options
   --machine <id>  default olympia-sm7
   --paper <id>    default a4
   --align <centre|topleft>
-  --orientation <upright|sideways>   which way the sheet goes in
+  --turn <none|left|right>   which way you turn the finished sheet to look
+                             at it. The paper always goes in upright; a
+                             sideways motif is typed lying down.
+  --across <1-4>  spread the motif over this many sheets side by side
+  --down <1-4>    …and this many rows of them. Each sheet is typed on its
+                  own, with its own stops; lay them out afterwards.
   --red <lines>   e.g. 0-15,20 — put these lines on the red ribbon
   --style <id>    for 'text'; \\n in the word starts a second line
+  --flf <path>    for 'text': set the word in a FIGlet font file instead.
+                  Read from your disk, never bundled - the collection's
+                  licences are a patchwork. Characters the machine lacks
+                  are typed as their stand-ins, and named.
   --pdf <path>    also write a printable PDF
   --json          machine-readable output on stdout
   --quiet         only the setup summary
@@ -152,23 +166,45 @@ const paperId = String(opt('paper', 'a4'));
 if (!PAPERS.some((p) => p.id === paperId)) {
   die(`No paper called "${paperId}". Try: cli.mjs papers`);
 }
-const paper = paperById(paperId);
+const basePaper = paperById(paperId);
 
 const align = opt('align', 'centre');
 
 /*
- * Which way the sheet goes is stated, not worked out.
+ * Which way the finished sheet gets turned. Never which way it goes in.
  *
- * `--landscape` used to mean "turn it if that comes out shorter", so the
- * same command could produce an upright sheet or a turned one depending on
- * the motif — and the column ceiling moved with it. Now it is a choice, and
- * the old flag is the obvious shorthand for having made it.
+ * Two older flags land here. `--landscape` meant "turn it if that comes out
+ * shorter", so the same command could produce an upright sheet or a turned
+ * one depending on the motif. `--orientation sideways` replaced it with a
+ * stated choice, but stated it about the paper — feed the sheet in on its
+ * long edge — which is 297 mm of writing line on a machine with 249. Both
+ * meant "I want this read sideways", and both now mean a left turn.
  */
-const orientation = String(opt('orientation', opt('landscape') ? 'sideways' : 'upright'));
-if (!['upright', 'sideways'].includes(orientation)) {
-  die(`--orientation wants upright or sideways — got "${orientation}".`);
+const legacy = String(opt('orientation', '')) === 'sideways' || opt('landscape');
+const turn = String(opt('turn', legacy ? 'left' : 'none'));
+if (!['none', 'left', 'right'].includes(turn)) {
+  die(`--turn wants none, left or right — got "${turn}".`);
 }
-const sheet = orientation === 'sideways' ? landscape(paper) : paper;
+/*
+ * How much paper, and how it is arranged.
+ *
+ * `sheet` is what the motif is laid out on — one piece of paper, or several
+ * described as one. What actually goes in the machine is always a single
+ * sheet: see unitOf(), and src/core/compose.js for why the composite's grid
+ * is the sheet's grid multiplied rather than its millimetres divided.
+ */
+const across = Math.round(num('across', 1));
+const downTiles = Math.round(num('down', 1));
+for (const [flag, v] of [['across', across], ['down', downTiles]]) {
+  if (!(v >= 1 && v <= 4)) die(`--${flag} wants 1 to 4 — got "${v}".`);
+}
+const sheet = tiled(basePaper, across, downTiles);
+const paper = unitOf(sheet);
+
+// The region a motif is laid out against: the sheet's, or the sheet's turned
+// on its side if that is how it will be read. See src/core/turn.js.
+const planRoom = planningGrid(textArea(sheet, machine), turn);
+const planEdge = planningGrid(sheetGrid(sheet, machine), turn);
 
 /* ── pictures ────────────────────────────────────────────────── */
 
@@ -203,9 +239,12 @@ function picturePaper() {
   // The margins are where the motif normally sits; the edge of the paper is
   // the only hard stop. Asking for more than the margins hold is a note from
   // setUp(), not a refusal, so the ceiling here is the sheet.
+  //
+  // `--width` is the picture's width *as you look at it*, which on a turned
+  // sheet is counted down the paper — hence the planning grid rather than
+  // the sheet. A4 at pica gives 82 upright and 70 turned.
   const room = textArea(sheet, machine);
-  const edge = sheetGrid(sheet, machine);
-  return { room, maxCols: Math.min(num('width', 60), edge.cols) };
+  return { room, maxCols: Math.min(num('width', 60), planEdge.cols) };
 }
 
 /**
@@ -267,6 +306,7 @@ function pictureSettings() {
     mode,
     room,
     maxCols,
+    turn,
     invert: invert === 'auto' ? 'auto' : invert === 'yes',
     detail: num('detail', 45) / 100,
     contrast: num('contrast', 130) / 100,
@@ -324,7 +364,16 @@ function convertPicture(path) {
     },
   });
 
-  const grid = fitGrid(set.maxCols, set.room.rows, field.w, field.h,
+  /*
+   * Fitted in the machine's frame, always. prepare() has already laid the
+   * picture on its side if it is going to be read that way, so what is left
+   * here is the ordinary upright question — and the two budgets are the
+   * planning grid's, put back the right way round.
+   */
+  const budget = isTurned(turn)
+    ? { cols: set.room.cols, rows: Math.min(set.maxCols, sheetGrid(sheet, machine).rows) }
+    : { cols: set.maxCols, rows: set.room.rows };
+  const grid = fitGrid(budget.cols, budget.rows, field.w, field.h,
                        cellAspect(machine));
   const tones = cellTones(field, grid.cols, grid.rows);
   const live = tones.filter((t) => t >= BLANK).length;
@@ -543,7 +592,7 @@ if (cmd === 'image') {
   if (!path) die('Which file?');
   const raw = fs.readFileSync(path, 'utf8').replace(/\t/g, '    ');
   const { text, dropped } = makeTypeable(raw, machine);
-  lines = text.split('\n');
+  lines = turnRows(text.split('\n'), turn, new Set(charset(machine)));
   if (dropped.size) {
     console.error(`note: ${[...dropped.keys()].join(' ')} cannot be typed on ` +
       `this machine and were left blank`);
@@ -551,6 +600,41 @@ if (cmd === 'image') {
 } else if (cmd === 'text') {
   const word = args[1];
   if (!word) die('Which word?');
+
+  const flfPath = opt('flf', '');
+  if (flfPath) {
+    /*
+     * An imported font is the paste path with a typesetter in front: the
+     * glyphs are whatever the file says, so the output is treated like
+     * foreign art - set exactly, then swap what the machine lacks and
+     * blank what has no stand-in, saying so either way. Table stand-ins
+     * only, out here: the measured half of the engine needs a canvas.
+     */
+    const font = parseFlf(fs.readFileSync(flfPath, 'utf8'),
+      flfPath.replace(/^.*[\\\/]/, '').replace(/\.flf$/i, ''));
+    const fset = flfLetter(font, word.replace(/\\n/g, '\n'),
+      { maxCols: planRoom.cols });
+    if (fset.unknown.size) {
+      console.error(`note: ${font.name} has no ` +
+        `${[...fset.unknown].join(' ')} - left blank`);
+    }
+    const { swaps, missing } = standIns(
+      new Set(fset.lines.join('').replace(/ /g, '')),
+      { have: charset(machine) });
+    if (swaps.size) {
+      console.error(`note: typing ` +
+        `${[...swaps].map(([a, b]) => `${a} as ${b}`).join(', ')} - the ` +
+        `${machine.name} has no ${[...swaps.keys()].join(' ')}`);
+    }
+    if (missing.length) {
+      console.error(`note: no stand-in for ${missing.join(' ')} on the ` +
+        `${machine.name} - left blank`);
+    }
+    const gone = new Set(missing);
+    lines = turnRows(fset.lines.map((row) => [...row]
+      .map((c) => swaps.get(c) ?? (gone.has(c) ? ' ' : c))
+      .join('').replace(/\s+$/, '')), turn, new Set(charset(machine)));
+  } else {
   const style = opt('style', 'block');
   if (!STYLES[style]) {
     die(`Unknown style: ${style}. One of: ${Object.keys(STYLES).join(' ')}`);
@@ -581,9 +665,10 @@ if (cmd === 'image') {
   // Wrapped to the margins of the chosen paper, like the page does. Without
   // it "GUTEN MORGEN LYON" in Block is 101 columns on an A4 that holds 82,
   // and the only output is a refusal.
-  lines = letter(word.replace(/\\n/g, '\n'),
-    { style, tones, maxCols: textArea(sheet, machine).cols,
-      substitutes: swaps });
+  lines = turnRows(letter(word.replace(/\\n/g, '\n'),
+    { style, tones, maxCols: planRoom.cols,
+      substitutes: swaps }), turn, new Set(charset(machine)));
+  }
 } else {
   die(`Unknown command: ${cmd}`);
 }
@@ -598,34 +683,107 @@ if (!lines.length) die('Nothing to type.');
 const width = Math.max(...lines.map((l) => l.length));
 const colours = colourMap(lines, { rows: parseRows(opt('red', ''), lines.length) });
 const tally = inkTally(lines, colours);
-const setup = setUp(width, lines.length, sheet, machine, align);
+/*
+ * One plan, however many pieces of paper.
+ *
+ * The picture is placed once, on the whole composite, and each sheet is told
+ * where its piece goes — a sheet that centred its own slice would make the
+ * picture jump at every join. For a single sheet this is a list of one and
+ * behaves exactly as setUp() did.
+ */
+const plan = splitMotif({ lines, colours, paper: sheet, machine, align });
+const typed = plan.sheets.filter((sh) => !sh.blank);
+const composite = isComposite(sheet);
+const setup = typed[0]?.setup
+  ?? setUp(width, lines.length, paper, machine, align);
 
+const advice = turnAdvice(turn);
 const instructions = [];
-if (setup.paperGuide) {
-  instructions.push([`Paper guide to ${setup.paperGuide}`,
-    'Lay the sheet against it; this shifts the whole sheet along the scale.']);
+
+/*
+ * Laying the sheets out comes first, and it is not a machine step at all:
+ * it is what the sheets are *for*, and somebody who does not know that sheet
+ * 2 goes to the right of sheet 1 has no way to tell whether its margin stop
+ * is wrong.
+ */
+if (composite) instructions.push(...layoutAdvice(sheet, machine));
+if (advice) {
+  instructions.push([`Feed the ${paper.name} in upright`,
+    `As usual, short edge first. The motif is typed lying down — ${width} ` +
+    `columns across and ${lines.length} lines down. Nothing about the ` +
+    `machine changes.`]);
 }
-instructions.push([`Left margin stop to ${setup.left}`,
-  'The carriage returns here every line, so leading spaces are never typed.']);
-if (setup.advance) {
-  instructions.push([`Wind on ${setup.advance} lines`, 'Feed the paper without typing.']);
+
+/*
+ * Then the stops, once per piece of paper.
+ *
+ * Every sheet of a composite is a separate visit to the machine with its own
+ * numbers, and that is exactly what makes the joins line up — so printing
+ * the first sheet's stops and calling them "the" stops would be wrong on
+ * every sheet but one.
+ */
+for (const sh of typed) {
+  // Short here, because the full name is the heading of the step just
+  // above it and repeating it on every line is how a list stops being read.
+  const head = composite ? `Sheet ${sh.index + 1}: ` : '';
+  if (composite) {
+    instructions.push([`Take ${sh.name}`,
+      `Its piece of the picture is ` +
+      `${Math.max(0, ...sh.lines.map((l) => l.length))} columns by ` +
+      `${sh.lines.length} lines.`]);
+  }
+  if (sh.setup.paperGuide) {
+    instructions.push([`${head}paper guide to ${sh.setup.paperGuide}`,
+      'Lay the sheet against it; this shifts the whole sheet along the scale.']);
+  }
+  instructions.push([`${head}left margin stop to ${sh.setup.left}`,
+    'The carriage returns here every line, so leading spaces are never typed.']);
+  if (sh.setup.advance) {
+    instructions.push([`${head}wind on ${sh.setup.advance} lines`,
+      'Feed the paper without typing.']);
+  }
+  if (sh.setup.marginRelease) {
+    instructions.push([`${head}margin release ready`,
+      'The motif starts further left than the stop can reach.']);
+  }
 }
+
 instructions.push(['Line spacing 1', 'Anything wider breaks the picture.']);
 if (tally.red && machine.twoColour) {
   instructions.push(['Ribbon to black',
     `${tally.black} strikes in black, ${tally.red} in red. Do all the black ` +
     `first; after switching, strike two or three times on scrap.`]);
 }
-if (setup.marginRelease) {
-  instructions.push(['Margin release ready',
-    'The motif starts further left than the stop can reach.']);
+if (advice) {
+  // Last, because it is the only step that happens after the typing — and on
+  // a composite it is the laid-out picture that turns, not each sheet.
+  instructions.push([
+    composite ? `When every sheet is done, ${advice.short}`
+      : `When it is done, ${advice.short}`,
+    composite ? `${advice.long} Lay all ${sheetCount(sheet)} sheets out ` +
+      `first, then turn the whole thing.` : advice.long]);
 }
 
-// setUp() reports { level, text } so the interface can tell an impossibility
-// from an inconvenience. Interpolating the object printed `warning:
-// [object Object]` and lost the message entirely - including "this will not
-// fit on A4", which is the one warning that matters.
-const warnings = setup.warnings.map((w) => (typeof w === 'string'
+/*
+ * Two sources, and they answer different questions.
+ *
+ * The plan speaks for the picture and the paper — does it fit, do the
+ * margins move, is a small motif being cut across a join. Each sheet speaks
+ * for the machine in front of you: what the carriage reaches, where the bell
+ * rings. On one sheet the split is invisible; on a composite the first is
+ * asked once and the second once per sheet, which is the only arrangement
+ * that is true.
+ *
+ * They are also normalised here, because setUp() reports { level, text } and
+ * interpolating the object printed `note: [object Object]`, losing the one
+ * message that mattered.
+ */
+const warnings = [
+  ...plan.warnings,
+  ...typed.flatMap((sh) => (sh.setup.warnings ?? []).map((w) => (composite
+    ? { ...w, text: `Sheet ${sh.index + 1}: ${typeof w === 'string' ? w : w.text}` }
+    : w))),
+].map((w) => (typeof w === 'string'
   ? { level: 'note', text: w }
   : { level: w.level ?? 'note', text: w.text }));
 
@@ -635,7 +793,9 @@ let wrotePdf = null;
 const pdfPath = opt('pdf');
 if (typeof pdfPath === 'string') {
   const text = buildSheetPdf({
-    lines, colours, paper: sheet, machine, setup, instructions, tally, runsOf,
+    lines, colours, paper, machine, setup, instructions, tally, runsOf,
+    turn,
+    sheets: plan.sheets,
     title: cmd === 'text' ? args[1] : 'Typewriter ASCII',
   });
   fs.writeFileSync(pdfPath, Buffer.from(text, 'latin1'));
@@ -649,12 +809,28 @@ if (JSON_OUT) {
     ok: true,
     size: { width, height: lines.length },
     keystrokes: { total: tally.total, black: tally.black, red: tally.red },
-    paper: { id: sheet.id, name: sheet.name, landscape: Boolean(sheet.landscape) },
+    paper: {
+      id: sheet.id, name: sheet.name, turn,
+      across: plan.across, down: plan.down, sheets: sheetCount(sheet),
+    },
     machine: { id: machine.id, name: machine.name },
     setup: {
       left: setup.left, paperGuide: setup.paperGuide ?? null,
       advance: setup.advance, marginRelease: Boolean(setup.marginRelease),
     },
+    // Every piece of paper, with its own numbers and its own lines. `setup`
+    // above is the first of these, kept as it was so that a reader of a
+    // single sheet's output sees exactly what they always saw.
+    sheets: plan.sheets.map((sh) => ({
+      name: sh.name, col: sh.col, row: sh.row, blank: sh.blank,
+      at: sh.at,
+      setup: sh.setup && {
+        left: sh.setup.left, paperGuide: sh.setup.paperGuide ?? null,
+        advance: sh.setup.advance,
+        marginRelease: Boolean(sh.setup.marginRelease),
+      },
+      lines: sh.lines,
+    })),
     warnings,
     instructions: instructions.map(([heading, body]) => ({ heading, body })),
     notes: pictureNotes,
@@ -663,7 +839,12 @@ if (JSON_OUT) {
 } else {
   console.log(`${width} × ${lines.length} characters, ${tally.total} keystrokes` +
     (tally.red ? ` (${tally.red} red)` : '') +
-    `, ${sheet.name}${sheet.landscape ? ' sideways' : ''}, ${machine.name}`);
+    `, ${sheet.name}${isTurned(turn) ? `, turned ${turn}` : ''}, ${machine.name}`);
+  if (isComposite(sheet)) {
+    const used = plan.sheets.filter((sh) => !sh.blank).length;
+    console.log(`${sheetCount(sheet)} sheets, ${used} of them typed on. ` +
+      `Each has its own stops — see the PDF, or --json for all of them.`);
+  }
   for (const w of warnings) {
     console.log(`${w.level === 'stop' ? 'CANNOT' : 'note'}: ${w.text}`);
   }
@@ -672,11 +853,16 @@ if (JSON_OUT) {
   instructions.forEach(([h, b], i) => console.log(`${i + 1}. ${h}\n   ${b}`));
 
   if (!opt('quiet')) {
-    console.log('\nWhat to type — a number means repeat, _ is a space:\n');
-    lines.forEach((line, i) => {
-      const n = String(i + 1 + setup.advance).padStart(3);
-      console.log(`${n}  ${runsToText(line, colours[i])}`);
-    });
+    console.log('\nWhat to type — a number means repeat, _ is a space:');
+    for (const sh of typed) {
+      // Headed per sheet, because four sheets produce four listings that
+      // look alike and the line numbers all start again from one.
+      console.log(composite ? `\n${sh.name}` : '');
+      sh.lines.forEach((line, i) => {
+        const n = String(i + 1 + sh.setup.advance).padStart(3);
+        console.log(`${n}  ${runsToText(line, sh.colours[i])}`);
+      });
+    }
   }
   if (wrotePdf) console.log(`\nwrote ${wrotePdf}`);
 }

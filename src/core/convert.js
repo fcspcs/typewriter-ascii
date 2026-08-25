@@ -15,6 +15,7 @@
 
 import { buildAtlas, describeCell, bestChar, charForTone } from './glyphs.js';
 import { cellWidthMm, cellHeightMm } from './machine.js';
+import { turnField } from './turn.js';
 
 /** Cell aspect: 2.54 mm wide, 4.23 mm tall for pica. */
 export function cellAspect(m) {
@@ -299,18 +300,34 @@ const LINE_ART_COVERAGE = 0.15;
  * @param {number} [o.contrast=1.3]    the Contrast slider, 1 = untouched
  * @param {string} [o.mode='shape']    'shape' | 'tone' | 'outline' | 'sentence'
  * @param {number} [o.maxCols=60]      sets the blur radius, via the cell size
+ * @param {'none'|'left'|'right'} [o.turn='none'] which way the finished sheet
+ *   will be turned to be looked at; see turn.js
  * @param {(stage: string, field: Object, extra?: Object) => void} [o.onStage]
  * @returns {{field: Object, inverted: boolean, radius: number}}
  */
 export function prepare(img, o = {}) {
   const {
     invert = 'auto', detail = 0.45, contrast: amount = 1.3,
-    mode = 'shape', maxCols = 60, onStage = null,
+    mode = 'shape', maxCols = 60, turn = 'none', onStage = null,
   } = o;
   const step = (name, field, extra) => { onStage?.(name, field, extra); return field; };
 
   let field = step('ink', toInk(img, { invert }));
   const inverted = field.inverted;
+
+  /*
+   * Lie the picture down before anything measures it.
+   *
+   * A motif planned for a turned sheet is still typed on an upright one, so
+   * from here down the picture *is* the upright picture: the blur radius,
+   * the cell aspect in fitGrid() and the shape matching all work in the
+   * machine's frame, unchanged. Turning the finished characters instead
+   * would apply the 2.54 x 4.23 mm correction along the wrong axis and match
+   * every character against a part of the picture that had moved.
+   */
+  if (turn === 'left' || turn === 'right') {
+    field = step('turn', turnField(field, turn), { turn });
+  }
 
   /*
    * Smooth before sampling: texture cannot survive a 2.5 mm cell, and

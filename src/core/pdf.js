@@ -176,50 +176,51 @@ function buildPdf(pages, title) {
  * @param {Object} a.setup      from setUp()
  * @param {[string,string][]} a.instructions
  * @param {Object} a.tally      from inkTally()
+ * @param {'none'|'left'|'right'} [a.turn] which way the finished sheet is
+ *   turned to be read. Page 1 is the sheet as it comes out of the machine
+ *   either way — the motif is already lying down by the time it gets here —
+ *   so all this does is say so on the page you read.
  * @param {(line:string, colours:string[]) => {ch:string,n:number,space:boolean,red:boolean}[]} a.runsOf
+ * @param {Array<{name: string, lines: string[], colours: string[][],
+ *   setup: Object, blank: boolean}>} [a.sheets] one entry per physical sheet
+ *   of a composite. `paper` must then be the *single* sheet — that is the
+ *   size this document is printed on, whatever size the finished picture is.
+ *   Left out, the motif is treated as one sheet, which is what it is.
  */
 export function buildSheetPdf({
   lines, colours, paper, machine, setup, instructions, tally, runsOf,
-  title = 'Typewriter ASCII',
+  turn = 'none', sheets = null, title = 'Typewriter ASCII',
 }) {
+  const turned = turn === 'left' || turn === 'right';
   const pages = [];
-
-  /* ── page 1: the sheet at true size ───────────────────────── */
-  const p1 = new Page(paper.w, paper.h);
   const cw = 25.4 / machine.cpi;
   const ch = 25.4 / machine.lpi;
 
-  // Where the motif actually lands on the sheet.
-  const x0 = (setup.left - (setup.paperGuide ?? 0)) * cw;
-  const y0 = (setup.advance ?? 0) * ch;
+  /*
+   * One sheet or many, the work below is the same work.
+   *
+   * A composite is not a different kind of document — it is this document,
+   * once per piece of paper, because every piece of paper is a separate
+   * visit to the machine with its own stops and its own line numbering. So
+   * the single-sheet case is simply a list of one, and there is no second
+   * code path to keep in step with the first.
+   */
+  const parts = (sheets ?? [{ name: paper.name, lines, colours, setup }])
+    .filter((sh) => !sh.blank && sh.lines?.length && sh.setup);
 
-  lines.forEach((line, r) => {
-    const y = y0 + (r + 1) * ch;
-    if (y > paper.h - 4) return;
-    // Draw run by run, so red really is red.
-    let col = 0;
-    for (const run of runsOf(line, colours?.[r])) {
-      if (!run.space) {
-        const x = x0 + col * cw;
-        // Courier at this size is 0.6 em wide; solve for the cell width.
-        p1.ops.push(
-          `BT ${run.red ? '0.66 0.20 0.16 rg' : '0 g'} /F2 ` +
-          `${(cw / 0.6 * PT_PER_MM).toFixed(2)} Tf ` +
-          `1 0 0 1 ${(x * PT_PER_MM).toFixed(2)} ` +
-          `${(p1.h - y * PT_PER_MM).toFixed(2)} Tm ` +
-          `(${toWinAnsi(run.ch.repeat(run.n))}) Tj ET`);
-      }
-      col += run.n;
-    }
-  });
-  pages.push(p1);
+  for (const part of parts) {
+    pages.push(truePage(part, { paper, machine, cw, ch, runsOf,
+      label: sheets ? part.name : null }));
+  }
 
-  /* ── page 2: setting up ───────────────────────────────────── */
+  /* ── the setting-up page ──────────────────────────────────── */
+
   const p2 = new Page(paper.w, paper.h);
   let y = 20;
   p2.text(20, y, title, { size: 13, font: 'F1' });
   y += 7;
-  p2.text(20, y, `${machine.name}  ${machine.cpi} cpi  ${paper.name}`,
+  p2.text(20, y, `${machine.name}  ${machine.cpi} cpi  ${paper.name}` +
+    (turned ? `  turned ${turn}` : ''),
     { size: 8, font: 'F1', grey: 0.45 });
   y += 4;
   p2.line(20, y, paper.w - 20, y);
@@ -230,6 +231,17 @@ export function buildSheetPdf({
     `${tally.total} keystrokes` + (tally.red ? `, ${tally.red} in red` : ''),
     { size: 9, font: 'F1' });
   y += 10;
+
+  // Said once, plainly, on the page somebody has beside the machine. Page 1
+  // is the sheet lying down, which looks like a mistake until you know it
+  // is not one.
+  if (turned) {
+    p2.text(20, y, `Planned sideways: the sheet goes in upright and the ` +
+      `motif is typed lying down. Turn it ${turn} when it is finished. ` +
+      `Page 1 shows it as the machine leaves it.`,
+      { size: 8.5, font: 'F1', grey: 0.35 });
+    y += 9;
+  }
 
   instructions.forEach(([head, body], i) => {
     p2.text(20, y, `${i + 1}.`, { size: 9, font: 'F3' });
@@ -257,12 +269,59 @@ export function buildSheetPdf({
   }
   pages.push(p2);
 
-  /* ── page 3+: the typing sheet ────────────────────────────── */
-  for (const sheet of typingSheets({ lines, colours, paper, setup, runsOf })) {
-    pages.push(sheet);
+  /* ── the typing sheets, one run of them per piece of paper ── */
+  for (const part of parts) {
+    for (const page of typingSheets({
+      lines: part.lines, colours: part.colours, paper, setup: part.setup,
+      runsOf, label: parts.length > 1 ? part.name : null,
+    })) {
+      pages.push(page);
+    }
   }
 
   return buildPdf(pages, title);
+}
+
+/**
+ * One physical sheet at true size, exactly where the ink will land.
+ *
+ * `left - paperGuide` rather than `left`, and that is the whole reason this
+ * arithmetic is not just `left`: the paper guide slides the sheet along the
+ * scale, so the margin stop's number is a position on the carriage and the
+ * difference between the two is the position on the paper. Getting that
+ * wrong on a composite would shift one sheet's piece of the picture against
+ * its neighbours, which is the one error a join shows up immediately.
+ */
+function truePage(part, { paper, machine, cw, ch, runsOf, label }) {
+  const page = new Page(paper.w, paper.h);
+  const { setup, lines, colours } = part;
+  const x0 = (setup.left - (setup.paperGuide ?? 0)) * cw;
+  const y0 = (setup.advance ?? 0) * ch;
+
+  if (label) {
+    page.text(8, 6, label, { size: 7, font: 'F1', grey: 0.55 });
+  }
+
+  lines.forEach((line, r) => {
+    const y = y0 + (r + 1) * ch;
+    if (y > paper.h - 4) return;
+    // Draw run by run, so red really is red.
+    let col = 0;
+    for (const run of runsOf(line, colours?.[r])) {
+      if (!run.space) {
+        const x = x0 + col * cw;
+        // Courier at this size is 0.6 em wide; solve for the cell width.
+        page.ops.push(
+          `BT ${run.red ? '0.66 0.20 0.16 rg' : '0 g'} /F2 ` +
+          `${(cw / 0.6 * PT_PER_MM).toFixed(2)} Tf ` +
+          `1 0 0 1 ${(x * PT_PER_MM).toFixed(2)} ` +
+          `${(page.h - y * PT_PER_MM).toFixed(2)} Tm ` +
+          `(${toWinAnsi(run.ch.repeat(run.n))}) Tj ET`);
+      }
+      col += run.n;
+    }
+  });
+  return page;
 }
 
 /**
@@ -287,7 +346,7 @@ export function buildSheetPdf({
  *     be left blank, which reads as “nothing here”, and that is precisely the
  *     misreading that loses the line.
  */
-function typingSheets({ lines, colours, paper, setup, runsOf }) {
+function typingSheets({ lines, colours, paper, setup, runsOf, label = null }) {
   const cols = Math.max(1, ...lines.map((l) => l.length));
 
   const margin = paper.w > 150 ? 12 : 8;   // postcards need the room
@@ -317,7 +376,12 @@ function typingSheets({ lines, colours, paper, setup, runsOf }) {
     const y0 = headroom;
     const ye = y0 + slice.length * rowH;
 
-    p.text(margin, 12, 'What to type', { size: 10, font: 'F1' });
+    // Named on every page of a composite. Four sheets produce four runs of
+    // ruled paper that look identical, and "lines 1-38 of 60" is the same
+    // heading on all of them — the sheet's name is the only thing that says
+    // which pile of paper this page belongs to.
+    p.text(margin, 12, label ? `What to type — ${label}` : 'What to type',
+      { size: 10, font: 'F1' });
     p.text(paper.w - margin, 12,
       `lines ${first + 1}-${first + slice.length} of ${lines.length}`,
       { size: 7, font: 'F1', grey: 0.5, align: 'centre' });

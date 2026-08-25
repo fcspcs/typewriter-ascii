@@ -280,7 +280,12 @@ export function untypeable(text, m) {
 /* ------------------------------------------------------------------ */
 
 /**
- * The sizes, portrait. Landscape is the same sheet turned, see landscape().
+ * The sizes, as the sheet goes into the machine: upright, always.
+ *
+ * There is no turned entry and there is not going to be one. A sheet is fed
+ * in on its short edge because that is the edge the platen is as wide as;
+ * planning a motif to be *read* sideways is a different question and lives
+ * in turn.js.
  */
 export const PAPERS = [
   { id: 'a4',        name: 'A4',        w: 210, h: 297, margin: 20 },
@@ -295,71 +300,53 @@ export function paperById(id) {
 }
 
 /**
- * The same sheet, fed in on its long edge.
+ * There is no landscape() here any more, and that is the point.
  *
- * This is not a rotation of the artwork, and the difference matters. A
- * printer would have to turn every glyph ninety degrees, which a typewriter
- * cannot do: the type bars strike one way only. What a typewriter *can* do
- * is take the sheet and put it in sideways, which costs nothing and takes a
- * second. So the motif is typed exactly as it reads and the paper is what
- * turns — width and height swap, everything downstream follows.
+ * There used to be: it swapped the paper's width and height, and everything
+ * downstream believed it. A4 became 297 mm of writing line, the width slider
+ * offered 116 columns, and setUp() worked out a left stop of 7 and a right
+ * stop of 80 for them — seventy-three columns of carriage for a hundred and
+ * sixteen columns of motif, reported as three notes and no refusal.
  *
- * The margin is left alone. It is a distance from the edge of the paper, and
- * the paper has not changed size, only orientation.
+ * The Olympia SM7's scale runs 0 to 98. That is 249 mm, and it is the whole
+ * of the carriage: the right margin stop reaches 80, or 203 mm. A 297 mm
+ * writing line is not a stop that has to be released or a scale that stops
+ * counting. It is not there.
  *
- * Worth knowing at the machine: A4 landscape is 297 mm across, which at pica
- * is 116 columns — well past the 80 the SM7's right margin stop reaches. The
- * setup instructions already handle that; it is not a reason to refuse.
+ * So the paper is always the paper. Landscape is now something you do to the
+ * *motif* — laid on its side, typed on an upright sheet, and the sheet
+ * turned afterwards. That lives in turn.js, which is where the rest of this
+ * comment went.
  */
-export function landscape(paper) {
-  return { ...paper, w: paper.h, h: paper.w, landscape: true };
-}
 
 /**
- * Is the sheet worth turning for this motif?
+ * How many cells fit on the whole sheet.
  *
- * Only when it changes the answer. Turning a sheet that already holds the
- * motif buys nothing and loses the shape people expect, so this asks the
- * narrow question: does the motif fail to fit portrait, and fit landscape?
+ * Multiplied for a composite rather than divided, and the difference is not
+ * a rounding detail. A4 at pica holds 82 columns — 208.28 mm of a 210 mm
+ * sheet. Two sheets butted together are 420 mm, and 420 mm divided by the
+ * cell gives 165: one more column than the two sheets hold between them,
+ * sitting half on each side of the join, where no type bar can reach it.
  *
- * The proportions alone are not enough to decide it. A motif wider than it
- * is tall can still sit happily on a portrait sheet, and one that is only
- * slightly too wide may be too tall the other way round — A4 landscape holds
- * 116 columns but only 49 lines, against 82 by 70. So both sizes are
- * measured rather than guessed at from the aspect ratio.
- *
- * @param {number} motifW  motif width in characters
- * @param {number} motifH  motif height in lines
+ * So a composite's grid is the single sheet's grid times the tiling. Every
+ * cell then belongs to exactly one sheet, which is the only arrangement in
+ * which every cell can actually be struck. See compose.js.
  */
-export function wantsLandscape(motifW, motifH, paper, m) {
-  if (!(motifW > 0) || !(motifH > 0)) return false;
-  const up = sheetGrid(paper, m);
-  const across = sheetGrid(landscape(paper), m);
-  const fitsUp = motifW <= up.cols && motifH <= up.rows;
-  const fitsAcross = motifW <= across.cols && motifH <= across.rows;
-  return !fitsUp && fitsAcross;
-}
-
-/**
- * The sheet to actually use: turned when it is allowed and it helps.
- *
- * One place decides it, so the preview, the setup instructions and the PDF
- * cannot disagree about which way round the paper is.
- */
-export function orient(paper, m, motifW, motifH, allow = false) {
-  return allow && wantsLandscape(motifW, motifH, paper, m)
-    ? landscape(paper) : paper;
-}
-
-/** How many cells fit on the whole sheet. */
 export function sheetGrid(paper, m) {
+  const unit = paper.unit ?? paper;
   return {
-    cols: Math.floor(paper.w / cellWidthMm(m)),
-    rows: Math.floor(paper.h / cellHeightMm(m)),
+    cols: (paper.across ?? 1) * Math.floor(unit.w / cellWidthMm(m)),
+    rows: (paper.down ?? 1) * Math.floor(unit.h / cellHeightMm(m)),
   };
 }
 
-/** Cells inside the margins — the area worth using. */
+/**
+ * Cells inside the margins — the area worth using.
+ *
+ * The margin is subtracted once, not once per sheet. On a composite it is a
+ * distance from the outside edge of the finished picture; a margin down the
+ * inside of a join would be a white stripe through the middle of it.
+ */
 export function textArea(paper, m) {
   const mc = Math.round(paper.margin / cellWidthMm(m));
   const mr = Math.round(paper.margin / cellHeightMm(m));
@@ -370,6 +357,34 @@ export function textArea(paper, m) {
 /* ------------------------------------------------------------------ */
 /* Setting up the machine                                              */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Where the motif's top-left corner lands, in cells from the paper's corner.
+ *
+ * Lifted out of setUp() so that a composite can ask it once, about the whole
+ * picture, and then tell each sheet where its own piece goes. A sheet that
+ * placed its own slice would centre it on itself, and the picture would jump
+ * at every join — which is exactly where the eye goes.
+ *
+ * @param {number} motifW  motif width in characters
+ * @param {number} motifH  motif height in lines
+ * @param {'centre'|'topleft'} align
+ * @returns {{col: number, row: number}}
+ */
+export function placeOn(motifW, motifH, paper, m, align = 'centre') {
+  const sheet = sheetGrid(paper, m);
+  const area = textArea(paper, m);
+  if (align === 'topleft') {
+    return {
+      col: Math.floor((sheet.cols - area.cols) / 2),
+      row: Math.floor((sheet.rows - area.rows) / 2),
+    };
+  }
+  return {
+    col: Math.max(0, Math.floor((sheet.cols - motifW) / 2)),
+    row: Math.max(0, Math.floor((sheet.rows - motifH) / 2)),
+  };
+}
 
 /**
  * Work out paper guide and margin stops for a motif.
@@ -385,12 +400,10 @@ export function textArea(paper, m) {
  * @param {Machine} m
  * @param {'centre'|'topleft'} align
  */
-export function setUp(motifW, motifH, paper, m, align = 'centre') {
+export function setUp(motifW, motifH, paper, m, align = 'centre', at = null) {
   const warnings = [];
   const sheet = sheetGrid(paper, m);
   const area = textArea(paper, m);
-  const marginCols = Math.floor((sheet.cols - area.cols) / 2);
-  const marginRows = Math.floor((sheet.rows - area.rows) / 2);
 
   /*
    * Three different situations, and they used to be reported as if they were
@@ -410,6 +423,29 @@ export function setUp(motifW, motifH, paper, m, align = 'centre') {
   const tooWide = motifW > sheet.cols;
   const tooTall = motifH > sheet.rows;
 
+  /*
+   * The carriage is a limit in its own right, and it used to have no voice.
+   *
+   * Fitting on the paper and fitting through the machine are two different
+   * questions, and only the first was ever asked. They agree on every sheet
+   * that goes in upright — A4 at pica is 82 columns against an SM7 scale of
+   * 98 — which is exactly why the disagreement went unnoticed for as long as
+   * the app believed a sheet could be fed in sideways.
+   *
+   * Only when the paper itself has nothing to say. A motif that is off the
+   * edge of the sheet *and* past the end of the carriage is one problem, not
+   * two, and it is the paper that people can do something about.
+   */
+  const travel = m.scale?.max ?? Infinity;
+  if (motifW > travel && !tooWide) {
+    warnings.push({
+      level: 'stop',
+      text: `The carriage does not reach: ${motifW} columns against a scale ` +
+        `that ends at ${travel}. Nothing can be struck out there, with or ` +
+        `without the margin release.`,
+    });
+  }
+
   if (tooWide || tooTall) {
     const bits = [];
     if (tooWide) bits.push(`${motifW} columns wide, the sheet holds ${sheet.cols}`);
@@ -419,7 +455,14 @@ export function setUp(motifW, motifH, paper, m, align = 'centre') {
       text: `This will not fit on ${paper.name}: ${bits.join('; ')}. ` +
         `Use a smaller style, a shorter word, or a larger sheet.`,
     });
-  } else {
+  } else if (!at) {
+    /*
+     * Only when this function chose the position. A sheet of a composite
+     * gets its piece of the picture edge to edge by design — the margins
+     * belong to the outside of the finished thing — so comparing its slice
+     * against a single sheet's margins would raise the same note on every
+     * sheet, about a decision nobody made.
+     */
     if (motifW > area.cols) {
       warnings.push({
         level: 'note',
@@ -436,12 +479,17 @@ export function setUp(motifW, motifH, paper, m, align = 'centre') {
     }
   }
 
-  const fromEdge = align === 'topleft'
-    ? marginCols
-    : Math.max(0, Math.floor((sheet.cols - motifW) / 2));
-  const advance = align === 'topleft'
-    ? marginRows
-    : Math.max(0, Math.floor((sheet.rows - motifH) / 2));
+  /*
+   * Placed, or told where to go.
+   *
+   * `at` is for one sheet of a composite, where the position is not this
+   * function's to choose: it was decided once for the whole picture and
+   * handed down, so that the joins line up. Everything below — the paper
+   * guide, the stops, the margin release — is the same work either way.
+   */
+  const place = at ?? placeOn(motifW, motifH, paper, m, align);
+  const fromEdge = place.col;
+  const advance = place.row;
 
   let guide = 0;
   let left = fromEdge;

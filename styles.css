@@ -334,6 +334,102 @@ input[type=range]::-moz-range-thumb {
  */
 .paper-view.real { padding: 0; }
 
+/*
+ * The sheet, held the way it is meant to be held.
+ *
+ * A motif planned sideways is typed on an upright sheet with the glyphs
+ * lying down, and this rotates the drawn sheet rather than redrawing it —
+ * so what turns is the paper, characters and all, exactly as it will when
+ * you pick it up. The angle and the box size are set in sizeSheet(), which
+ * is the only place that knows which way the turn goes.
+ *
+ * Taken out of the flow while it is turned: a CSS rotation leaves the
+ * layout box where it was, so an upright A4's height would still be
+ * reserved for something now lying on its side, pushing the settings
+ * beside it a page down.
+ */
+/*
+ * Composing: the matrix, the joins, and which sheet you are on.
+ *
+ * The matrix is a grid of buttons because what is being chosen is a shape.
+ * `in` is everything the pointer is currently offering; `on` is the corner
+ * cell that was actually taken, so the choice stays readable while hovering
+ * over something else.
+ */
+.compose { display: flex; align-items: flex-start; gap: 0.9rem; }
+.matrix {
+  display: grid;
+  grid-template-columns: repeat(var(--across, 4), 1fr);
+  gap: 2px;
+}
+.matrix .cell {
+  width: 20px; height: 15px;
+  padding: 0;
+  border: 1px solid var(--hair);
+  background: transparent;
+  border-radius: 1px;
+  cursor: pointer;
+}
+.matrix .cell.in { background: var(--faint); border-color: var(--faint); }
+.matrix .cell.on { outline: 1px solid var(--ink); outline-offset: 1px; }
+.matrix .cell:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.compose-of { display: flex; align-items: center; gap: 0.4rem; }
+.compose-of label { margin: 0; color: var(--faint); font-size: 11.5px; }
+
+/*
+ * The joins, over the drawn sheet.
+ *
+ * Positioned in pixels from drawSeams(), at the cell boundary rather than at
+ * the sheet's nominal edge — see the comment there. `here` is the sheet the
+ * typing panel is on, shaded rather than outlined so that it reads as "this
+ * part of the picture" and not as a selection box.
+ */
+.seams { position: absolute; inset: 0; pointer-events: none; }
+.seams i { position: absolute; display: block; }
+.seams .v { top: 0; bottom: 0; width: 1px; background: var(--hair); }
+.seams .h { left: 0; right: 0; height: 1px; background: var(--hair); }
+.seams .here {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+}
+.paper-view { position: relative; }
+
+/*
+ * The sheet chooser, laid out in the shape of the paper.
+ *
+ * Two across and two down is drawn two across and two down, so the button
+ * you press is in the same place as the sheet it stands for. A list of four
+ * numbers in a row would take less room and lose exactly the thing that
+ * makes it usable.
+ */
+#sheetPickRow { margin: 0 0 1rem; }
+.sheet-pick {
+  display: grid;
+  grid-template-columns: repeat(var(--across, 1), 2rem);
+  gap: 3px;
+  margin: 0 0 0.4rem;
+}
+.sheet-pick .pick {
+  height: 1.7rem;
+  padding: 0;
+  border: 1px solid var(--hair);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.sheet-pick .pick.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.sheet-pick .pick.blank { color: var(--faint); border-style: dashed; }
+.sheet-pick .pick.blank.on { color: var(--paper); }
+
+.paper-scroll.turned { position: relative; overflow: hidden; }
+.paper-view.turned {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+}
+
 .facts { display: flex; flex-wrap: wrap; gap: 0 2rem; margin: 0 0 0.9rem;
          font-size: 11.5px; }
 .facts div { display: flex; gap: 0.45rem; }

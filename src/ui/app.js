@@ -9,8 +9,15 @@
 import { PROFILES, profileById } from '../profiles/index.js';
 import {
   charset, makeTypeable, standIns, PAPERS, paperById, textArea, setUp, sheetGrid,
-  pitchFrom, expectedMm, PITCHES, LINE_PITCHES, landscape, cellWidthMm,
+  pitchFrom, expectedMm, PITCHES, LINE_PITCHES, cellWidthMm, cellHeightMm,
 } from '../core/machine.js';
+import {
+  isTurned, planningGrid, turnedGrid, turnRows, turnAdvice,
+} from '../core/turn.js';
+import {
+  tiled, tilesOf, isComposite, unitOf, sheetCount, unitGrid, splitMotif,
+  layoutAdvice, MAX_ACROSS, MAX_DOWN,
+} from '../core/compose.js';
 import { buildAtlas, nearestChar } from '../core/glyphs.js';
 import {
   prepare, fitGrid, toCharacters, toSentence, cellAspect,
@@ -38,9 +45,18 @@ const app = {
   // always be undone.
   measured: {},
   inverted: false,
-  paper: PAPERS[0],   // the size chosen in the picker, always portrait
-  sheet: PAPERS[0],   // the same size the way it is actually going in
-                      // the machine; equal to `paper` unless turned
+  base: PAPERS[0],    // the single sheet, as it goes in the machine
+  across: 1,          // how many of them side by side …
+  down: 1,            // … and how many rows of those. See compose.js.
+  paper: PAPERS[0],   // base × across × down, which is what gets laid out on
+  plan: null,         // splitMotif(): where every sheet's piece of it goes
+  tile: 0,            // which physical sheet the typing panel is showing
+  motif: [],          // the whole picture, across every sheet
+  motifColours: [],
+  turn: 'none',       // 'none' | 'left' | 'right' — which way you turn the
+                      // finished sheet to look at it. Never how it goes in.
+  showTurned: true,   // preview the finished sheet turned, rather than as it
+                      // comes out of the machine
   chosen: new Set(),
   atlas: null,
   image: null,        // ImageData of the source
@@ -66,7 +82,9 @@ const save = () => {
     localStorage.setItem(KEY, JSON.stringify({
       machine: app.machine.id,
       measured: app.measured,
-      paper: app.paper.id,
+      paper: app.base.id,
+      across: app.across,
+      down: app.down,
       chosen: [...app.chosen].join(''),
       at: app.at,
       mode: $('mode').value,
@@ -80,6 +98,7 @@ const save = () => {
       invert: $('invert').value,
       sentence: $('sentence').value,
       orientation: $('orientation').value,
+      showTurned: app.showTurned,
       zoom: app.zoom,
     }));
   } catch { /* private mode */ }
@@ -98,16 +117,32 @@ function fillSelects(saved) {
 
   $('machine').innerHTML = PROFILES
     .map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
-  $('paper').innerHTML = PAPERS
+  const sizes = PAPERS
     .map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
+  /*
+   * The last entry is not a paper size, and it is deliberately worded so
+   * that it does not read like one. Choosing it leaves the sheet size alone
+   * and opens the matrix below, where the same list appears again as "of".
+   */
+  $('paper').innerHTML = sizes +
+    `<option value="compose">Compose — several sheets…</option>`;
+  $('composeUnit').innerHTML = sizes;
+  renderMatrix();
 
   app.measured = (saved.measured && typeof saved.measured === 'object')
     ? saved.measured : {};
 
   useProfile(saved.machine ?? PROFILES[0].id);
-  app.paper = paperById(saved.paper ?? PAPERS[0].id);
+  app.base = paperById(saved.paper ?? PAPERS[0].id);
+  app.across = clamp(+saved.across || 1, 1, MAX_ACROSS);
+  app.down = clamp(+saved.down || 1, 1, MAX_DOWN);
+  app.paper = tiled(app.base, app.across, app.down);
   $('machine').value = app.machine.id;
-  $('paper').value = app.paper.id;
+  $('composeUnit').value = app.base.id;
+  // `compose` is the last entry and is not a paper size; it is how the
+  // tiling block is opened. Somebody who left the app composing comes back
+  // to it rather than to a single sheet with their matrix forgotten.
+  $('paper').value = isComposite(app.paper) ? 'compose' : app.base.id;
 
   app.chosen = new Set(saved.chosen ? [...saved.chosen] : charset(app.machine));
 
@@ -121,10 +156,20 @@ function fillSelects(saved) {
   if (saved.inkAmount) $('inkAmount').value = saved.inkAmount;
   if (saved.invert) $('invert').value = saved.invert;
   if (saved.sentence) $('sentence').value = saved.sentence;
-  // `landscape` is what the old checkbox saved. Reading it keeps anyone who
-  // had turned the sheet on their last visit pointed the same way.
-  if (saved.orientation) $('orientation').value = saved.orientation;
-  else if (saved.landscape) $('orientation').value = 'sideways';
+  /*
+   * Two dead settings are still read here, and both are somebody's last
+   * visit. `landscape: true` was the original checkbox; `orientation:
+   * 'sideways'` was the select that replaced it. Both meant "I want this read
+   * sideways", which is still a thing you can want — it is only the account
+   * of how it gets typed that has changed — so both land on a left turn
+   * rather than being thrown away.
+   */
+  const wants = saved.orientation === 'sideways' || saved.landscape === true
+    ? 'left' : saved.orientation;
+  if (wants && [...$('orientation').options].some((o) => o.value === wants)) {
+    $('orientation').value = wants;
+  }
+  app.showTurned = saved.showTurned !== false;
   app.zoom = saved.zoom === 'original' ? 'original' : 'fit';
 
   /*
@@ -216,7 +261,7 @@ function syncInkControls() {
   // Depth and accent grade a motif from faint to heavy. With a single ink
   // level there is nothing to grade: the slider would travel its whole
   // length and either do nothing or turn everything red. Leave them out.
-  const graded = inkLevels(app.lines, app.atlas) > 1;
+  const graded = inkLevels(app.motif, app.atlas) > 1;
   const offered = INK_SCHEMES.filter((s) => s.id !== 'none'
     && (s.id !== 'shadow' || twoSurface)
     && (!['depth', 'accent'].includes(s.id) || graded));
@@ -244,7 +289,9 @@ function syncInkControls() {
 
   // What it costs at the machine: the red is a second pass, and knowing how
   // many strikes that is decides whether the effect is worth it.
-  const t = inkTally(app.lines, app.colours);
+  // The whole motif: a ribbon change is a decision about the job, and
+  // quoting one sheet's share of it would make four sheets look like one.
+  const t = inkTally(app.motif, app.motifColours);
   $('inkTally').textContent = t.red
     ? `${t.black} strikes in black, ${t.red} in red — two passes.`
     : '';
@@ -267,9 +314,20 @@ function syncWidthControl() {
    * a real limit. The middle one is a note about where the stops end up, and
    * a note is not a reason to take the choice away.
    */
-  const sheet = sheetFor();
-  const cap = sheetGrid(sheet, app.machine).cols;
-  const area = textArea(sheet, app.machine).cols;
+  /*
+   * "How wide" is how wide the picture is *when you look at it*, and on a
+   * turned sheet that is measured down the paper rather than across it. So
+   * the ceiling comes from the planning grid: on A4 at pica, 82 cells upright
+   * and 70 turned, because a turned cell is 4.23 mm wide where an upright one
+   * is 2.54.
+   *
+   * Turning therefore *lowers* this number, and it is right that it does.
+   * Fewer, wider cells across 297 mm is exactly the trade — the picture comes
+   * out half as big again and takes its detail down the other axis.
+   */
+  const turned = isTurned(app.turn);
+  const cap = planningGrid(sheetGrid(app.paper, app.machine), app.turn).cols;
+  const area = planningGrid(textArea(app.paper, app.machine), app.turn).cols;
 
   const el = $('width');
   el.max = String(cap);
@@ -279,41 +337,140 @@ function syncWidthControl() {
   $('widthOut').textContent = `${el.value} cols`;
   $('widthHint').textContent =
     `Wider means more detail and a great many more keystrokes. ` +
-    `${sheet.name}${sheet.landscape ? ' sideways' : ''} holds ${area} inside ` +
+    `${app.paper.name}${turned ? ' turned' : ''} holds ${area} across inside ` +
     `the usual margins and ${cap} edge to edge` +
     (over ? ' — past the margins now, so the stops move in less.' : '.');
 }
 
 /**
- * Which way round the paper goes, and how much of it there is to type on.
+ * The paper as it is now: the sheet you chose, times the tiling.
  *
- * Every caller asks this rather than reading `app.paper` directly, so the
- * preview, the setup instructions and the PDF cannot end up disagreeing
- * about the shape of the sheet — which would be the worst possible fault
- * here, because the person is looking at the paper and not at the screen.
+ * `app.base` is always a single sheet — the thing that goes in the machine —
+ * and `app.paper` is always what the motif is laid out on. For one sheet
+ * they are the same object. Keeping both, rather than deriving one when
+ * needed, is what stops the two questions ("what am I feeding in?" and "how
+ * big is the picture?") from being answered by the same number.
+ *
+ * The last entry in the sheet picker is not a sheet. It opens the matrix and
+ * leaves the size alone, which is why the size appears a second time inside
+ * the block, as "of".
  */
-function sheetFor() {
-  return $('orientation').value === 'sideways'
-    ? landscape(app.paper) : app.paper;
+function usePaper() {
+  const pick = $('paper').value;
+  const composing = pick === 'compose';
+
+  if (composing) {
+    app.base = paperById($('composeUnit').value);
+  } else {
+    app.base = paperById(pick);
+    // Picking a plain size is how you stop composing, so the matrix goes
+    // back to one sheet rather than lying in wait for the next visit.
+    app.across = 1;
+    app.down = 1;
+    $('composeUnit').value = app.base.id;
+  }
+
+  $('composeRow').hidden = !composing;
+  app.across = clamp(app.across, 1, MAX_ACROSS);
+  app.down = clamp(app.down, 1, MAX_DOWN);
+  app.paper = tiled(app.base, app.across, app.down);
+  paintMatrix();
+  return app.paper;
 }
 
-function useSheet() {
-  /*
-   * There used to be a decision here, and it was the wrong place for one.
-   *
-   * The sheet was chosen by comparing how the motif came out each way round,
-   * which meant the orientation could change while nothing on screen had —
-   * type one more word and the paper silently turned. It also had to be told
-   * when lettering had already wrapped itself to a landscape width, because
-   * re-deciding afterwards would print a layout on a sheet it was not laid
-   * out for.
-   *
-   * Now the orientation is stated, so every caller can simply read it, and
-   * none of that can happen. What is left of the old behaviour is a hint
-   * that says turning the sheet would save rows — advice, not an action.
-   */
-  app.sheet = sheetFor();
-  return app.sheet;
+/**
+ * The matrix: point at the shape rather than describing it.
+ *
+ * Two number inputs would take the same information in fewer elements and be
+ * worse, because what is being chosen is a shape — three across by two down
+ * — and a shape is something you recognise rather than something you read.
+ * Hovering shows what it would be; clicking takes it.
+ */
+function renderMatrix() {
+  const host = $('matrix');
+  if (!host) return;
+  const cells = [];
+  for (let r = 1; r <= MAX_DOWN; r++) {
+    for (let c = 1; c <= MAX_ACROSS; c++) {
+      cells.push(`<button type="button" class="cell" data-a="${c}" data-d="${r}"` +
+        ` aria-label="${c} across by ${r} down"></button>`);
+    }
+  }
+  host.style.setProperty('--across', String(MAX_ACROSS));
+  host.innerHTML = cells.join('');
+  for (const el of host.querySelectorAll('.cell')) {
+    el.onclick = () => {
+      app.across = +el.dataset.a;
+      app.down = +el.dataset.d;
+      // A different shape is a different piece of paper, so the sheet you
+      // were on no longer means anything. Back to the first.
+      app.tile = 0;
+      convert();
+      save();
+    };
+    el.onmouseenter = () => paintMatrix(+el.dataset.a, +el.dataset.d);
+    el.onmouseleave = () => paintMatrix();
+  }
+}
+
+/** Light the matrix up to `a` × `d` — the choice, or what hovering offers. */
+function paintMatrix(a = app.across, d = app.down) {
+  for (const el of $('matrix')?.querySelectorAll('.cell') ?? []) {
+    el.classList.toggle('in', +el.dataset.a <= a && +el.dataset.d <= d);
+    el.classList.toggle('on',
+      +el.dataset.a === app.across && +el.dataset.d === app.down);
+    el.setAttribute('aria-pressed',
+      String(+el.dataset.a === app.across && +el.dataset.d === app.down));
+  }
+}
+
+/**
+ * What the matrix just bought, in the two units that matter.
+ *
+ * Millimetres because that is what you lay on a table, and cells because
+ * that is what you type. Neither on its own answers "is this worth it": four
+ * sheets of A4 is 420 by 594 mm, which sounds like a poster and is also
+ * 21 320 cells, which is a great many keystrokes.
+ */
+function syncComposeHint() {
+  const el = $('composeHint');
+  if (!el) return;
+  const n = sheetCount(app.paper);
+  const seen = planningGrid(sheetGrid(app.paper, app.machine), app.turn);
+  const mm = isTurned(app.turn)
+    ? `${app.paper.h} × ${app.paper.w}` : `${app.paper.w} × ${app.paper.h}`;
+
+  if (n === 1) {
+    el.textContent = `One sheet — the same as choosing ${app.base.name} above. ` +
+      `Point at a shape to spread the motif over more of them.`;
+    return;
+  }
+  const gap = app.plan?.seams;
+  el.textContent =
+    `${n} sheets of ${app.base.name}, ${mm} mm, ` +
+    `${seen.cols} × ${seen.rows} cells` +
+    (isTurned(app.turn) ? ' as you will look at it' : '') + '. ' +
+    (app.across > 1 && gap
+      ? `Overlap them ${gap.across.toFixed(1)} mm at each side join. `
+      : '') +
+    `Each sheet is typed on its own.`;
+}
+
+/**
+ * Which way the finished sheet gets turned — never which way it goes in.
+ *
+ * The paper does not turn any more, and nothing here decides anything: one
+ * control states it, every caller reads it. Two earlier versions of this
+ * function both got it wrong in ways worth remembering. The first decided the
+ * orientation by comparing how the motif came out each way round, so the
+ * paper could silently turn when you typed one more word. The second let you
+ * state it, but stated it about the *paper* — and a sheet fed in on its long
+ * edge is 297 mm of writing line on a machine with 249.
+ */
+function useTurn() {
+  const v = $('orientation').value;
+  app.turn = v === 'left' || v === 'right' ? v : 'none';
+  return app.turn;
 }
 
 /**
@@ -359,20 +516,37 @@ function letterStandIns(style) {
 
 function convert() {
   const tab = currentTab();
+  /*
+   * The turn first, and then everything else.
+   *
+   * syncWidthControl() reads it — the slider's ceiling is 82 cells upright
+   * and 70 turned — so settling it afterwards left the control a redraw
+   * behind the choice, offering 82 columns of a sheet that now holds 70.
+   */
+  const turn = useTurn();
+  usePaper();
   syncWidthControl();
 
   /*
-   * Sizing used to be circular — the grid needed the sheet, the sheet was
-   * decided from the finished motif — and it was broken by measuring against
-   * whichever orientation held more. With the orientation stated outright
-   * there is no circle left: the sheet is known before anything is laid out.
+   * Two grids, and everything below depends on not confusing them.
+   *
+   * `sheet` and `room` are the machine's: columns are carriage positions and
+   * rows are lines you type, on an upright sheet, always. `plan` and
+   * `planRoom` are the same regions as the eye meets them once the sheet has
+   * been turned — rows and columns swapped. A motif is laid out against the
+   * planning grid and then laid down onto the sheet, and the turn itself is
+   * the only place the two are allowed to meet.
    */
-  const sheet = useSheet();
-  const room = textArea(sheet, app.machine);
-  const paperGrid = sheetGrid(sheet, app.machine);
-  // The slider is already bounded by the sheet; the margins are a note from
-  // setUp(), not a ceiling.
-  const maxCols = Math.min(+$('width').value, paperGrid.cols);
+  const sheet = sheetGrid(app.paper, app.machine);
+  const room = textArea(app.paper, app.machine);
+  const plan = planningGrid(sheet, turn);
+  const planRoom = planningGrid(room, turn);
+  // The slider is already bounded by the planning grid; the margins are a
+  // note from setUp(), not a ceiling.
+  const maxCols = Math.min(+$('width').value, plan.cols);
+  // A word or a block of pasted art is turned once it is finished, so the
+  // machine's own keys decide which rotated marks are worth having.
+  const have = new Set(charset(app.machine).filter((c) => app.chosen.has(c)));
 
   let lines = [];
 
@@ -398,16 +572,16 @@ function convert() {
        * place the app warns them.
        */
       const { swaps } = letterStandIns(style);
-      lines = letter(word, {
-        style, tones: letterTones(style), maxCols: room.cols,
+      lines = turnRows(letter(word, {
+        style, tones: letterTones(style), maxCols: planRoom.cols,
         substitutes: swaps,
-      });
+      }), turn, have);
     }
   } else if (tab === 'paste') {
     const raw = $('pasted').value.replace(/\t/g, '    ');
     if (raw.trim()) {
       const { text, dropped } = makeTypeable(raw, app.machine);
-      lines = text.split('\n');
+      lines = turnRows(text.split('\n'), turn, have);
       if (dropped.size) {
         note(`Swapped out: ${[...dropped.keys()].join(' ')} — no equivalent ` +
              `on this machine, so those cells are blank.`);
@@ -425,10 +599,22 @@ function convert() {
       contrast: +$('contrast').value / 100,
       mode,
       maxCols,
+      // Laid on its side before anything measures it, so everything after
+      // this is the ordinary upright pipeline. See turn.js.
+      turn,
     });
     app.inverted = inverted;
 
-    const grid = fitGrid(maxCols, room.rows, field.w, field.h,
+    /*
+     * Fitted in the machine's frame, because that is where a cell is 2.54 by
+     * 4.23 mm. The budgets are the planning grid's, put back the right way
+     * round: the slider bounds the picture's width as seen, which on a turned
+     * sheet is a count of typed lines.
+     */
+    const budget = isTurned(turn)
+      ? { cols: room.cols, rows: Math.min(maxCols, sheet.rows) }
+      : { cols: maxCols, rows: room.rows };
+    const grid = fitGrid(budget.cols, budget.rows, field.w, field.h,
                          cellAspect(app.machine));
 
     if (mode === 'sentence') {
@@ -442,25 +628,80 @@ function convert() {
     }
   }
 
-  app.lines = lines.length ? lines : [];
-  const width = Math.max(0, ...app.lines.map((l) => l.length));
-  app.colours = inkPlan(app.lines, {
+  /*
+   * The motif, and then the sheets it is cut into.
+   *
+   * `app.motif` is the whole picture, on however much paper it takes.
+   * `app.lines` is the one physical sheet the typing panel is showing. For a
+   * single sheet they are the same lines and nothing below can tell the
+   * difference; for a composite they are not, and every place that had to
+   * choose between them is now forced to say which it meant.
+   *
+   * The ink plan is worked out on the whole motif and then cut with it, not
+   * per sheet. A red band that reaches across a join has to be the same band
+   * on both sides of it, and a scheme applied twice to two halves would
+   * decide that separately for each.
+   */
+  app.motif = lines.length ? lines : [];
+  app.motifColours = inkPlan(app.motif, {
     scheme: $('useRed').checked && app.machine.twoColour !== false
       ? $('ink').value : 'none',
     atlas: app.atlas,
     amount: +$('inkAmount').value / 100,
-    rows: parseRows($('redRows').value, app.lines.length),
+    rows: parseRows($('redRows').value, app.motif.length),
   });
   syncInkControls();
 
-  app.setup = setUp(width, app.lines.length, sheet, app.machine,
-                    $('align').value);
+  app.plan = splitMotif({
+    lines: app.motif,
+    colours: app.motifColours,
+    paper: app.paper,
+    machine: app.machine,
+    align: $('align').value,
+  });
+  useTile(app.tile, false);
 
-  app.at = Math.min(app.at, Math.max(0, app.lines.length - 1));
-  app.strike = 0;
   draw();
   save();
 }
+
+/**
+ * Show one physical sheet: its lines, its ink, its own machine setup.
+ *
+ * Everything downstream of here — the run lengths, the table, the listening,
+ * the PDF's typing pages — works on one sheet's worth of typing and always
+ * did. Handing it a slice rather than the whole motif is the entire trick,
+ * and it is why a composite needed no changes at all in runs.js or sheet.js.
+ *
+ * @param {number} i
+ * @param {boolean} [fresh] true when a person picked the sheet, which starts
+ *   it at line one; false on a redraw, which keeps the place.
+ */
+function useTile(i, fresh = true) {
+  const sheets = app.plan?.sheets ?? [];
+  let at = clamp(i, 0, Math.max(0, sheets.length - 1));
+  /*
+   * Never land on blank paper by accident. Changing the matrix can leave the
+   * old index on a sheet the motif does not reach, and a panel showing an
+   * empty sheet reads as a broken app rather than as an empty sheet — so a
+   * redraw moves to the first sheet with something on it. Picking a blank
+   * one by hand is left alone: that is somebody checking, and the panel says
+   * plainly that there is nothing to type.
+   */
+  const firstUsed = sheets.findIndex((sh) => !sh.blank);
+  if (!fresh && sheets[at]?.blank && firstUsed >= 0) at = firstUsed;
+
+  app.tile = at;
+  const cur = sheets[at] ?? null;
+  app.lines = cur?.lines ?? [];
+  app.colours = cur?.colours ?? [];
+  app.setup = cur?.setup ?? null;
+  app.at = fresh ? 0 : Math.min(app.at, Math.max(0, app.lines.length - 1));
+  app.strike = 0;
+}
+
+/** The sheet the typing panel is on. */
+const currentSheet = () => app.plan?.sheets?.[app.tile] ?? null;
 
 let noteTimer = null;
 function note(text) {
@@ -542,15 +783,32 @@ const PX_PER_MM = 96 / 25.4;   // a millimetre, as CSS reckons one
  * actually be.
  */
 function drawMini() {
-  const { lines, colours } = app;
+  /*
+   * The whole picture, on all of its paper.
+   *
+   * Not `app.lines`, which is the one sheet the typing panel is on. This
+   * panel exists to answer "what am I making", and on a composite that is a
+   * thing made of four sheets — so the preview draws the composite, marks
+   * the joins, and shades whichever sheet you are typing.
+   */
+  const lines = app.motif;
+  const colours = app.motifColours;
   const host = $('mini');
   const paperEl = host.parentElement;
   const real = app.zoom === 'original';
   if (!lines.length) { host.textContent = ''; sizeSheet(paperEl, false); return; }
 
-  const sheet = sheetGrid(app.sheet, app.machine);
-  const col0 = Math.max(0, (app.setup?.left ?? 0) - (app.setup?.paperGuide ?? 0));
-  const row0 = Math.max(0, app.setup?.advance ?? 0);
+  const sheet = sheetGrid(app.paper, app.machine);
+  /*
+   * Taken from the plan, not from a setUp().
+   *
+   * The motif is placed once, on the whole composite, and each sheet is told
+   * where its piece goes — so the origin is the plan's, and reading it back
+   * out of one sheet's margin stop would give the offset within that sheet
+   * rather than within the picture.
+   */
+  const col0 = Math.max(0, app.plan?.origin?.col ?? 0);
+  const row0 = Math.max(0, app.plan?.origin?.row ?? 0);
 
   // The sheet keeps the paper's proportions, so the shape of the box is
   // itself information: a postcard looks like a postcard, and a sheet that
@@ -599,6 +857,53 @@ function drawMini() {
     out.push(row);
   }
   host.innerHTML = out.join('\n');
+  drawSeams(real ? 0 : 12, cellW, cellH);
+}
+
+/**
+ * The joins, and the sheet you are on.
+ *
+ * Drawn at the *cell* boundary rather than at the sheet's nominal edge, and
+ * the difference is the whole story of a join. A4 at pica holds 82 columns —
+ * 208.28 mm of a 210 mm sheet — so butting two sheets leaves 1.72 mm of
+ * blank paper between the last column of one and the first of the next. The
+ * instructions tell you to close that up by overlapping the sheets, and this
+ * draws the result of having done so: cells running straight through, with a
+ * line where the paper changes hands.
+ *
+ * Which means the drawn composite is very slightly narrower than the paper
+ * box around it — 416.6 mm of cells inside a 420 mm A4 pair. That gap is the
+ * overlap, and it is the honest picture rather than a rounding error.
+ */
+function drawSeams(pad, cellW, cellH) {
+  const el = $('seams');
+  if (!el) return;
+  const plan = app.plan;
+  if (!plan || (plan.across === 1 && plan.down === 1)) {
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+
+  const parts = [];
+  for (let c = 1; c < plan.across; c++) {
+    parts.push(`<i class="v" style="left:${pad + c * plan.grid.cols * cellW}px"></i>`);
+  }
+  for (let r = 1; r < plan.down; r++) {
+    parts.push(`<i class="h" style="top:${pad + r * plan.grid.rows * cellH}px"></i>`);
+  }
+
+  const cur = currentSheet();
+  if (cur) {
+    parts.push(`<i class="here" style="` +
+      `left:${pad + cur.col * plan.grid.cols * cellW}px;` +
+      `top:${pad + cur.row * plan.grid.rows * cellH}px;` +
+      `width:${plan.grid.cols * cellW}px;` +
+      `height:${plan.grid.rows * cellH}px"></i>`);
+  }
+
+  el.innerHTML = parts.join('');
+  el.hidden = false;
 }
 
 /**
@@ -620,29 +925,88 @@ function drawMini() {
  * not pinned, and when it is pinned the two lengths simply outrank it.
  */
 function sizeSheet(el, real) {
-  el.classList.toggle('real', real);
-  el.parentElement?.classList.toggle('real', real);
+  const box = el.parentElement;
+  // The sheet is drawn upright and then *rotated*, rather than being drawn
+  // rotated. That is the honest preview: what turns on screen is the whole
+  // sheet, characters included, so the sideways glyphs are visible as
+  // sideways glyphs and nobody is promised letters the machine cannot type.
+  const turned = app.showTurned && isTurned(app.turn) && app.motif.length > 0;
 
-  const shown = app.lines.length > 0;
-  el.style.aspectRatio = shown ? `${app.sheet.w} / ${app.sheet.h}` : '';
+  el.classList.toggle('real', real);
+  el.classList.toggle('turned', turned);
+  box?.classList.toggle('real', real);
+  box?.classList.toggle('turned', turned);
+
+  // Cleared before measuring: a pinned width from the last render would
+  // otherwise be handed back as "what the column has".
+  el.style.transform = '';
+  if (box) { box.style.width = ''; box.style.height = ''; }
+
+  const shown = app.motif.length > 0;
+  el.style.aspectRatio = shown ? `${app.paper.w} / ${app.paper.h}` : '';
   if (!shown) { el.style.width = ''; el.style.height = ''; return; }
 
   if (real) {
-    el.style.width = `${app.sheet.w * PX_PER_MM}px`;
-    el.style.height = `${app.sheet.h * PX_PER_MM}px`;
-    return;
+    el.style.width = `${app.paper.w * PX_PER_MM}px`;
+    el.style.height = `${app.paper.h * PX_PER_MM}px`;
+  } else {
+    el.style.width = '';
+    el.style.height = '';
+    const across = el.clientWidth;
+    if (turned) {
+      // Turned, the sheet's *height* is what has to fit the column and its
+      // width is what has to fit the window. Sizing it upright first and
+      // rotating afterwards would put an A4's 297 mm across a 300 px column.
+      // `across || Infinity` is for the case where the column cannot be
+      // measured at all — a hidden panel, or a DOM with no layout. Treating
+      // an unmeasurable column as an unconstrained one keeps the rotation
+      // itself well defined rather than collapsing the sheet to nothing.
+      const long = Math.max(1, Math.min(across || Infinity,
+        window.innerHeight * 0.78 * (app.paper.h / app.paper.w)));
+      el.style.height = `${Math.floor(long)}px`;
+      el.style.width =
+        `${Math.max(1, Math.floor(long * (app.paper.w / app.paper.h)))}px`;
+    } else {
+      // A share of the window, and not the room left below the heading: the
+      // sticky column moves as the page scrolls, and a sheet that changed
+      // size on the way down would be worse than one that is a little small.
+      const down = window.innerHeight * 0.78 * (app.paper.w / app.paper.h);
+      if (down < across) el.style.width = `${Math.floor(down)}px`;
+    }
   }
 
-  // Measured with nothing pinned, so the column is asked what it has rather
-  // than told what it gave last time.
-  el.style.width = '';
-  el.style.height = '';
-  const across = el.clientWidth;
-  // A share of the window, and not the room left below the heading: the
-  // sticky column moves as the page scrolls, and a sheet that changed size
-  // on the way down would be worse than one that is a little small.
-  const down = window.innerHeight * 0.78 * (app.sheet.w / app.sheet.h);
-  if (down < across) el.style.width = `${Math.floor(down)}px`;
+  if (turned) layTurned(el, box);
+}
+
+/** The px number out of a style we set ourselves, or 0. */
+const px = (v) => (/^([\d.]+)px$/.exec(v ?? '') ? +RegExp.$1 : 0);
+
+/**
+ * Rotate the drawn sheet, and give the space back to the page.
+ *
+ * A CSS rotation leaves the element's layout box where it was, so the box
+ * around it is told the swapped size and the sheet is taken out of the flow
+ * — otherwise the column reserves an upright A4's height for something that
+ * is now lying down, and the settings beside it get pushed a page away.
+ *
+ * `turn` is what your hands do to the paper, so the preview does the same
+ * thing: a left turn is a quarter turn anticlockwise on screen.
+ */
+function layTurned(el, box) {
+  // Taken from the two lengths sizeSheet() has just pinned rather than from
+  // the layout. Everything here is border-box, so they are the same number —
+  // and asking the layout would force a reflow to read back a value we
+  // already have.
+  const w = px(el.style.width);
+  const h = px(el.style.height);
+  if (!w || !h) return;
+  el.style.transform = app.turn === 'left'
+    ? `translateY(${w}px) rotate(-90deg)`
+    : `translateX(${h}px) rotate(90deg)`;
+  if (box) {
+    box.style.width = `${h}px`;
+    box.style.height = `${w}px`;
+  }
 }
 
 /**
@@ -661,6 +1025,30 @@ function setZoom(zoom) {
   $('zoomReal').classList.toggle('on', app.zoom === 'original');
   $('zoomFit').setAttribute('aria-pressed', String(app.zoom === 'fit'));
   $('zoomReal').setAttribute('aria-pressed', String(app.zoom === 'original'));
+  drawMini();
+}
+
+/**
+ * Hold the sheet the way it is meant to be held, or the way it is typed.
+ *
+ * Both views are true and they answer different questions. Turned is the
+ * picture: it is what you are making, and it is the default because it is
+ * what somebody who chose a sideways motif wants to look at. Unturned is the
+ * sheet as it comes out of the machine, which is the one to check against
+ * while you are actually typing — the top line here is the top line there.
+ *
+ * It hides itself when the motif is upright, where the two are the same view
+ * and the button would be a question nobody asked.
+ */
+function setTurnedView(on) {
+  app.showTurned = Boolean(on);
+  const btn = $('zoomTurn');
+  if (btn) {
+    btn.hidden = !isTurned(app.turn);
+    btn.classList.toggle('on', app.showTurned);
+    btn.setAttribute('aria-pressed', String(app.showTurned));
+    btn.textContent = app.showTurned ? 'turned' : 'as typed';
+  }
   drawMini();
 }
 
@@ -724,12 +1112,17 @@ function syncLetterHint() {
 }
 
 /**
- * Say what the chosen orientation gives you, and what the other one would.
+ * Say what turning the sheet actually gives you — in millimetres.
  *
- * This used to have a third job: explaining that the switch was on but had
- * done nothing, because the sheet only turned when the motif demanded it.
- * That case is gone — the orientation is now whatever you asked for — so
- * what is left is the comparison, which is the part that was useful.
+ * This hint used to sell landscape as extra room: "sideways would be 100 by
+ * 39" against an upright 66 by 60, as though the sheet had grown. It had not,
+ * and it could not: same paper, same margins, same cells. All that happens
+ * when you turn a sheet is that they stand the other way up.
+ *
+ * So the comparison is made in millimetres, which is where the real
+ * difference is. Sixty cells across a turned A4 is 254 mm of picture; the
+ * sixty-six an upright one gives is 168. A cell count on its own hides that,
+ * because a turned cell is two thirds again as wide as an upright one.
  *
  * The width is deliberately not raised when the sheet turns. It would more
  * than double the keystroke count without being asked — measured on a wide
@@ -739,17 +1132,22 @@ function syncLetterHint() {
 function syncOrientationHint() {
   const el = $('orientationHint');
   if (!el) return;
-  const across = textArea(landscape(app.paper), app.machine);
   const up = textArea(app.paper, app.machine);
-  const sideways = $('orientation').value === 'sideways';
-  const here = sideways ? across : up;
-  const there = sideways ? up : across;
+  const across = turnedGrid(up);
+  const turned = isTurned(app.turn);
+  const here = turned ? across : up;
+  const there = turned ? up : across;
+  const wide = (cols, t) =>
+    Math.round(cols * (t ? cellHeightMm(app.machine) : cellWidthMm(app.machine)));
 
   el.textContent =
-    `${sideways ? 'Sideways' : 'Upright'}: ${here.cols} columns across ` +
-    `${here.rows} lines inside the margins` +
-    (sideways ? ', fed in on the long edge' : '') + `. ` +
-    `${sideways ? 'Upright' : 'Sideways'} would be ${there.cols} × ${there.rows}.`;
+    `${turned ? 'Turned' : 'Upright'}: ${here.cols} × ${here.rows} cells ` +
+    `inside the margins, ${wide(here.cols, turned)} mm across. ` +
+    (turned
+      ? `Upright would be ${there.cols} × ${there.rows} and narrower — the ` +
+        `same sheet, but the picture only reaches ${wide(there.cols, false)} mm.`
+      : `Turned would be ${there.cols} × ${there.rows}, reaching ` +
+        `${wide(there.cols, true)} mm — and the paper still goes in upright.`);
 }
 
 /** Short plain-English note under each picture style. */
@@ -763,7 +1161,16 @@ const MODE_HINTS = {
 };
 
 function draw() {
-  const { lines, colours } = app;
+  /*
+   * The whole motif, not the sheet in front of you.
+   *
+   * Everything in this half of the page describes the finished picture: how
+   * big it is, how many keystrokes it costs, whether it fits. On a composite
+   * those are questions about all four sheets at once, and answering them
+   * from the one currently on screen would quietly quarter every number.
+   */
+  const lines = app.motif;
+  const colours = app.motifColours;
   const tally = inkTally(lines, colours);
   const width = Math.max(0, ...lines.map((l) => l.length));
 
@@ -774,6 +1181,8 @@ function draw() {
   // is something real to type.
   document.body.classList.toggle('empty', lines.length === 0);
   if (!lines.length) {
+    $('seams').hidden = true;
+    $('sheetPickRow').hidden = true;
     $('mini').textContent = '';
     $('facts').innerHTML = '';
     $('warnings').innerHTML = '';
@@ -787,19 +1196,43 @@ function draw() {
     return;
   }
 
+  /*
+   * On a turned sheet the size is quoted twice, and it has to be. `width ×
+   * lines` is what the machine does — columns of carriage, lines of typing —
+   * and it looks like the wrong way round for the picture, because it is: the
+   * picture is lying on its side. So the size you actually asked for is named
+   * beside it.
+   */
+  const turned = isTurned(app.turn);
+  const n = sheetCount(app.paper);
   $('facts').innerHTML = [
-    ['size', `${width} × ${lines.length}`],
+    ['size', `${width} × ${lines.length}`
+      + (turned ? ` typed, ${lines.length} × ${width} seen` : '')],
     ['keystrokes', String(tally.total)],
     tally.red ? ['red', String(tally.red)] : null,
-    ['paper', app.sheet.landscape
-      ? `${app.paper.name} sideways` : app.paper.name],
+    ['paper', (turned ? `${app.paper.name}, turned ${app.turn}`
+      : app.paper.name)
+      + (n > 1 ? ` — ${n} sheets` : '')],
   ].filter(Boolean)
    .map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
 
-  // A warning now says how serious it is. "This will not fit" and "the
-  // margins move in a bit" were previously typeset identically, which made
-  // the real one easy to miss and the mild one look like a telling-off.
-  $('warnings').innerHTML = (app.setup?.warnings ?? [])
+  /*
+   * A warning now says how serious it is. "This will not fit" and "the
+   * margins move in a bit" were previously typeset identically, which made
+   * the real one easy to miss and the mild one look like a telling-off.
+   *
+   * Two sources, and they answer different questions. The plan's warnings
+   * are about the picture and the paper — does it fit, do the margins move.
+   * The sheet's are about the machine in front of you: what the carriage
+   * reaches, where the bell rings, when to hold the margin release. On a
+   * single sheet both come out of the same piece of work and the split is
+   * invisible; on a composite the first is asked once and the second once
+   * per sheet, which is the only arrangement that is true.
+   */
+  $('warnings').innerHTML = [
+    ...(app.plan?.warnings ?? []),
+    ...(app.setup?.warnings ?? []),
+  ]
     .map((w) => {
       const level = typeof w === 'string' ? 'note' : (w.level ?? 'note');
       const text = typeof w === 'string' ? w : w.text;
@@ -848,15 +1281,23 @@ function draw() {
 
   // What fits on the sheet as it will actually be fed in, not on the size as
   // it sits in the picker.
-  const area = textArea(app.sheet, app.machine);
-  $('paperHint').textContent = `${area.cols} x ${area.rows} inside the margins`
-    + (app.sheet.landscape ? ', sideways' : '');
+  const area = textArea(app.paper, app.machine);
+  const seen = planningGrid(area, app.turn);
+  $('paperHint').textContent = `${seen.cols} x ${seen.rows} inside the margins`
+    + (turned ? ', as you will look at it' : '');
   $('paperHint').title =
-    `${app.paper.name}${app.sheet.landscape ? ', fed in on its long edge,' : ''}` +
-    ` holds ${area.cols} characters across and ` +
-    `${area.rows} lines between the margins at ${m.cpi} characters per inch.`;
+    `${app.paper.name} goes in upright and holds ${area.cols} characters ` +
+    `across and ${area.rows} lines between the margins at ${m.cpi} ` +
+    `characters per inch.` +
+    (turned ? ` Turned to be read, that same region is ${seen.cols} across by ` +
+      `${seen.rows} down.` : '');
 
-  drawMini();
+  // Before drawMini(), because this is what decides whether the preview is
+  // rotated at all — and because the button has to appear and disappear with
+  // the orientation rather than with the next click on it.
+  setTurnedView(app.showTurned);
+  syncComposeHint();
+  drawSheetPick();
 
   const steps = instructions();
   $('instructions').innerHTML = steps.map(
@@ -868,14 +1309,27 @@ function draw() {
     ? `Before you start — ${steps.map(([a]) => a.toLowerCase()).join(', ')}`
     : 'Before you start — set the machine up';
 
+  /*
+   * From here down the panel is about typing, so it is about one sheet.
+   *
+   * The half above describes the finished picture and reads `app.motif`; the
+   * half below is the thing you work down with a carriage in your hand, and
+   * that is `app.lines` — the piece of the picture on the paper currently in
+   * the machine. On a single sheet the two are the same array and none of
+   * this matters; on a composite, mixing them up would number the lines of
+   * sheet 3 as though sheet 1 were still in the machine.
+   */
+  const typing = app.lines;
+  const typingInk = app.colours;
+
   // size the sheet so the widest line fits without scrolling, where possible
-  const ch = Math.max(20, width);
+  const ch = Math.max(20, Math.max(0, ...typing.map((l) => l.length)));
   document.documentElement.style.setProperty(
     '--sheet-size', `${clamp(Math.floor((window.innerWidth - 80) / ch * 1.7), 8, 15)}px`);
   document.documentElement.style.setProperty(
     '--sheet-full', `${clamp(Math.floor((window.innerWidth - 40) / ch * 1.7), 9, 22)}px`);
 
-  app.els = renderSheet($('sheet'), lines, colours);
+  app.els = renderSheet($('sheet'), typing, typingInk);
   app.els.forEach((el, i) => {
     el.onclick = (e) => {
       if (i !== app.at) { go(i); return; }
@@ -910,7 +1364,7 @@ function draw() {
    * nothing on the page or the machine tells you which absolute line of the
    * sheet you are on.
    */
-  app.rows = renderTable($('table'), lines, colours);
+  app.rows = renderTable($('table'), typing, typingInk);
   app.rows.forEach((tr, i) => { tr.onclick = () => go(i); });
 
   paint();
@@ -918,26 +1372,97 @@ function draw() {
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
+/**
+ * Which sheet you are typing, when there is more than one.
+ *
+ * Numbered in the order they are typed, which is also the order they are
+ * laid out: left to right, then down. A blank sheet is still listed and
+ * still reachable — somebody laying out four pieces of paper needs to know
+ * that the fourth is blank, not that there are three.
+ */
+function drawSheetPick() {
+  const row = $('sheetPickRow');
+  const host = $('sheetPick');
+  if (!row || !host) return;
+
+  const sheets = app.plan?.sheets ?? [];
+  row.hidden = sheets.length < 2;
+  if (row.hidden) { host.innerHTML = ''; return; }
+
+  host.style.setProperty('--across', String(app.plan.across));
+  host.innerHTML = sheets.map((sh, i) => {
+    const cls = ['pick'];
+    if (i === app.tile) cls.push('on');
+    if (sh.blank) cls.push('blank');
+    return `<button type="button" class="${cls.join(' ')}" data-i="${i}"` +
+      ` aria-pressed="${i === app.tile}" title="${esc(sh.name)}">${i + 1}</button>`;
+  }).join('');
+
+  for (const el of host.querySelectorAll('.pick')) {
+    el.onclick = () => {
+      // A person picking a sheet is starting it, so it opens at line one.
+      useTile(+el.dataset.i, true);
+      draw();
+      save();
+    };
+  }
+
+  const cur = currentSheet();
+  const done = sheets.filter((sh) => !sh.blank).length;
+  $('sheetPickHint').textContent = cur
+    ? `${cur.name}. ${done} of ${sheets.length} sheets carry any typing; ` +
+      `each is set up on its own and its lines are numbered from one.`
+    : '';
+}
+
 function instructions() {
   const s = app.setup;
-  if (!s) return [];
   const out = [];
   const m = app.machine;
+  const sheet = currentSheet();
+  const composite = isComposite(app.paper);
 
   /*
-   * First, because it is the one step that has to happen before the paper
-   * goes in and the only one that cannot be corrected afterwards.
-   *
-   * Nothing is rotated to achieve this. The type bars strike one way only,
-   * so a printer's trick of turning the glyphs is not available - but the
-   * sheet itself can simply go in the other way round, which costs nothing.
+   * The layout comes first and it is not a machine step at all: it is what
+   * the sheets are *for*, and knowing it changes how you read everything
+   * below. Somebody who does not know that sheet 2 goes to the right of
+   * sheet 1 has no way to tell whether its margin stop is wrong.
    */
-  if (app.sheet.landscape) {
-    out.push([`Feed the ${app.paper.name} in sideways`,
-      `Long edge first, landscape. The motif is ${
-        Math.max(0, ...app.lines.map((l) => l.length))} columns wide, which ` +
-      `does not fit upright. Type it exactly as it reads; it is the paper ` +
-      `that is turned, not the letters.`]);
+  if (composite) out.push(...layoutAdvice(app.paper, m));
+
+  if (!s) {
+    if (sheet?.blank) {
+      out.push([`${sheet.name} stays blank`,
+        `The motif does not reach this sheet. Leave the paper out of the ` +
+        `machine, or keep it for the join — it still has to be there when ` +
+        `you lay the picture out.`]);
+    }
+    return out;
+  }
+
+  if (composite) {
+    out.push([`Take sheet ${app.tile + 1} — ${ordinalWord(sheet.col + 1)} ` +
+      `across, ${ordinalWord(sheet.row + 1)} down`,
+      `Its piece of the picture is ` +
+      `${Math.max(0, ...app.lines.map((l) => l.length))} columns by ` +
+      `${app.lines.length} lines. The stops below are for this sheet only; ` +
+      `every sheet is set up differently, which is how the joins line up.`]);
+  }
+
+  /*
+   * The first step used to be "feed the sheet in sideways", and it is worth a
+   * note that it has gone. It could not be done: A4 on its long edge is 297
+   * mm of writing line against an SM7 carriage of 249. What replaced it is at
+   * the *end* of this list, because turning the sheet is now the last thing
+   * you do rather than the first. The paper goes in the way paper always goes
+   * in; the motif is what was laid on its side.
+   */
+  const advice = turnAdvice(app.turn);
+  if (advice) {
+    out.push([`Feed the ${unitOf(app.paper).name} in upright`,
+      `As usual, short edge first. The motif is typed lying down — ` +
+      `${Math.max(0, ...app.lines.map((l) => l.length))} columns across and ` +
+      `${app.lines.length} lines down. Nothing about the machine changes.`]);
   }
 
   if (s.paperGuide) {
@@ -963,8 +1488,23 @@ function instructions() {
     out.push(['Margin release ready',
       'The motif starts further left than the stop can reach.']);
   }
+  if (advice) {
+    /*
+     * Last, because it is the only step that happens after the typing — and
+     * on a composite it is the whole picture that turns, once it is laid
+     * out, not each sheet as it comes off the machine.
+     */
+    out.push([
+      composite ? `When every sheet is done, ${advice.short}`
+        : `When it is done, ${advice.short}`,
+      composite ? `${advice.long} Lay all ${sheetCount(app.paper)} sheets out ` +
+        `first, then turn the whole thing.` : advice.long]);
+  }
   return out;
 }
+
+const ORDINAL_WORDS = ['first', 'second', 'third', 'fourth'];
+const ordinalWord = (n) => ORDINAL_WORDS[n - 1] ?? `${n}th`;
 
 function paint(previous = -1) {
   paintSheet(app.els, app.lines, app.colours, app.at, app.strike, previous);
@@ -1106,7 +1646,7 @@ function wire() {
 
   // settings that only need a redraw
   ['mode', 'align', 'paper', 'machine', 'letterStyle', 'invert',
-   'ink', 'useRed', 'orientation'].forEach((id) => {
+   'ink', 'useRed', 'orientation', 'composeUnit'].forEach((id) => {
     $(id).onchange = () => {
       if (id === 'machine') {
         useProfile($('machine').value);
@@ -1114,7 +1654,14 @@ function wire() {
         rebuildAtlas();
         showMeasured();
       }
-      if (id === 'paper') app.paper = paperById($('paper').value);
+      /*
+       * A different piece of paper means the sheet you were typing no longer
+       * exists — sheet 3 of 4 is nothing at all once the matrix is 2 × 1 —
+       * so the panel goes back to the first. convert() reads the pickers
+       * itself, through usePaper(), which is why there is nothing to assign
+       * here any more.
+       */
+      if (id === 'paper' || id === 'composeUnit') app.tile = 0;
       $('sentenceRow').hidden = $('mode').value !== 'sentence';
       convert();
     };
@@ -1168,6 +1715,9 @@ function wire() {
   // same sheet is drawn at, so there is no need to convert the picture again.
   $('zoomFit').onclick = () => { setZoom('fit'); save(); };
   $('zoomReal').onclick = () => { setZoom('original'); save(); };
+  if ($('zoomTurn')) {
+    $('zoomTurn').onclick = () => { setTurnedView(!app.showTurned); save(); };
+  }
   $('back1').onclick = () => {
     app.strike = Math.max(0, app.strike - 1);
     app.tracker?.strike(-1);
@@ -1321,8 +1871,8 @@ function applyMeasurement() {
   app.measured[app.machine.id] = patch;
   useProfile(app.machine.id);
 
-  const area = textArea(app.sheet, app.machine);
-  parts.push(`${app.paper.name}${app.sheet.landscape ? ' sideways' : ''}` +
+  const area = planningGrid(textArea(app.paper, app.machine), app.turn);
+  parts.push(`${app.paper.name}${isTurned(app.turn) ? ', turned,' : ''}` +
     ` now holds ${area.cols} characters across.`);
 
   $('mResult').textContent = parts.join(' ');
@@ -1380,17 +1930,28 @@ function toggleFull() {
 
 /** A printable version: the sheet at true size, then what to type. */
 function savePdf() {
-  if (!app.lines.length) return;
+  if (!app.motif.length) return;
+  /*
+   * The whole job, not the sheet on screen.
+   *
+   * A PDF is what you take away from the screen, so it has to carry every
+   * piece of paper: each one at true size, each one with its own stops, each
+   * one with its own ruled pages. `paper` is the *single* sheet, because
+   * that is what this document gets printed on however big the picture is.
+   */
   const text = buildSheetPdf({
-    lines: app.lines,
-    colours: app.colours,
-    // The sheet as it goes in the machine. The PDF draws page 1 at true
-    // size, so a portrait page here would put the motif off the paper.
-    paper: app.sheet,
+    lines: app.motif,
+    colours: app.motifColours,
+    sheets: app.plan?.sheets ?? null,
+    // The sheet as it goes in the machine, which is upright and nothing
+    // else. The true-size pages are drawn at this size, and a motif planned
+    // for a turned sheet is already lying down by the time it gets here.
+    paper: unitOf(app.paper),
+    turn: app.turn,
     machine: app.machine,
     setup: app.setup,
     instructions: instructions(),
-    tally: inkTally(app.lines, app.colours),
+    tally: inkTally(app.motif, app.motifColours),
     runsOf,
     title: 'Typewriter ASCII',
   });

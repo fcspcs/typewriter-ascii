@@ -31,7 +31,9 @@ Everywhere:
 | `--machine <id>` | `olympia-sm7` | from `machines` |
 | `--paper <id>` | `a4` | from `papers` |
 | `--align <centre\|topleft>` | `centre` | |
-| `--orientation <upright\|sideways>` | `upright` | which way the sheet goes in |
+| `--turn <none\|left\|right>` | `none` | which way you turn the finished sheet |
+| `--across <1-4>` | `1` | sheets side by side |
+| `--down <1-4>` | `1` | rows of them |
 | `--red <lines>` | none | e.g. `0-15,20`, for a two-colour ribbon |
 | `--pdf <path>` | none | also write a printable PDF |
 | `--json` | off | the whole result as one object on stdout |
@@ -45,7 +47,7 @@ Pictures only:
 | `--contrast <50…300>` | `130` | the slider, as a percentage |
 | `--detail <0…100>` | `45` | the slider; lower blurs more |
 | `--invert <auto\|no\|yes>` | `auto` | light drawing on a dark ground |
-| `--width <n>` | `60` | columns, capped by the edge of the sheet |
+| `--width <n>` | `60` | columns as you look at it, capped by the sheet |
 | `--sentence "<text>"` | *she loved him…* | for `--mode sentence` |
 | `--atlas <path.json>` | none | measured glyph shapes, see below |
 | `--preview <path.png>` | none | write the prepared image out to look at |
@@ -54,13 +56,44 @@ Unknown ids, out-of-range modes and non-numeric sliders are refused rather
 than defaulted. A typo that silently produces a plausible sheet for the wrong
 machine costs more than an error does.
 
-### How wide, and which way round
+### Several sheets
+
+`--across` and `--down` spread one motif over a grid of sheets, the same way
+the *Compose* block does on the page. Each sheet is a separate visit to the
+machine, so the output gives each one its own stops, its own wind-on and its
+own listing with line numbers from one — and `--pdf` writes every sheet at
+true size followed by its own ruled pages.
+
+```
+$ cli.mjs image cat.png --across 2 --down 2 --width 120
+120 × 90 characters, 10800 keystrokes, 2 × 2 A4, Olympia SM7 de Luxe
+4 sheets, 4 of them typed on.
+```
+
+The composite grid is the single sheet's grid multiplied, not the composite's
+millimetres divided, so no cell ever lands across a join — see *Compose* in
+the README for why that is the only arrangement in which every cell can be
+struck. `--json` reports every sheet under `sheets`, each with the cell it
+starts at and the lines that go on it.
+
+### How wide, and which way it is read
 
 Both used to decide themselves, and both now do what they are told.
+
+`--turn` has had two predecessors and both were wrong in different ways.
 `--landscape` meant "turn the sheet if that comes out shorter", so the same
-command gave an upright sheet or a turned one depending on the motif — and
-the column ceiling moved with it. It is `--orientation` now; the old flag
-still works and means `sideways`.
+command gave an upright sheet or a turned one depending on the motif.
+`--orientation sideways` made it a stated choice but stated it about the
+*paper* — feed the sheet in on its long edge — which is 297 mm of writing
+line on a machine whose carriage scale ends at 249. Both meant "I want this
+read sideways", which is still a thing you can ask for, so both now mean
+`--turn left`.
+
+The paper goes in upright either way. What `--turn` decides is that the motif
+is laid on its side before it is typed, and which way you turn the finished
+sheet to look at it. Turning buys millimetres rather than columns: on A4 at
+pica the margins hold 66 × 60 cells upright and 60 × 66 turned, but those 60
+reach 254 mm of paper against 168 for the 66.
 
 `--width` stopped at the usable area, which on an upright A4 at pica is 66
 columns. That made a perfectly typeable 78-column motif unaskable. The limit
@@ -84,7 +117,7 @@ makes that fit.
   "ok": true,
   "size": { "width": 48, "height": 27 },
   "keystrokes": { "total": 486, "black": 486, "red": 0 },
-  "paper": { "id": "a4", "name": "A4", "landscape": false },
+  "paper": { "id": "a4", "name": "A4", "turn": "none" },
   "machine": { "id": "olympia-sm7", "name": "Olympia SM7 de Luxe" },
   "setup": { "left": 17, "paperGuide": null, "advance": 21, "marginRelease": false },
   "warnings": [{ "level": "note", "text": "…" }],
