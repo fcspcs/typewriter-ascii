@@ -1695,8 +1695,8 @@ function wire() {
 
   document.addEventListener('keydown', (e) => {
     // `matches` only exists on elements, and a key event does not always
-    // have one for a target — a remote that sends its keypress before
-    // anything on the page has focus lands on the document itself.
+    // have one for a target — a keypress that arrives before anything on
+    // the page has focus lands on the document itself.
     if (e.target?.matches?.('input, textarea, select')) return;
     if (e.key === ' ' || e.key === 'ArrowDown' || e.key === 'Enter') {
       e.preventDefault(); go(app.at + 1);

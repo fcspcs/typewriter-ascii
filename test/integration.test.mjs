@@ -1527,19 +1527,7 @@ await check('the microphone panel is hidden until listening starts', () => {
   assert($('ear').hidden, 'the ear panel is showing unprompted');
 });
 
-await check('the way to keep your hands on the machine is explained', () => {
-  // The most reliable line advance is a ten-euro Bluetooth shutter remote,
-  // which already works because it enumerates as a keyboard. It is worth
-  // nothing if nobody is told, so this checks the page says so.
-  const hands = $('stepHands');
-  assert(hands, 'no panel about keeping your hands on the machine');
-  const t = hands.textContent;
-  assert(/shutter remote/i.test(t), `remotes are not mentioned: "${t}"`);
-  assert(/foot switch/i.test(t), 'foot switches are not mentioned');
-  assert(/Space|Enter/.test(t), 'the keys it actually listens for are not named');
-});
-
-await check('the keys named in that panel are the keys that work', async () => {
+await check('Space, Enter and the arrows drive the line', async () => {
   [...window.document.querySelectorAll('.tab')]
     .find((t) => t.dataset.tab === 'text').click();
   $('letterText').value = 'HI';

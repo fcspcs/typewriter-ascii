@@ -358,22 +358,16 @@ count — and the rest stays as motif, so you always see where you are:
 
 ![The typing view: setup summary, the motif above, and the current line opened up into counted runs and grouped spaces — what to strike, nothing more](docs/img/ui-typing.png)
 
-Two ways to advance without reaching over:
-
-- **A Bluetooth camera shutter remote**, the ten-euro kind sold for phone
-  selfies. It enumerates as a keyboard, and the app advances on Space, Enter
-  or ↓. Pair it, tape it where your wrist rests or put a foot switch under
-  the desk, press it at the end of each line. Nothing to install. This is
-  the reliable option, and it is worth using even alongside the microphone.
-- **Listening.** The microphone counts your strikes within the line — onset
-  detection on the audio clock, a threshold relative to the room, no machine
-  learning and nothing uploaded. The carriage return resets the count, so an
-  error is confined to the line it happened on. And when the count cannot be
-  trusted, it *says it is lost* and asks where you are, instead of showing a
-  column it cannot stand behind: you are looking at the paper, not the
-  screen, and the machine has no undo. If the defaults do not suit your
-  machine, **calibrate** measures it — type twenty characters and it fits
-  the timing to your typewriter's rebound.
+**Space, Enter or ↓** move to the next line, **↑** goes back. And the
+microphone can count the strikes *within* the line: **listening** is onset
+detection on the audio clock, with a threshold relative to the room — no
+machine learning and nothing uploaded. The carriage return resets the count,
+so an error is confined to the line it happened on. And when the count
+cannot be trusted, it *says it is lost* and asks where you are, instead of
+showing a column it cannot stand behind: you are looking at the paper, not
+the screen, and the machine has no undo. If the defaults do not suit your
+machine, **calibrate** measures it — type twenty characters and it fits the
+timing to your typewriter's rebound.
 
 The reasoning, the measurements and the sources for the listening feature,
 including what remains unproven, are written up in
