@@ -123,6 +123,17 @@
           <p class="hint" id="letterHint">
             One line of letters per line you type. A blank line leaves a gap.
           </p>
+          <!--
+            Said at the box, while you are typing into it.
+
+            Lines break at spaces to fit the paper, so a sentence can no
+            longer overrun it. One word longer than the sheet is what is
+            left: it cannot be broken - a letterform split down the middle
+            is unreadable - so it is the word, the face or the paper that
+            has to give, and all three are named here rather than in a note
+            three controls further down.
+          -->
+          <p class="warn stop" id="letterFit" hidden></p>
         </div>
         <div class="field">
           <label for="letterStyle">Letters</label>
@@ -164,6 +175,15 @@
           type are swapped for the nearest shape it has, and you will be told
           which.
         </p>
+        <!--
+          Why there is no "how wide" here, and what the numbers are instead.
+
+          The slider sets how wide a motif is laid out, and art that already
+          exists has no layout left to decide - its spacing is what makes it
+          the picture it is. So this tab states the two numbers the slider
+          would otherwise be adjusting, and leaves the choice to the paper.
+        -->
+        <p class="hint" id="pasteFit"></p>
       </div>
     </fieldset>
 

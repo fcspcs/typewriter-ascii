@@ -203,9 +203,10 @@ for (const [flag, v] of [['across', across], ['down', downTiles]]) {
 const sheet = tiled(basePaper, across, downTiles);
 const paper = unitOf(sheet);
 
-// The region a motif is laid out against: the sheet's, or the sheet's turned
-// on its side if that is how it will be read. See src/core/turn.js.
-const planRoom = planningGrid(textArea(sheet, machine), turn);
+// The edge of the region a motif is laid out against: the sheet's, or the
+// sheet's turned on its side if that is how it will be read. It is the
+// ceiling on --width and nothing more — the margins are a note from setUp()
+// rather than a wall. See src/core/turn.js.
 const planEdge = planningGrid(sheetGrid(sheet, machine), turn);
 
 /* ── pictures ────────────────────────────────────────────────── */
@@ -235,6 +236,19 @@ function loadPicture(path) {
     return die(e.message);
   }
 }
+
+/**
+ * How wide a word is laid out, in planning-grid columns.
+ *
+ * The same `--width` a picture is fitted to, and the same default, because
+ * the page offers one slider for both and the two doors have to agree. It
+ * is a real cap: lines break at spaces to reach it, which is what keeps a
+ * sentence on the paper. A single word wider than it cannot be broken —
+ * a letterform split down the middle is unreadable — and setUp() refuses
+ * that with a reason rather than hyphenating.
+ */
+const textWidth = () =>
+  Math.min(num('width', 60), planEdge.cols);
 
 /** How wide the motif may be, and how much paper there is for it. */
 function picturePaper() {
@@ -667,7 +681,7 @@ if (cmd === 'image') {
     const font = parseFlf(fs.readFileSync(flfPath, 'utf8'),
       flfPath.replace(/^.*[\\\/]/, '').replace(/\.flf$/i, ''));
     const fset = flfLetter(font, word.replace(/\\n/g, '\n'),
-      { maxCols: planRoom.cols });
+      { maxCols: textWidth() });
     if (fset.unknown.size) {
       console.error(`note: ${font.name} has no ` +
         `${[...fset.unknown].join(' ')} - left blank`);
@@ -720,7 +734,7 @@ if (cmd === 'image') {
   // it a sentence simply runs off the sheet, and the only output is a
   // refusal.
   lines = letter(word.replace(/\\n/g, '\n'),
-    { style, tones, maxCols: planRoom.cols, substitutes: swaps });
+    { style, tones, maxCols: textWidth(), substitutes: swaps });
   }
 } else {
   die(`Unknown command: ${cmd}`);

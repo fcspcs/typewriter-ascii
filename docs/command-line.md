@@ -45,6 +45,7 @@ Everywhere:
 | --- | --- | --- |
 | `--flf <path.flf>` | none | set the word in a FIGlet font; nineteen ship in `fonts/` |
 | `--style <oblique\|obliqueBig>` | `oblique` | the drawn three-dimensional face |
+| `--width <n>` | `60` | columns to break lines at, capped by the sheet |
 
 `\n` in the word starts a second line of letters, since a shell makes a
 real newline awkward to type. Marks the machine has not got are typed as
@@ -52,6 +53,13 @@ their stand-ins and named; a mark with no stand-in is left blank, by name.
 With `--turn` the word is set as a picture rather than laid down cell by
 cell — see [lettering.md](lettering.md#sideways-the-word-becomes-a-picture)
 — which means `--atlas` applies to it too.
+
+`--width` is the same flag and the same default a picture is fitted to,
+because the page offers one control for both. It is a real cap: lines break
+at spaces to reach it, so a sentence cannot overrun the paper however long
+it is. A single word wider than it is the one thing left over — a
+letterform split down the middle is unreadable, so it is left whole and
+`setUp()` refuses the sheet with a reason rather than hyphenating.
 
 Pictures only:
 
@@ -61,7 +69,7 @@ Pictures only:
 | `--contrast <50…300>` | `130` | the slider, as a percentage |
 | `--detail <0…100>` | `45` | the slider; lower blurs more |
 | `--invert <auto\|no\|yes>` | `auto` | light drawing on a dark ground |
-| `--width <n>` | `60` | columns as you look at it, capped by the sheet |
+| `--width <n>` | `60` | columns as you look at it, capped by the sheet; `text` reads it too |
 | `--sentence "<text>"` | *she loved him…* | for `--mode sentence` |
 | `--atlas <path.json>` | none | measured glyph shapes, see below |
 | `--preview <path.png>` | none | write the prepared image out to look at |

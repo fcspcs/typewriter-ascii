@@ -58,6 +58,11 @@ A generator that ignores the machine produces art that cannot be typed:
   a word is set as a picture, so the letterforms keep their proportions
 - **Existing art** → paste it in; characters your machine lacks are swapped
   for the nearest shape it has, and you are told what changed
+- **It fits, or it says why** → one *how wide* control governs pictures and
+  words alike: a picture is scaled to it, a line of lettering breaks at
+  spaces to reach it. A single word too wide to break is the one thing that
+  cannot be wrapped away, so it is named at the box you typed it into, with
+  the ways out offered as buttons
 - **Setup instructions** → paper guide, margin stops, how far to wind on
 - **A sheet you can follow** → the current line opens in place and shows what
   to type; the rest stays as motif so you always see where you are

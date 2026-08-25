@@ -792,22 +792,92 @@ await check('it follows a change of paper', async () => {
   await wait(350);
 });
 
-await check('it gets out of the way where it does nothing', async () => {
-  // Lettering takes its size from the word and the face; pasted art from the
-  // source. The slider is not consulted in either, and a control that does
-  // nothing makes you doubt every other control on the page.
-  for (const tab of ['text', 'paste']) {
+await check('it applies wherever there is a layout to decide', async () => {
+  /*
+   * A picture is scaled to it and a word breaks at spaces to reach it, so
+   * the one number that decides how wide a motif comes out belongs in both
+   * — it used to be readable in the picture tab alone, which left lettering
+   * laid out to a width nobody could see or change.
+   *
+   * Pasted art is the exception, and the tab says so rather than offering a
+   * dead control: art arrives at its own size and has no layout left to
+   * decide. A slider there would have to resample it to mean anything.
+   */
+  for (const tab of ['image', 'text']) {
     [...window.document.querySelectorAll('.tab')]
       .find((t) => t.dataset.tab === tab).click();
     await wait(350);
-    assert($('widthRow').hidden, `still offered in the ${tab} tab`);
+    assert(!$('widthRow').hidden, `gone missing in the ${tab} tab`);
   }
+
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'paste').click();
+  await wait(350);
+  assert($('widthRow').hidden, 'still offered for pasted art');
+  assert(/own size/.test($('pasteFit').textContent),
+    `no reason given in its place: "${$('pasteFit').textContent}"`);
+  assert(/\d+ columns/.test($('pasteFit').textContent),
+    `the numbers the slider would have set are not stated: ` +
+    `"${$('pasteFit').textContent}"`);
 
   [...window.document.querySelectorAll('.tab')]
     .find((t) => t.dataset.tab === 'image').click();
   await wait(350);
-  assert(!$('widthRow').hidden, 'gone missing where it does apply');
 });
+
+await check('a line of lettering breaks at spaces to the width set', async () => {
+  // The cap is what makes a sentence unable to overrun the paper: whatever
+  // the slider is set to is inside the sheet, and lines break to reach it.
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'text').click();
+  $('width').value = '40';
+  $('width').dispatchEvent(new window.Event('change'));
+  // Words that each fit the setting on their own, so what is being tested
+  // is the break and not the refusal.
+  $('letterText').value = 'HI HO ES DU';
+  $('letterText').dispatchEvent(new window.Event('input'));
+  await wait(500);
+
+  const wide = Math.max(0, ...$('mini').textContent.split('\n')
+    .map((r) => r.replace(/\s+$/, '').length));
+  const from = Math.min(...$('mini').textContent.split('\n')
+    .filter((r) => r.trim()).map((r) => r.length - r.trimStart().length));
+  assert(wide - from <= 40,
+    `${wide - from} columns against the 40 the slider was set to`);
+
+  $('width').value = '60';
+  $('width').dispatchEvent(new window.Event('change'));
+  await wait(400);
+});
+
+await check('a word too wide to break is caught at the box it was typed in',
+  async () => {
+    /*
+     * The one motif that can still be asked for and not fit: wrapping only
+     * ever breaks at a space, so a single long word cannot be rescued by a
+     * narrower column. It is named where it was typed, with both numbers,
+     * and the ways out that would actually work are offered as buttons —
+     * never turning the sheet, which is narrower still.
+     */
+    $('letterText').value = 'Moinnnnnnnnnnnnnnnnnnn';
+    $('letterText').dispatchEvent(new window.Event('input'));
+    await wait(500);
+
+    const t = $('letterFit').textContent;
+    assert(!$('letterFit').hidden, 'nothing said about a word that will not fit');
+    assert(/\d+ of \d+ columns/.test(t), `both numbers are not given: "${t}"`);
+    assert(/Moinnn/.test(t), `the offending word is not named: "${t}"`);
+    assert($('letterText').classList.contains('over'),
+      'the box does not show that it holds something untypeable');
+
+    // And it goes away again when the word does fit.
+    $('letterText').value = 'HI';
+    $('letterText').dispatchEvent(new window.Event('input'));
+    await wait(500);
+    assert($('letterFit').hidden, 'the refusal outlived the word that caused it');
+    assert(!$('letterText').classList.contains('over'),
+      'the box stayed marked after the word was shortened');
+  });
 
 console.log('planning a motif to be read sideways');
 
@@ -1645,10 +1715,16 @@ await check('the picker says which faces are too wide for the paper', async () =
    * faces on offer do that to `HELLO` on an upright A4, and the only way to
    * find out used to be to pick one and watch it get cut in half.
    */
+  // Set the width explicitly: it is the cap the labels are measured
+  // against, so a test that inherited whatever the last one left would be
+  // measuring a moving target. MORGEN is 77 columns in the compact face
+  // and 95 in the big one, against the 82 an A4 holds edge to edge.
+  $('width').value = '82';
+  $('width').dispatchEvent(new window.Event('change'));
   await typeWord('MORGEN', 'oblique');
   const labels = [...$('letterStyle').options].map((o) => o.textContent);
   const wide = labels.filter((t) => /too wide/.test(t));
-  assert(wide.length > 0, 'no face is called out as too wide for A4');
+  assert(wide.length > 0, 'no face is called out as too wide');
   assert(/\d+ of \d+ columns/.test(wide[0]),
     `the label does not give both numbers: "${wide[0]}"`);
   // And a face that does fit is named plainly, with no warning attached.
@@ -1656,18 +1732,39 @@ await check('the picker says which faces are too wide for the paper', async () =
     `the fitting face is not named plainly: ${labels.join(' | ')}`);
 });
 
-await check('and the hint says what to do about it', async () => {
-  await typeWord('MORGEN', 'obliqueBig');
-  const t = $('letterStyleHint').textContent;
-  assert(/cut off at the edge/.test(t), `no warning in the hint: "${t}"`);
-  assert(/turn the sheet|more paper|narrower face/.test(t),
-    `no way out is offered: "${t}"`);
+await check('and the ways out are offered as the buttons that take them',
+  async () => {
+    await typeWord('MORGEN', 'obliqueBig');
+    const t = $('letterStyleHint').textContent;
+    assert(/cut off at the edge/.test(t), `no warning in the hint: "${t}"`);
+    assert(/\d+ of \d+ columns/.test(t), `both numbers are not given: "${t}"`);
+    /*
+     * And no advice in the prose, because the buttons carry it and the
+     * prose used to get it wrong: it offered turning the sheet first, and
+     * turning makes a motif narrower — 70 columns against 82 — since a
+     * turn buys millimetres and spends columns.
+     */
+    assert(!/turn the sheet/.test(t),
+      `still recommending the turn, which is narrower: "${t}"`);
+    const fixes = [...window.document.querySelectorAll('#letterFit button')]
+      .map((b) => b.textContent);
+    assert(fixes.length > 0, 'a word that will not fit was offered no way out');
+    assert(fixes.every((f) => /\d+ columns/.test(f)),
+      `a way out does not say what it would give: ${fixes.join(' | ')}`);
+    assert(!fixes.some((f) => /turn/i.test(f)),
+      `the turn was offered as a fix: ${fixes.join(' | ')}`);
+  });
 
-  // It goes away again when the face fits, rather than staying on screen
-  // complaining about a choice that has been changed.
+await check('the width warning goes when the face fits', async () => {
+  // Rather than staying on screen complaining about a choice that has
+  // been changed.
   await typeWord('MORGEN', 'oblique');
   assert(!/cut off at the edge/.test($('letterStyleHint').textContent),
     'the width warning outlived the face that caused it');
+
+  $('width').value = '60';
+  $('width').dispatchEvent(new window.Event('change'));
+  await wait(400);
 });
 
 console.log('walking the list of faces');

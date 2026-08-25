@@ -332,8 +332,32 @@ function syncInkControls() {
   $('inkTally').hidden = !t.red;
 }
 
+/**
+ * How wide the motif may be laid out, in planning-grid columns.
+ *
+ * The slider, bounded by the paper. One number for every tab that has a
+ * layout to decide, so "how wide" means the same thing whether a photograph
+ * or a word is being fitted into it — and it is a real cap, not advice: a
+ * line of lettering breaks at spaces to reach it, exactly as a picture is
+ * scaled to reach it.
+ */
+const layoutWidth = () =>
+  Math.min(+$('width').value,
+    planningGrid(sheetGrid(app.paper, app.machine), app.turn).cols);
+
 function syncWidthControl() {
-  const applies = currentTab() === 'image';
+  /*
+   * Everywhere but pasted art.
+   *
+   * It used to be the picture tab alone, which left a word laid out to a
+   * width nobody could see or change — wrapped to the margins, take it or
+   * leave it. Art that already exists is the one case with no layout left
+   * to decide: its spacing is what makes it the picture it is, so that tab
+   * states the numbers instead of offering a slider that would have to
+   * resample the art to mean anything.
+   */
+  const tab = currentTab();
+  const applies = tab !== 'paste';
   $('widthRow').hidden = !applies;
   if (!applies) return;
 
@@ -369,11 +393,14 @@ function syncWidthControl() {
 
   const over = +el.value > area;
   $('widthOut').textContent = `${el.value} cols`;
-  $('widthHint').textContent =
-    `Wider means more detail and a great many more keystrokes. ` +
-    `${app.paper.name}${turned ? ' turned' : ''} holds ${area} across inside ` +
-    `the usual margins and ${cap} edge to edge` +
+  const room = `${app.paper.name}${turned ? ' turned' : ''} holds ${area} ` +
+    `across inside the usual margins and ${cap} edge to edge` +
     (over ? ' — past the margins now, so the stops move in less.' : '.');
+  $('widthHint').textContent = tab === 'text'
+    // The same number, doing the job a word understands: lines break at
+    // spaces to reach it, which is what keeps a sentence on the paper.
+    ? `Lines break at spaces to fit this. ${room}`
+    : `Wider means more detail and a great many more keystrokes. ${room}`;
 }
 
 /**
@@ -564,8 +591,16 @@ const FLF = 'flf:';
 const isFlf = (v) => typeof v === 'string' && v.startsWith(FLF);
 const flfFonts = new Map();          // name → parsed font, or 'loading'
 
-/** The parsed font, or null while it is on its way (convert() re-runs). */
-function flfFont(name) {
+/**
+ * The parsed font, or null while it is on its way (convert() re-runs).
+ *
+ * `quiet` is for fonts nobody asked to see. Answering "which face would
+ * fit this word" means measuring all of them, and a redraw per arrival
+ * would be nineteen redraws for one question — so those settle into a
+ * single late refresh of the note that asked.
+ */
+let flfSettle = null;
+function flfFont(name, quiet = false) {
   const got = flfFonts.get(name);
   if (got && got !== 'loading') return got;
   if (!got) {
@@ -575,12 +610,45 @@ function flfFont(name) {
         .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.text(); })
         .then((text) => {
           flfFonts.set(name, parseFlf(text, name));
-          convert();
+          if (!quiet) convert();
+          else {
+            clearTimeout(flfSettle);
+            flfSettle = setTimeout(syncFit, 80);
+          }
         })
         .catch(() => flfFonts.delete(name));
     } catch { flfFonts.delete(name); }
   }
   return null;
+}
+
+/*
+ * Every bundled font, fetched once, and only ever because a word did not
+ * fit. Which faces would hold it cannot be answered without the files, and
+ * nobody should pay for nineteen of them until they have the problem the
+ * answer is for.
+ */
+let flfAsked = false;
+function flfLoadAll() {
+  if (flfAsked) return;
+  flfAsked = true;
+  for (const o of $('letterStyle').options) {
+    if (isFlf(o.value)) flfFont(o.value.slice(FLF.length), true);
+  }
+}
+
+/**
+ * How wide one word comes out in a face, or null if it cannot be known yet.
+ *
+ * Null rather than nought for a font still in flight: nought would read as
+ * "fits easily" and quietly recommend a face nobody has measured.
+ */
+function widestFor(word, style) {
+  if (!isFlf(style)) return widestWord(word, style);
+  const font = flfFonts.get(style.slice(FLF.length));
+  if (!font || font === 'loading') return null;
+  const r = flfLetter(font, String(word), { maxCols: 0 });
+  return Math.max(0, ...r.lines.map((l) => l.length));
 }
 
 /** A word set in an flf font, swapped to what this machine can strike. */
@@ -652,18 +720,19 @@ function convert() {
    * Two grids, and everything below depends on not confusing them.
    *
    * `sheet` and `room` are the machine's: columns are carriage positions and
-   * rows are lines you type, on an upright sheet, always. `plan` and
-   * `planRoom` are the same regions as the eye meets them once the sheet has
-   * been turned — rows and columns swapped. A motif is laid out against the
-   * planning grid and then laid down onto the sheet, and the turn itself is
-   * the only place the two are allowed to meet.
+   * rows are lines you type, on an upright sheet, always. `plan` is the same
+   * region as the eye meets it once the sheet has been turned — rows and
+   * columns swapped. A motif is laid out against the planning grid and then
+   * laid down onto the sheet, and the turn itself is the only place the two
+   * are allowed to meet.
    */
   const sheet = sheetGrid(app.paper, app.machine);
   const room = textArea(app.paper, app.machine);
   const plan = planningGrid(sheet, turn);
-  const planRoom = planningGrid(room, turn);
   // The slider is already bounded by the planning grid; the margins are a
-  // note from setUp(), not a ceiling.
+  // note from setUp(), not a ceiling. Every tab that has a layout to decide
+  // is laid out to this — see layoutWidth(), which is the same arithmetic
+  // for the controls that have to describe it.
   const maxCols = Math.min(+$('width').value, plan.cols);
   // A word or a block of pasted art is turned once it is finished, so the
   // machine's own keys decide which rotated marks are worth having.
@@ -738,7 +807,7 @@ function convert() {
       }
     } else if (word.trim() && flf) {
       if (font) {
-        const r = flfLines(font, word, { have, maxCols: planRoom.cols });
+        const r = flfLines(font, word, { have, maxCols });
         /*
          * One note, not three: note() holds a single line, so a word with
          * unknowns *and* swaps would show only whichever was said last. And
@@ -764,18 +833,19 @@ function convert() {
     } else if (word.trim()) {
       const style = $('letterStyle').value;
       /*
-       * Wrapped to the margins, not to the edge of the paper.
+       * Wrapped to the width control, like a picture is fitted to it.
        *
-       * `textArea` rather than `sheetGrid`, and it is worth saying why,
-       * because both "fit". Wrapped to the margins a sentence sits inside
-       * them and setUp() says nothing; wrapped to the sheet edge it earns
-       * the "wider than the usual margins" note on essentially every
-       * sentence, which trains people to ignore the one place the app
-       * warns them.
+       * It used to wrap to the margins and nothing else, so the one number
+       * that decides how wide a motif comes out was readable in the picture
+       * tab and invisible here. Now the same slider governs both, which is
+       * also what makes a sentence unable to overrun the paper: whatever it
+       * is set to is inside the sheet, and lines break at spaces to reach
+       * it. A single word wider than that is the one thing left over, and
+       * syncFit() says so at the box it was typed into.
        */
       const { swaps } = letterStandIns(style);
       lines = letter(word, {
-        style, tones: letterTones(style), maxCols: planRoom.cols,
+        style, tones: letterTones(style), maxCols,
         substitutes: swaps,
         /*
          * The same control decides both halves of "centred", because there
@@ -1334,7 +1404,10 @@ function syncLetterHint() {
    * about the machine in the room; this is a fact about a choice.
    */
   const word = $('letterText').value.trim() || $('letterText').placeholder;
-  const room = planningGrid(sheetGrid(app.paper, app.machine), app.turn).cols;
+  // The width the motif is actually laid out to, not the paper's own — the
+  // slider is a real cap now, so a face that fits the sheet but not the
+  // setting is still going to be cut off.
+  const room = layoutWidth();
 
   for (const opt of sel.options) {
     /*
@@ -1390,8 +1463,8 @@ function syncLetterHint() {
       const r = flfLines(font, word, { have, maxCols: room });
       const w = Math.max(0, ...r.lines.map((l) => l.length));
       if (w > room) {
-        parts.push(`Too wide — ${w} columns against the ${room} this sheet ` +
-          `holds, and a word is only ever broken at a space.`);
+        parts.push(`Too wide — ${w} of ${room} columns, and a word is only ` +
+          `ever broken at a space, so it will be cut off at the edge.`);
       }
       if (r.swaps.size) {
         parts.push(`Typed ${[...r.swaps]
@@ -1443,18 +1516,20 @@ function syncLetterHint() {
   /*
    * The width first, when it is a problem, because it outranks everything
    * else here: which keys the face strikes does not matter if the word runs
-   * off the paper. Three ways out, in the order they cost — the turn is
-   * free, the paper is a drawer away, and changing the face is the one that
-   * changes what you are making.
+   * off the paper.
+   *
+   * Short, though, and with no advice attached. syncFit() says the same
+   * thing at the words box, where the word being complained about actually
+   * is, and offers the ways out as the buttons that take them — measured,
+   * so it never suggests one that would not work. The prose here used to
+   * offer three and the first of them was wrong: turning the sheet makes a
+   * motif *narrower*, 70 columns against 82, because a turn buys
+   * millimetres and spends columns.
    */
   const tooWide = widestWord(word, style);
   if (tooWide > room) {
-    parts.push(`${STYLES[style]?.name ?? style} sets ${word.split(/\s+/)
-      .reduce((a, b) => (b.length > a.length ? b : a))} ${tooWide} columns ` +
-      `wide and ${app.paper.name}${isTurned(app.turn) ? ' turned' : ''} holds ` +
-      `${room}, so it will be cut off at the edge. A word is only ever broken ` +
-      `at a space, so this one cannot wrap: turn the sheet, use more paper, ` +
-      `or pick a narrower face.`);
+    parts.push(`Too wide — ${tooWide} of ${room} columns, and a word is ` +
+      `only ever broken at a space, so it will be cut off at the edge.`);
   }
   if (used.length) {
     parts.push(`${weight} — ${used.join(' ')}.` +
@@ -1467,6 +1542,155 @@ function syncLetterHint() {
     parts.push(`Showing ${$('letterText').placeholder} until you type something.`);
   }
   el.textContent = parts.join(' ');
+}
+
+/**
+ * Whether what is in the words box will go on the paper — said at the box.
+ *
+ * Lines break at spaces to the width control, so a sentence cannot overrun
+ * the sheet any more however long it is. What is left is a single word too
+ * wide to break, and no amount of wrapping touches that: a letterform split
+ * down the middle is unreadable, so letter() refuses to split one. Three
+ * things can give — the word, the face, or the paper — and the last two are
+ * offered as the buttons that take them.
+ *
+ * Not a block on typing. The limit is a property of the face rather than of
+ * the text — the same twenty-two characters fit in Italic and overrun in S
+ * Blood by a hundred and fourteen columns — so keystrokes refused here
+ * would come back the moment somebody changed the face, leaving text that
+ * could not have been typed and cannot now be corrected.
+ */
+function syncFit() {
+  const box = $('letterText');
+  const el = $('letterFit');
+  if (!box || !el) return;
+
+  const clear = () => {
+    box.classList.remove('over');
+    el.hidden = true;
+    el.textContent = '';
+  };
+
+  /*
+   * Nothing to say in three cases. Another tab is not this box's business;
+   * a motif planned sideways is set as a picture and scaled into the sheet,
+   * so there is no width left to overrun; and a ghost is something to look
+   * at rather than a job to do.
+   */
+  if (currentTab() !== 'text' || isTurned(app.turn) || !box.value.trim()) {
+    return clear();
+  }
+
+  const cap = layoutWidth();
+  const style = $('letterStyle').value;
+  let worst = '';
+  let wide = 0;
+  for (const piece of box.value.split(/\s+/)) {
+    if (!piece) continue;
+    const w = widestFor(piece, style);
+    if (w === null) return clear();      // the font is still on its way
+    if (w > wide) { wide = w; worst = piece; }
+  }
+  if (!wide || wide <= cap) return clear();
+
+  box.classList.add('over');
+  el.hidden = false;
+  el.textContent = `${wide} of ${cap} columns — “${worst}” cannot wrap, ` +
+    `because a line is only ever broken at a space.`;
+
+  const fixes = fitFixes(worst, wide, cap, style);
+  if (!fixes.length) return;
+  const row = document.createElement('span');
+  row.className = 'fixes';
+  for (const fix of fixes) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'link';
+    b.textContent = fix.label;
+    b.onclick = fix.run;
+    row.append(b);
+  }
+  el.append(' ', row);
+}
+
+/**
+ * The ways out that would actually work, with the numbers that prove it.
+ *
+ * Measured rather than listed, because most of the obvious advice is wrong
+ * here. Turning the sheet is the first thing anybody suggests and it makes
+ * the problem worse — a turned A4 is 70 columns where an upright one is 82,
+ * since turning buys millimetres and spends columns — so it is never
+ * offered. Nor is a face that does not in fact fit.
+ */
+function fitFixes(word, wide, cap, style) {
+  const out = [];
+
+  // Which face fits needs the font files, so asking is what fetches them;
+  // the note redraws itself when they land.
+  flfLoadAll();
+  let best = null;
+  for (const o of $('letterStyle').options) {
+    if (o.disabled || o.value === style) continue;
+    const w = widestFor(word, o.value);
+    if (w === null || w > cap) continue;
+    if (!best || w < best.w) best = { value: o.value, w, name: o.textContent };
+  }
+  if (best) {
+    out.push({
+      label: `Set it in ${best.name} — ${best.w} columns`,
+      run: () => useStyle(best.value),
+    });
+  }
+
+  /*
+   * Or more paper. The composite grid is the single sheet's multiplied —
+   * see compose.js — so how many sheets it takes is a division rather than
+   * a guess. The width control goes up with the paper: raising one without
+   * the other would add sheets and leave the word wrapped exactly where it
+   * was.
+   */
+  const unit = planningGrid(sheetGrid(app.base, app.machine), app.turn).cols;
+  const need = Math.ceil(wide / unit);
+  if (unit > 0 && need > app.across && need <= MAX_ACROSS) {
+    out.push({
+      label: `${need} sheets across — ${unit * need} columns`,
+      run: () => {
+        $('paper').value = 'compose';
+        app.across = need;
+        app.tile = 0;
+        $('width').max = String(unit * need);
+        $('width').value = String(Math.min(wide, unit * need));
+        convert();
+        save();
+      },
+    });
+  }
+  return out;
+}
+
+/**
+ * Pasted art has no width to set, so the tab says what the numbers are.
+ *
+ * The slider decides how wide a motif is *laid out*, and art that already
+ * exists has no layout left to decide — its spacing is what makes it the
+ * picture it is. Stating the two numbers is the honest version of a control
+ * that would otherwise have to resample the art to mean anything.
+ */
+function syncPasteFit() {
+  const el = $('pasteFit');
+  if (!el) return;
+  const cap = planningGrid(sheetGrid(app.paper, app.machine), app.turn).cols;
+  const wide = Math.max(0, ...$('pasted').value.replace(/\t/g, '    ')
+    .split('\n').map((l) => l.replace(/\s+$/, '').length));
+  const paper = `${app.paper.name}${isTurned(app.turn) ? ' turned' : ''}`;
+  el.textContent =
+    `Art arrives at its own size, so there is no width to set here. ` +
+    (wide ? `${wide} of ${cap} columns on ${paper}.` +
+      (wide > cap
+        ? ` Wider than the paper, and art cannot be re-wrapped — a larger ` +
+          `sheet, or several, is the only way to make room.`
+        : '')
+      : `${paper} holds ${cap} columns across.`);
 }
 
 /**
@@ -1674,6 +1898,8 @@ function draw() {
     }).join('');
 
   syncLetterHint();
+  syncFit();
+  syncPasteFit();
   /*
    * These two are stale after a tab switch but not visible: both sit inside
    * the picture panel, which the tab strip sets to display:none. Left as

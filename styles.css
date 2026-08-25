@@ -496,6 +496,31 @@ input[type=range]::-moz-range-thumb {
   color: var(--ink);
 }
 
+/*
+ * A words box holding something the paper cannot take.
+ *
+ * The box itself, because that is where the word is: a warning further down
+ * the column is read as being about the sheet, and this one is about what
+ * you are typing at the moment you type it.
+ */
+textarea.over { border-color: var(--red); }
+
+/*
+ * The ways out, offered as the thing that takes them.
+ *
+ * A refusal that names three fixes and leaves you to find the controls is
+ * still a refusal. These sit in the warning and apply the change - the face
+ * that fits, or the paper that holds it - so the sentence and the button
+ * are the same thought.
+ */
+.fixes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.1rem;
+  margin-top: 0.45rem;
+}
+.fixes button { font-size: 12px; }
+
 /* A checkbox that reads as a sentence, not as a form field. */
 label.check {
   display: flex; align-items: baseline; gap: 0.55rem;

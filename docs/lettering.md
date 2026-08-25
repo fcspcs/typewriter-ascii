@@ -73,6 +73,33 @@ with the heaviest character the machine has, picked by rank from its keys
 rather than wished for; the depth is drawn in `/` and `_`, and the picker
 warns if the machine has no stand-in for either.
 
+## Fitting the paper
+
+**How wide** is one control, and it governs a word exactly as it governs a
+picture: a picture is scaled to reach it, a line of lettering breaks at
+spaces to reach it. That is what makes a sentence unable to overrun the
+sheet, however long it is — whatever the control is set to is inside the
+paper, and the wrapping meets it.
+
+One case is left over, and it cannot be wrapped away: a **single word wider
+than the setting**. A break only ever happens at a space, because a
+letterform split down the middle is unreadable, so `letter()` leaves such a
+word whole and `setUp()` refuses the sheet with a reason. The browser says
+so at the words box while you are typing into it — both numbers, the
+offending word named — and offers the ways out as the buttons that take
+them: the narrowest face that would hold it, and how many sheets across it
+would need.
+
+Measured, not guessed, because most of the obvious advice here is wrong.
+Turning the sheet is the first thing anybody suggests and it makes the
+problem worse: a turned A4 is 60 columns inside the margins where an
+upright one is 66, since a turn buys millimetres and spends columns. It is
+never offered, and neither is a face that does not in fact fit.
+
+Pasted art is the one thing with no width to set. Its spacing is what makes
+it the picture it is, so that tab states the numbers instead of offering a
+control that would have to resample the art to mean anything.
+
 ## Sideways: the word becomes a picture
 
 A typewriter cell is 2.54 mm wide and 4.23 mm tall. A quarter turn swaps
