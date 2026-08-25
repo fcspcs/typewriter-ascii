@@ -5,7 +5,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "test": "node test/core.test.mjs && node test/convert.test.mjs && node test/png.test.mjs && node test/cli.test.mjs && node test/sheet.test.mjs && node test/pdf.test.mjs && node test/listen.test.mjs",
+    "test": "node test/core.test.mjs && node test/figlet.test.mjs && node test/convert.test.mjs && node test/png.test.mjs && node test/cli.test.mjs && node test/sheet.test.mjs && node test/pdf.test.mjs && node test/listen.test.mjs",
     "test:browser": "node test/integration.test.mjs"
   },
   "devDependencies": {
