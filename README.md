@@ -1,13 +1,28 @@
-# Typewriter ASCII
+<div align="center">
 
-Turn images and text into ASCII art you can actually type on a mechanical
-typewriter.
+<img src="docs/img/logo.png" width="150" alt="Two flourished letters drawn with a broad nib, white on warm grey">
+
+<h1>Typewriter ASCII</h1>
+
+<p><b>Turn images and text into ASCII art you can actually type on a mechanical typewriter.</b></p>
+
+<p>
+<a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-97795d" alt="MIT licence"></a>
+<img src="https://img.shields.io/badge/dependencies-none-4a4a4a" alt="no dependencies">
+<img src="https://img.shields.io/badge/build_step-none-4a4a4a" alt="no build step">
+</p>
+
+<p><a href="https://typewriter-ascii.vercel.app"><b>Try it in the browser</b></a> — it runs entirely on your machine. Nothing is uploaded.</p>
+
+</div>
 
 Not "ASCII art you look at on a screen". Art you sit down and type, one
 keystroke at a time, on a machine with no undo. That constraint changes
 everything about how it has to work.
 
-Runs entirely in your browser. Nothing is uploaded.
+![The app: lettering controls on the left, and TYPE drawn in the calligraphic hand on an A4 sheet, exactly as the Olympia SM7 will type it](docs/img/ui-lettering.png)
+
+<div align="center"><sub><code>TYPE</code> in the calligraphic hand — 59 × 16 characters, 162 keystrokes, counted before you sit down.</sub></div>
 
 ## Why this is not a normal ASCII generator
 
@@ -29,8 +44,9 @@ A generator that ignores the machine produces art that cannot be typed:
 
 - **Images** → shape-matched characters, tone-matched characters, outline
   only, or a repeating sentence that reads continuously through the picture
-- **Lettering** → words, or several lines of them, drawn from scratch
-  (see *Lettering* below)
+- **Lettering** → words, or several lines of them, drawn from scratch in
+  forty-one faces — or set in a real FIGlet font
+  ([see below](#lettering))
 - **Sideways** → plan a motif to be *read* sideways. The paper still goes in
   upright — a typewriter cannot take A4 on its long edge — so the motif is
   laid down instead, typed on an upright sheet, and you turn the finished
@@ -43,359 +59,78 @@ A generator that ignores the machine produces art that cannot be typed:
 - **Listening** → it counts your keystrokes by ear, and resets at every
   carriage return
 
-## Keeping your hands on the machine
+## A picture, typed
 
-The whole point is that you never reach for the screen. Two ways:
+Feed it a PNG — silhouettes, posters and line drawings survive the trip to a
+typewriter; group photos do not. Each cell is matched against what your
+machine's keys actually strike, so the characters can follow the shapes in
+the drawing rather than just its darkness:
 
-**A Bluetooth camera shutter remote**, the ten-euro kind sold for phone
-selfies. It enumerates as a keyboard, and the app already advances the line on
-Space, Enter or ↓. Pair it, tape it where your wrist rests or put a foot
-switch under the desk, press it at the end of each line. Nothing to install.
-This is the reliable option, and it is worth using even alongside the
-microphone.
+<table>
+<tr>
+<td width="34%"><img src="docs/img/piano-poster.png" alt="A piano poster: heavy black letters over the sweep of a grand piano lid, one octave of keys along the foot"></td>
+<td width="66%"><img src="docs/img/ui-picture.png" alt="The same poster converted: the PIANO letters and the lid curve rebuilt from the SM7's characters, 2136 keystrokes on A4"></td>
+</tr>
+</table>
 
-**Listening**, described below, which counts the strikes within a line.
+<div align="center"><sub>One poster in, 2,136 keystrokes out — with the margin stop and the wind-on worked out before you start.</sub></div>
 
-## Listening: how it works, and what it is worth
+<details>
+<summary><b>The whole sheet as text</b> — the same poster tone-matched on the command line (62 × 55, 2,408 keystrokes)</summary>
 
-A keystroke is not one sound: the type bar hits the platen and then falls
-back. A detector that only asks "was that loud enough" counts every keystroke
-twice.
-
-1. **A fixed 10 ms hop on the audio clock.** An `AudioWorklet` hands over
-   every block of samples in order and the detector frames them itself, so
-   nothing is skipped and the spacing never varies. Event times are counted
-   from the samples, not read off the wall clock. The first version analysed
-   from `requestAnimationFrame`, and the same recording counted 9–19%
-   differently depending on nothing but where the frames happened to land.
-2. **Spectral flux on linear magnitudes, 500 Hz to 12 kHz.** The sum of
-   *positive* frame-to-frame changes in magnitude. A strike is a sudden
-   broadband rise; hum, voices and the carriage sliding produce very little.
-   The band follows Zhuang et al. 2005 and is stated in hertz, so it means
-   the same thing on a device that records at 44.1 kHz and one that records
-   at 48 kHz.
-3. **A threshold relative to the room.** Flux is scored against a running
-   median and a running median absolute deviation, so a quiet room and a
-   noisy café both work and the recording level does not matter.
-4. **The carriage return resets the count.** This matters more than any of
-   the above. A counter accumulates its own errors, so even a very good one
-   is wrong about the column by the end of a page; resetting at each line end
-   confines a mistake to the line it happened on.
-5. **It says when it is lost.** If the count at a line end disagrees with
-   what the line holds, it says so and asks you to click where you are,
-   instead of showing a column it cannot stand behind. You are looking at the
-   paper, not the screen, and the machine has no undo — a display that is
-   quietly one column out is worse than no display at all.
-
-**Machine learning would work, and it is the wrong tool here.** It would need
-labelled recordings from every make of typewriter, ship megabytes of model,
-drain the battery, and when it miscounts nobody could say why. Onset detection
-is the standard approach for percussive events in audio, it runs anywhere, and
-every parameter means something you can explain.
-
-If the defaults do not suit your machine, **calibrate** measures it: type
-twenty characters and it fits the minimum interval to the rebound delay of
-that particular typewriter. That is the honest version of "learning from
-data" — a few numbers you can read, not a black box.
-
-The reasoning, the measurements and the sources are written up in
-**[docs/listening-research.md](docs/listening-research.md)**, including what
-remains unproven. Everything above was fitted against public recordings of
-*other* manual typewriters; nobody has yet pointed it at an Olympia SM7.
-
-## Adding your own machine
-
-Machine profiles are plain data in [`src/profiles/index.js`](src/profiles/index.js).
-Copy the closest entry, change what differs, open a pull request. No other
-code needs to know.
-
-Full instructions, including how to measure a machine you know nothing about:
-**[docs/adding-a-machine.md](docs/adding-a-machine.md)**.
-
-The pitch — how far the carriage steps for each character — is worth
-measuring even on a machine already listed, because the same model was often
-built in both. **Your machine → measure your machine** walks you through it:
-type forty capital M, measure first letter to last, and the page resizes
-itself around the answer. It refuses to guess when the reading falls between
-the two standard pitches, rather than rounding a mistake into every sheet you
-ever type.
-
-If you would rather not think about layouts at all, the **characters** dialog
-has *learn from typing*: press every key your machine has and it records what
-they produce.
-
-## Things the machine can do that a printer cannot
-
-Half spacing sideways and downwards, typing outside the margin stops, the
-invisible ribbon setting for rehearsing a line, and why the underscore prints
-black when you have selected red: **[docs/machine-tricks.md](docs/machine-tricks.md)**.
-
-## Lettering
-
-Forty-one styles, built from five hand-drawn faces and a set of transforms:
-hollowing, shearing, stencil bridges, doubling, shadows, relief, oblique
-projection, draughted and rounded outlines, mark painting, half-tone screens
-and tonal bands — each in a compact and a large size where it makes sense.
-
-A newline starts a second line of letters, so two short words can be stacked
-where one long one will not fit; a blank line leaves a gap.
-
-**Lines too wide for the sheet break at spaces**, to the margins of the way
-the motif will be read — `GUTEN MORGEN LYON` in Block is 101 columns on an
-SM7 at pica, against the 66 an upright A4 holds inside its margins and the 60
-it holds when the motif is planned sideways. Sideways wraps *narrower*, not
-wider: turning buys millimetres rather than columns (see *Sideways* below).
-How it will be read is chosen, not worked out — it used to turn the sheet by
-itself whenever that saved rows, which meant the same settings produced
-different paper depending on the word. A single word too wide to break is
-left whole rather than hyphenated: the setup instructions then say what to
-change, which is more use than something unreadable.
-
-## Sideways
-
-This got a whole rewrite, because the first version of it was wrong.
-
-Landscape used to mean *feed the sheet in on its long edge*. It reads well.
-A4 on its long edge is 297 mm of writing line, and an Olympia SM7's carriage
-scale ends at 98 — 249 mm. The app offered 116 columns, then worked out a
-left margin stop of 7 and a right one of 80 for them: seventy-three columns
-of carriage for a hundred and sixteen columns of motif, reported as three
-notes and no refusal.
-
-The paper goes in upright. What can be planned is the *motif*: laid on its
-side, typed on an upright sheet with the machine set up exactly as usual, and
-the finished sheet turned a quarter turn to be looked at. The type bars still
-strike one way only, so the glyphs end up lying down — which costs a picture
-nothing worth having, because what carries a picture is how much ink is in
-each 2.54 × 4.23 mm cell.
-
-**It buys millimetres, not columns.** The same sheet with the same margins
-holds the same cells either way; turning only stands them the other way up.
-What changes is that they stand along the paper's long axis:
-
-| A4 at 10 cpi, inside the margins | cells | across the paper |
-| --- | --- | --- |
-| upright | 66 × 60 | 168 mm |
-| planned sideways | 60 × 66 | 254 mm |
-
-So a wide picture comes out half as big again, and gains its detail down the
-other axis — a 16:9 photograph fitted upright is 66 × 22 cells and 168 × 93
-mm; planned sideways it is 60 × 56 cells and 254 × 142 mm. Two and a third
-times the keystrokes for one and a half times the picture.
-
-**The width slider falls when you turn it, and that is correct.** "How wide"
-is how wide the picture is when you look at it, and on a turned sheet that is
-counted down the paper: 70 cells of 4.23 mm against 82 of 2.54.
-
-**Which way you turn it is offered, because both are real.** They are
-identical at the machine — same stops, same feed, same keystrokes — and
-differ only in which corner is typed first. Turn left and the motif's
-left-hand column is the first line you type.
-
-**Marks are swapped for what will look right afterwards.** A word or a block
-of pasted art is turned once it is drawn, so an underscore has to be struck
-as something that *looks* like an underscore once the sheet has moved under
-it. Bars are mapped by direction and not by which side of the cell they sit
-on: at 2.54 mm the side is invisible and the direction is everything. Where
-no honest swap exists, and where the machine has not got the rotated mark,
-the original stands.
-
-**The calligraphic hand is drawn to one rule.** Hold a broad nib at an angle
-and it draws a hairline exactly when it travels up and to the right, and a
-thick stroke everywhere else. That is the entire face: `##` for stems, bowls
-and down-strokes, `/` for the up-strokes of A, K, V, X, Y and Z, and for the
-flourishes that enter every letter at the cap and leave it below the
-baseline. `/` also happens to be the one diagonal a typewriter can be relied
-on to have, so the rule that makes the letters right is the rule that makes
-them typeable.
-
-The flourishes are derived rather than drawn into each glyph: a body is
-eleven rows of letter, and the face says which column the pen lifts from and
-which foot it sweeps away from. Thirty-eight hand-drawn swashes would be
-thirty-eight slightly different swashes, and a hand that varies its exit
-stroke at random does not read as a hand. It is a large face — sixteen rows,
-and `TYPE` is 59 columns of the 82 an upright A4 holds — and there is no
-compact version, because a flourish shortened until it fits is just a serif.
-
-**Most of a face is which characters it is drawn with.** A typewriter has no
-shading and no half tones, but it has ninety-odd shapes, and a great deal of
-typewriter art works by picking the shape that matches the *direction* of a
-stroke rather than its darkness: `_` where a stroke ends flat, `(` and `)`
-where it turns, `!` where it runs down the page, `8` and `o` for a body and
-its ends. One reading of each cell — which of its four sides are open — is
-handed to the face, and the face names its own marks. That is where the
-roman, ruled, bracketed and rounded-caps faces come from, and none of them
-costs a keystroke more than a solid one: a key is a key.
-
-**Graded faces take the ramp from the machine.** A letter shaded from `B`
-through `M` and `2` and `-` to `'` is the plainest demonstration of the whole
-idea — those five characters are read off an SM7 keyboard by rank, not
-wished for. Bands are cut across the whole block rather than per letter, so a
-word shades together instead of putting the dark end of an `O` beside the
-light end of a `T`. On a machine stripped to two keys it comes out in two
-bands rather than failing.
-
-**Faces are written in their own marks; the machine is met at the end.** The
-peaks face really does say `^`, the ruled face `|`, the bracketed face `[`
-and `]` — none of which an Olympia SM7 has. Baking the SM7's answers into the
-glyph data was the first attempt and it was the wrong one: it put one
-machine's keyboard inside every letterform, and a machine that *does* have a
-pipe would still have got an exclamation mark.
-
-So there is a stand-in engine instead, in two stages. The substitution table
-first, because it carries judgements a measurement cannot make: `^` and `´`
-do not look alike at all — one is a tent, the other a single stroke — and a
-shape match would sooner offer `A`. But `´` is right, because what matters is
-what the mark is *for*. Then, where the table is silent, a measured match of
-the log-polar shape descriptors the atlas already keeps for tone work, which
-means a mark nobody has ever written a table entry for still finds the
-nearest thing this machine can strike. The table stops being a list that has
-to be maintained and becomes a list of exceptions.
-
-Measuring needs a rendered glyph, so on the command line there is no second
-stage — and that is reported rather than worked around. A mark with no table
-entry and no canvas gets a refusal, not a silent tone match, which is the
-same bargain `tableAtlas()` makes about shapes.
-
-What comes out is a face that adapts instead of disappearing. Bracketed on a
-generic pica QWERTY types `_` as `-`, `|` as `!` and `]` as `)` and says so;
-before the engine it was simply unavailable there, because that machine has
-no underscore and eight of these faces are drawn with one. Only a mark with
-nothing at all to stand in for it greys a face out. Switching a key off under
-Characters counts as the machine not having it, and the hint names what you
-will actually strike rather than what the face asked for.
-
-Three tests hold it together: every mark a style strikes is declared, every
-declared mark has a stand-in on both stock machines, and — the one that
-matters — nothing reaches the sheet that the machine cannot type.
-
-**Raised uses three weights, not two.** An outline drawn in one character
-with the interior in another is a hollow letter with a fill — an edge lit
-from every side at once has no light direction and nothing stands off the
-page. Light from the top left, heaviest character on the top and left edges,
-faintest on the bottom and right, body between.
-
-**The characters come from your machine, not from a wish.** A generator that
-reaches for `#` and falls back to `H` produces a flat grey wall on a machine
-with no `#` — and on an Olympia SM7 `H` is not even the darkest key: measured
-at the sampling cell it covers 0.171 against 0.204 for `B` and 0.196 for `M`.
-So the tones are picked from what the machine actually has, by **rank** rather
-than by coverage. The arithmetic midpoint of the SM7's range selects `t`, a
-thin vertical with a bar, because 60 of its 88 characters sit in the top half
-of the range; by rank the middle is `2`, which really is a middle grey in a
-block. Three tones on an SM7 come out as `B` `2` `-`.
-
-**Every style is checked against the machine.** The classic isometric and
-relief FIGlet faces all need a backslash, and a great many typewriters —
-the Olympia SM7 among them — have no backslash key, nor a pipe, nor a tilde.
-So the three-dimensional face here uses *oblique* projection rather than
-isometric: every depth line runs at the same 45-degree angle, so one `/`
-does the work of `/` and `\`. Draughtsmen used oblique for the same reason,
-because it is easier to draw. The rounded face draws its edges with
-brackets, and the draughted face uses `!` for verticals — an old typewriter-
-art habit that exists precisely because there is no pipe.
-
-A test renders every style in every letter and digit and fails if a single
-character is not on the machine.
-
-Keystrokes vary a lot between them. On the same word, hollow faces cost
-roughly a third of what solid ones do, which matters when you are the printer.
-
-The letterforms are drawn from scratch and MIT-licensed like the rest of the
-project. They are *informed* by the classic FIGlet faces — anyone who has
-seen `banner` or `slant` will spot the family resemblance, because there are
-only so many ways to draw a capital A out of blocks, and the calligraphic
-hand is informed by `caligraphy` and `caligraphy2` in the same way — but no
-glyph data is copied.
-
-**Or set the real thing.** Redrawn is not identical, and sometimes identical
-is the point. The program reads FIGlet's own `.flf` font files and sets type
-with the real layout algorithm — full width, kerning, and smushing with the
-six controlled rules of the FIGfont standard — so the output is pixel for
-pixel what the TAAG site shows. Characters your machine has not got go
-through the same stand-in engine as everything else, and you are told what
-will be typed in their place; only a character with no stand-in at all is
-left blank, by name.
-
-Nineteen fonts ship in [`fonts/`](fonts/), redistributed as received from
-the [FIGlet collection](https://github.com/patorjk/figlet.js) the way figlet
-itself, every Linux distribution and the TAAG site have redistributed them
-for thirty years. They are the work of their authors, who are named in
-[`fonts/README.md`](fonts/README.md); they are **not** covered by this
-project's MIT licence. Any `.flf` you drop into the folder works the same
-way:
-
-    node tools/cli.mjs text "HELLO" --flf fonts/Roman.flf
-
-Credit where due: the FIGlet format and its font collection come from the
-FIGlet project (figlet.org) and decades of contributors.
-
-Several faces here answer a particular FIGlet one. They are redrawn, not
-converted, and they keep the marks the originals were built from — where your
-machine has not got one, the stand-in engine answers for it:
-
-| FIGlet          | Here                    | What changed |
-| --------------- | ----------------------- | ------------ |
-| Caligraphy2     | Calligraphic            | 20 rows down to 16, so a word fits a sheet |
-| NV Script       | Calligraphic, inked     | the same hand, painted in `8` `d` `b` `P` `Y` |
-| Fraktur         | Gothic                  | redrawn: a broken hand, not a bold roman |
-| Konto           | Miniature               | three rows rather than two, to stay legible |
-| O8              | Rings                   | — |
-| OS2             | Rings on a rule         | — |
-| Roman           | Roman                   | — |
-| Georgia11       | Roman, heavy            | — |
-| Rowan Cap       | Rounded caps            | — |
-| Kban            | Ruled                   | the feet are `,`: `.` means paper in glyph data |
-| Henry 3D        | Bracketed               | — |
-| Catwalk         | Catwalk                 | — |
-| Peaks           | Peaks                   | — |
-| Lean            | Leaning strokes         | — |
-| Italic          | Italic outline          | — |
-| Gradient        | Graded                  | the ramp comes from your machine, not from `@ # % &` |
-| Poison          | Corroded                | likewise, and the corrosion is deterministic |
-| S Blood         | Running ink             | likewise; the drips are decided by column, so it types the same twice |
-| Filter          | Screened                | a real two-weight checker instead of a fixed mark set |
-
-## Prior art
-
-The shape-matching mode follows Xu, Zhang and Wong, *Structure-based ASCII
-Art* (SIGGRAPH 2010). The insight worth stealing: match the **shape** of a
-character against the shape of the cell, not just its darkness. Tone matching
-alone gives you halftone mush; shape matching gives you something that reads
-as a drawing.
-
-## Running it
-
-No build step. It is ES modules and one stylesheet.
-
-```sh
-python3 -m http.server 8000     # or any static server
+```text
+ .6BBBBBö'   `§BBn     (8BBn     nBB3   `GB8)     ZBBBg`
+ 6BBBBBBBB3  wBBBB`    BBBBB;   `BBBBm  3BBBB   ´BBBBBBB+
+ ÄBBBBBBBBB/ kBBBB`   ;BBBBBT   `BBBBB  aBBBB   BBBBBBBBB'
+ ÄBBBBBBBBBB kBBBB`   JBBBBBB   `BBBBB( eBBBB  IBBBBBBBBBB
+ ÄBBBBBBBBBB kBBBB`   ÖBBBBBB   `BBBBBB 4BBBB  BBBBBBBBBBB´
+ ÄBBBBiBBBBB`kBBBB`   BBBBBBB`  `BBBBBB`4BBBB "BBBBBBBBBBBC
+ ÄBBBB 1BBBB´kBBBB`   BBBBBBB(  `BBBBBBoSBBBB %BBBB% /BBBBB
+ ÄBBBB YBBBB`kBBBB`  /BBBBBBBe  `BBBBBBBeBBBB 8BBBB`  BBBBB
+ ÄBBBB`BBBBB`kBBBB`  üBBBBBBBB  `BBBBBBBBBBBB BBBBB   BBBBB
+ ÄBBBBBBBBBB kBBBB`  BBBBBBBBB  `BBBBBBBBBBBB BBBBB   EBBBB
+ ÄBBBBBBBBBÖ kBBBB`  BBBB1BBBB' `BBBBBBBBBBBB BBBBB   UBBBB
+ ÄBBBBBBBBB_ kBBBB` ´BBBB,BBBBi `BBBBBBBBBBBB BBBBB   äBBBB
+ ÄBBBBBBBB4  kBBBB` =BBBB"BBBBH `BBBBBBBBBBBB BBBBB   RBBBB
+ ÄBBBBBBB)   kBBBB` dBBBBBBBBBB `BBBBPBBBBBBB BBBBB   BBBBB
+ ÄBBBB       kBBBB` BBBBBBBBBBB `BBBB)BBBBBBB äBBBB-  BBBBB
+ ÄBBBB       kBBBB` BBBBBBBBBBB_`BBBBrÄBBBBBB LBBBBÖ yBBBBÄ
+ BBBBB       kBBBB`:BBBBBBBBBBB1`BBBBr_BBBBBB `BBBBBBBBBBBx
+EBBBBBBBBBö=.aBBBB`tBBBBBBBBBBBB`BBBBr BBBBBB  BBBBBBBBBBB
+BBBBBBBBBBBBBBBBBB.QBBBB   BBBBB`BBBBr TBBBBB  (BBBBBBBBB5
+BBBBBBBBBBBBBBBBBBBBBBBB   ÖBBBB:BBBBr `BBBBB   ÖBBBBBBBB
+BBBBBBBBBBBBBBBBBBBBBBB9   LBBBB_BBBB,  HBBBB    DBBBBBB`
+BBBBBBBBBBBBBBBBBBBBBBBB6   `::`  ,:`    `:'      `%Äm!
+BBBBBBBBBBBBBBBBBBBBBBBBBBs
+BBBBBBBBBBBBBBBBBBBBBBBBBBBB
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBB`
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB`
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB6
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB/
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB,
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBs
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB6
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB6
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBö
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB8"
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB8y'
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBg2=
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBqY;
+BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+'yBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBö
+   `!fBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBg/
+       ´(gBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB2:
+           `=uBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBs"
+                 ,tBBBBBBBBBBBBBBBBBBBBBBBBBBB('
+                      "1BBBBBBBBBBBBBBBBBBd,
+                           `=ÖBBBBBBBB8:
+                                `!P('
 ```
 
-Then open `http://localhost:8000`.
-
-**The microphone needs `https` or a locally-opened file.** Browsers refuse it
-over plain `http` on a network address — that is a browser rule, not a bug
-here.
-
-## From the command line
-
-Same modules, no browser, no dependencies:
-
-```sh
-node tools/cli.mjs machines
-node tools/cli.mjs text "HELLO" --style relief
-node tools/cli.mjs text 'PIANO\nSTIMMER' --style block
-node tools/cli.mjs file rose.txt --paper a4 --red 0-15 --pdf out.pdf
-node tools/cli.mjs image drawing.png --mode tone --pdf out.pdf
-```
-
-`--json` on any command puts the whole result on stdout as one object —
-size, keystrokes, margin stops, warnings, and the lines themselves — so a
-script or an agent never has to parse the human output. Failures use the
-same shape (`{"ok": false, "error": …}`) and exit non-zero, rather than a
-stack trace where the answer should be. Full reference, including the JSON
-shapes: [docs/command-line.md](docs/command-line.md).
+</details>
 
 Pictures are PNG only. Silhouettes and line drawings are what survives the
 trip to a typewriter, and that material is already PNG; a JPEG decoder would
@@ -403,61 +138,335 @@ be several hundred lines of DCT earning its keep on photographs, which do
 not survive the trip anyway. Anything else is turned away by name, with the
 conversion command in the message.
 
-### Why did my picture come out like that?
+## Lettering
+
+Forty-one faces, built from five hand-drawn alphabets and a set of
+transforms, every one checked against your machine — a face never asks for a
+key you have not got. The calligraphic hand is drawn to one rule: a broad
+nib held at an angle leaves a hairline exactly when it travels up and to the
+right, and a thick stroke everywhere else. `/` happens to be the one
+diagonal a typewriter can be relied on to have, so the rule that makes the
+letters right is the rule that makes them typeable:
+
+```text
+            /        /               /              /
+           /        /               /              /
+          /        /               /              /
+BBBBBBBBBB       BB       /      BBBBBBB        BBBBBBBBB
+    BB            BB     /       BB    BB       BB
+    BB             BB   /        BB     BB      BB
+    BB              BB /         BB     BB      BB
+    BB              BB/          BB    BB       BB
+    BB              BB           BBBBBBB        BBBBBBB
+    BB              BB           BB             BB
+    BB              BB           BB             BB
+    BB              BB           BB             BB
+    BB              BB           BB             BB
+    BB              BB           BB             BBBBBBBBB
+   /               /            /              /
+ BB              BB           BB             BB
+```
+
+<details>
+<summary><b>More faces</b> — Roman, Three-dimensional, Graded</summary>
+
+Roman — a key is a key, so serifs cost nothing:
+
+```text
+ oooooooooo   oo      oo   oooooooo     oooooooooo
+oooo8888oooo 8888    8888 8888oooo88   8888oooooooo
+    8888     8888    8888 8888    88o  8888
+    8888     oo88    88oo 8888    8888 8888
+    8888       88oooo88   8888    8888 8888
+    8888       oo8888oo   8888    88oo 8888
+    8888         8888     8888oooo88   8888ooooo
+    8888         8888     8888oooooo   8888oooooo
+    8888         8888     8888         8888
+    8888         8888     8888         8888
+    8888         8888     8888         8888
+    8888         8888     8888         8888
+    8888         8888     8888         8888ooooooo
+    oooo         oooo     oooo         oooooooooooo
+```
+
+Three-dimensional — *oblique* projection rather than isometric, because a
+great many typewriters have no backslash and one `/` can do the work of
+both:
+
+```text
+  __________   __      __   ________     __________
+ ///////////  ///     ///  /////////    ///////////
+BBBBBBBBBB/  BB/ __  BB/  BBBBBBBB/ __ BBBBBBBBBB/
+BBBBBBBBBB   BB /// /BB   BBBBBBBB /// BBBBBBBBBB
+    BB//       BB/ BB/    BB      BB/  BB/ ______
+    BB//       BB /BB     BB      BB   BB ///////
+    BB//         BB//     BBBBBBBB/    BBBBBBBB/
+    BB//         BB//     BBBBBBBB     BBBBBBBB
+    BB//         BB//     BB//         BB/ ________
+    BB//         BB//     BB//         BB /////////
+    BB/          BB/      BB/          BBBBBBBBBB/
+    BB           BB       BB           BBBBBBBBBB
+```
+
+Graded — the ramp `B b 2 z -` is read off the SM7's keys by rank, not
+wished for; on a machine stripped to two keys it comes out in two bands
+rather than failing:
+
+```text
+BBBBBBBBBBBB BBBB    BBBB BBBBBBBBBB   BBBBBBBBBBBB
+BBBBBBBBBBBB BBBB    BBBB BBBBBBBBBB   BBBBBBBBBBBB
+    BBBB     BBBB    BBBB BBBB    BBBB BBBB
+    bbbb     bbbb    bbbb bbbb    bbbb bbbb
+    bbbb       bbbbbbbb   bbbb    bbbb bbbb
+    bbbb       bbbbbbbb   bbbb    bbbb bbbb
+    2222         2222     2222222222   2222222222
+    2222         2222     2222222222   2222222222
+    2222         2222     2222         2222
+    zzzz         zzzz     zzzz         zzzz
+    zzzz         zzzz     zzzz         zzzz
+    zzzz         zzzz     zzzz         zzzz
+    ----         ----     ----         ------------
+    ----         ----     ----         ------------
+```
+
+</details>
+
+Faces are written in their own marks — the ruled face really does say `|`,
+the bracketed face `[` and `]` — and the machine is met at the end by a
+stand-in engine: a substitution table for the judgement calls, a measured
+shape match for everything else, and an honest note about what changed
+(`typing | as ! — the Olympia SM7 de Luxe has no |`). Only a mark with
+nothing at all to stand in for it greys a face out.
+
+Keystrokes vary a lot between faces, which matters when you are the printer:
+`TYPE` costs 24 keystrokes in Miniature, 44 in Block, 162 in the
+calligraphic hand, 327 in the three-dimensional face. Hollow faces cost
+roughly a third of what solid ones do.
+
+**Or set the real thing.** The command line reads FIGlet's own `.flf` font
+files and sets type with the real layout algorithm — full width, kerning,
+and smushing with the six controlled rules of the FIGfont standard — so the
+output is pixel for pixel what the TAAG site shows. Nineteen fonts ship in
+[`fonts/`](fonts/), redistributed as received and credited to their authors
+in [`fonts/README.md`](fonts/README.md); any `.flf` you drop into the folder
+works the same way:
 
 ```sh
-node tools/cli.mjs inspect drawing.png
+node tools/cli.mjs text "HELLO" --flf fonts/Roman.flf
 ```
+
+How the faces are drawn, why the flourishes are derived rather than drawn
+in, how the stand-in engine works, and what each face owes to the classic
+FIGlet collection: **[docs/lettering.md](docs/lettering.md)**.
+
+## Sideways
+
+This got a whole rewrite, because the first version of it was wrong.
+
+Landscape used to mean *feed the sheet in on its long edge*. It reads well.
+A4 on its long edge is 297 mm of writing line, and an Olympia SM7's carriage
+scale ends at 98 — 249 mm. The app offered 116 columns for which there was
+no carriage, and reported it as notes rather than a refusal.
+
+The paper goes in upright. What can be planned is the *motif*: laid on its
+side, typed on an upright sheet with the machine set up exactly as usual,
+and the finished sheet turned a quarter turn to be looked at. The type bars
+still strike one way only, so the glyphs end up lying down — which costs a
+picture nothing worth having, because what carries a picture is how much ink
+is in each 2.54 × 4.23 mm cell.
+
+**It buys millimetres, not columns.** The same sheet with the same margins
+holds the same cells either way; turning only stands them the other way up:
+
+| A4 at 10 cpi, inside the margins | cells | across the paper |
+| --- | --- | --- |
+| upright | 66 × 60 | 168 mm |
+| planned sideways | 60 × 66 | 254 mm |
+
+So a wide picture comes out half as big again, and gains its detail down the
+other axis — two and a third times the keystrokes for one and a half times
+the picture. Which way you turn the finished sheet is offered, because both
+are real: identical at the machine, differing only in which corner is typed
+first. And marks in turned words or pasted art are swapped for what will
+look right afterwards — an underscore has to be struck as something that
+*looks* like an underscore once the sheet has moved under it; where no
+honest swap exists, the original stands.
+
+## Typing it
+
+The whole point is that you never reach for the screen. The line you are on
+opens up and shows what to strike — spaces counted and grouped, runs as a
+count — and the rest stays as motif, so you always see where you are:
+
+![The typing view: setup summary, progress bar, the motif above, and the current line opened up showing 31×W as what to strike](docs/img/ui-typing.png)
+
+Two ways to advance without reaching over:
+
+- **A Bluetooth camera shutter remote**, the ten-euro kind sold for phone
+  selfies. It enumerates as a keyboard, and the app advances on Space, Enter
+  or ↓. Pair it, tape it where your wrist rests or put a foot switch under
+  the desk, press it at the end of each line. Nothing to install. This is
+  the reliable option, and it is worth using even alongside the microphone.
+- **Listening.** The microphone counts your strikes within the line — onset
+  detection on the audio clock, a threshold relative to the room, no machine
+  learning and nothing uploaded. The carriage return resets the count, so an
+  error is confined to the line it happened on. And when the count cannot be
+  trusted, it *says it is lost* and asks where you are, instead of showing a
+  column it cannot stand behind: you are looking at the paper, not the
+  screen, and the machine has no undo. If the defaults do not suit your
+  machine, **calibrate** measures it — type twenty characters and it fits
+  the timing to your typewriter's rebound.
+
+The reasoning, the measurements and the sources for the listening feature,
+including what remains unproven, are written up in
+**[docs/listening-research.md](docs/listening-research.md)**.
+
+## Your machine
+
+Machine profiles are plain data in
+[`src/profiles/index.js`](src/profiles/index.js) — copy the closest entry,
+change what differs, open a pull request. Nothing else needs to know. Full
+instructions, including how to measure a machine you know nothing about:
+**[docs/adding-a-machine.md](docs/adding-a-machine.md)**.
+
+The pitch — how far the carriage steps for each character — is worth
+measuring even on a machine already listed, because the same model was often
+built in both. **Measure your machine** walks you through it: type forty
+capital M, measure first to last, and the page resizes itself around the
+answer. It refuses to guess when the reading falls between the two standard
+pitches, rather than rounding a mistake into every sheet you ever type.
+
+If you would rather not think about layouts at all, the **characters**
+dialog has *learn from typing*: press every key your machine has and it
+records what they produce.
+
+Half spacing sideways and downwards, typing outside the margin stops, the
+invisible ribbon setting for rehearsing a line, and why the underscore
+prints black when you have selected red:
+**[docs/machine-tricks.md](docs/machine-tricks.md)**.
+
+## Running it
+
+No build step, no dependencies. It is ES modules and one stylesheet:
+
+```sh
+python3 -m http.server 8000     # or any static server
+```
+
+Then open `http://localhost:8000` — or use the hosted copy at
+**[typewriter-ascii.vercel.app](https://typewriter-ascii.vercel.app)**.
+Either way everything runs in your browser; no image or audio leaves it.
+
+**The microphone needs `https` or a locally-opened file.** Browsers refuse
+it over plain `http` on a network address — that is a browser rule, not a
+bug here.
+
+### From the command line
+
+Same modules, no browser, no dependencies:
+
+```sh
+node tools/cli.mjs machines
+node tools/cli.mjs text "HELLO" --style relief
+node tools/cli.mjs text 'PIANO\nSTIMMER' --style block
+node tools/cli.mjs text "HELLO" --flf fonts/Roman.flf
+node tools/cli.mjs file rose.txt --paper a4 --red 0-15 --pdf out.pdf
+node tools/cli.mjs image drawing.png --mode tone --turn left --pdf out.pdf
+```
+
+`--json` on any command puts the whole result on stdout as one object —
+size, keystrokes, margin stops, warnings, and the lines themselves — so a
+script or an agent never has to parse the human output. Failures use the
+same shape (`{"ok": false, "error": …}`) and exit non-zero, rather than a
+stack trace where the answer should be. Full reference, including the JSON
+shapes: **[docs/command-line.md](docs/command-line.md)**.
+
+### Why did my picture come out like that?
 
 `inspect` reports what each step of the pipeline did to the ink, and says
-what it makes of the result:
+what it makes of the result — here on the poster above:
 
-```
-strokes 2.2 px across 1.6% of the frame — a drawing, so the blur is held to 1.1 px
+```text
+$ node tools/cli.mjs inspect docs/img/piano-poster.png
+docs/img/piano-poster.png — 600×900 working size, mode shape, contrast 130%, detail 45%
+strokes 61.7 px across 46.6% of the frame — dense enough to blur fully at 5.0 px
 
 stage       size        strongest   average   inked
-ink         900×900         1.000    0.0089    1.63%
-blur        900×900         0.612    0.0089    4.10%
-normalise   900×900         1.000    0.0325    4.83%
-contrast    900×900         1.000    0.0316    3.91%
-crop        721×664         1.000    0.0535    6.62%
+ink         600×900         0.914    0.4805  100.00%
+blur        600×900         0.914    0.4805  100.00%
+normalise   600×900         1.000    0.4638   57.34%
+contrast    600×900         1.000    0.4631   53.50%
+crop        553×817         1.000    0.5535   63.94%
 
-grid 60 × 33, 482 of 1980 cells inked, 536 keystrokes
+grid 60 × 53, 2143 of 3180 cells inked, 2245 keystrokes
 ```
 
 **strongest** is the darkest single pixel; under `0.04` nothing is typed at
-all, so a value below that means an empty sheet and the finding will name the
-step that caused it. **average** should stay roughly level across the blur —
-a drop there means ink was destroyed rather than spread. Too *much* ink is
-reported as well, because a sheet that is 97% inked is a negative nobody
-turned round, and that one looks like it worked until you sit down to type it.
-
-`--preview out.png` writes the prepared image, which answers the other half
-of the question: the numbers say the ink survived, the picture says whether
-it still looks like the drawing.
+all, so a value below that means an empty sheet and the finding will name
+the step that caused it. **average** should stay roughly level across the
+blur — a drop there means ink was destroyed rather than spread. Too *much*
+ink is reported as well, because a sheet that is 97% inked is a negative
+nobody turned round, and that one looks like it worked until you sit down
+to type it. `--preview out.png` writes the prepared image, which answers the
+other half of the question: the numbers say the ink survived, the picture
+says whether it still looks like the drawing.
 
 ### Shapes on the command line
 
 "Follow the shapes" compares each cell against a *rendered* copy of every
-character, and rendering needs a canvas. Without one the command line matches
-by tone instead and says so — it does not quietly hand back a shape match
-that is really a tone match. Three of the four styles are unaffected.
-
-To get the real thing, measure the glyphs once in a browser and pass them
-along:
+character, and rendering needs a canvas. Without one the command line
+matches by tone instead and says so — it does not quietly hand back a shape
+match that is really a tone match. To get the real thing, measure the glyphs
+once in a browser and pass them along:
 
 ```sh
 python3 -m http.server 8000      # then open /tools/atlas.html
 node tools/cli.mjs image drawing.png --mode shape --atlas atlas-olympia-sm7.json
 ```
 
-Tests:
+### Tests
 
 ```sh
-npm test          # core, pictures, png, the cli itself, sheet, pdf, strikes
+npm test               # core, pictures, png, the cli itself, sheet, pdf, strikes
 npm run test:browser   # loads the real page in jsdom and drives it
 ```
 
+Among other things the suite proves the promise the whole project makes:
+nothing reaches the sheet that the machine cannot type.
+
+## Reading further
+
+| | |
+| --- | --- |
+| [docs/command-line.md](docs/command-line.md) | Every command and flag, and the JSON shapes |
+| [docs/lettering.md](docs/lettering.md) | How the faces are drawn, the stand-in engine, the FIGlet lineage |
+| [docs/adding-a-machine.md](docs/adding-a-machine.md) | Measuring and adding a machine profile |
+| [docs/machine-tricks.md](docs/machine-tricks.md) | Things the machine can do that a printer cannot |
+| [docs/listening-research.md](docs/listening-research.md) | The listening maths: measurements, sources, open questions |
+| [fonts/README.md](fonts/README.md) | The FIGlet fonts: whose they are, and how to add more |
+
+## Prior art
+
+The shape-matching mode follows Xu, Zhang and Wong, *Structure-based ASCII
+Art* (SIGGRAPH 2010). The insight worth stealing: match the **shape** of a
+character against the shape of the cell, not just its darkness. Tone
+matching alone gives you halftone mush; shape matching gives you something
+that reads as a drawing.
+
+The lettering faces are drawn from scratch, informed by the classic FIGlet
+collection (figlet.org) and its decades of contributors — redrawn, not
+converted, and no glyph data is copied. The full lineage, face by face:
+[docs/lettering.md](docs/lettering.md#the-figlet-lineage).
+
+## Contributing
+
+Machine profiles and lettering faces are both plain data, and both are meant
+to grow. Open a pull request — and keep `npm test` green: among other
+things it renders every face in every letter and digit, and fails if a
+single character is not on the machine.
+
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). The FIGlet fonts in [`fonts/`](fonts/) are the
+work of their authors, redistributed as received, and are not covered by it;
+[`fonts/README.md`](fonts/README.md) names them.
