@@ -31,10 +31,10 @@ A generator that ignores the machine produces art that cannot be typed:
   only, or a repeating sentence that reads continuously through the picture
 - **Lettering** → words, or several lines of them, drawn from scratch
   (see *Lettering* below)
-- **Landscape** → the sheet goes in on its long edge when the motif will not
-  fit upright. Not a rotation of the artwork: type bars strike one way only,
-  so the *paper* turns, not the letters. A4 at pica goes from 82 columns to
-  116
+- **Sideways** → plan a motif to be *read* sideways. The paper still goes in
+  upright — a typewriter cannot take A4 on its long edge — so the motif is
+  laid down instead, typed on an upright sheet, and you turn the finished
+  sheet a quarter turn. A 16:9 photograph goes from 168 × 93 mm to 254 × 142
 - **Existing art** → paste it in; characters your machine lacks are swapped
   for the nearest shape it has, and you are told what changed
 - **Setup instructions** → paper guide, margin stops, how far to wind on
@@ -140,14 +140,65 @@ and tonal bands — each in a compact and a large size where it makes sense.
 A newline starts a second line of letters, so two short words can be stacked
 where one long one will not fit; a blank line leaves a gap.
 
-**Lines too wide for the sheet break at spaces**, to the margins of whichever
-way round the sheet goes in — `GUTEN MORGEN LYON` in Block is 101 columns on
-an SM7 at pica, against the 66 an upright A4 holds inside its margins and the
-100 it holds sideways. The orientation is chosen, not worked out: it used to
-turn the sheet by itself whenever that saved rows, which meant the same
-settings produced different paper depending on the word. A single word too
-wide to break is left whole rather than hyphenated: the setup instructions
-then say what to change, which is more use than something unreadable.
+**Lines too wide for the sheet break at spaces**, to the margins of the way
+the motif will be read — `GUTEN MORGEN LYON` in Block is 101 columns on an
+SM7 at pica, against the 66 an upright A4 holds inside its margins and the 60
+it holds when the motif is planned sideways. Sideways wraps *narrower*, not
+wider: turning buys millimetres rather than columns (see *Sideways* below).
+How it will be read is chosen, not worked out — it used to turn the sheet by
+itself whenever that saved rows, which meant the same settings produced
+different paper depending on the word. A single word too wide to break is
+left whole rather than hyphenated: the setup instructions then say what to
+change, which is more use than something unreadable.
+
+## Sideways
+
+This got a whole rewrite, because the first version of it was wrong.
+
+Landscape used to mean *feed the sheet in on its long edge*. It reads well.
+A4 on its long edge is 297 mm of writing line, and an Olympia SM7's carriage
+scale ends at 98 — 249 mm. The app offered 116 columns, then worked out a
+left margin stop of 7 and a right one of 80 for them: seventy-three columns
+of carriage for a hundred and sixteen columns of motif, reported as three
+notes and no refusal.
+
+The paper goes in upright. What can be planned is the *motif*: laid on its
+side, typed on an upright sheet with the machine set up exactly as usual, and
+the finished sheet turned a quarter turn to be looked at. The type bars still
+strike one way only, so the glyphs end up lying down — which costs a picture
+nothing worth having, because what carries a picture is how much ink is in
+each 2.54 × 4.23 mm cell.
+
+**It buys millimetres, not columns.** The same sheet with the same margins
+holds the same cells either way; turning only stands them the other way up.
+What changes is that they stand along the paper's long axis:
+
+| A4 at 10 cpi, inside the margins | cells | across the paper |
+| --- | --- | --- |
+| upright | 66 × 60 | 168 mm |
+| planned sideways | 60 × 66 | 254 mm |
+
+So a wide picture comes out half as big again, and gains its detail down the
+other axis — a 16:9 photograph fitted upright is 66 × 22 cells and 168 × 93
+mm; planned sideways it is 60 × 56 cells and 254 × 142 mm. Two and a third
+times the keystrokes for one and a half times the picture.
+
+**The width slider falls when you turn it, and that is correct.** "How wide"
+is how wide the picture is when you look at it, and on a turned sheet that is
+counted down the paper: 70 cells of 4.23 mm against 82 of 2.54.
+
+**Which way you turn it is offered, because both are real.** They are
+identical at the machine — same stops, same feed, same keystrokes — and
+differ only in which corner is typed first. Turn left and the motif's
+left-hand column is the first line you type.
+
+**Marks are swapped for what will look right afterwards.** A word or a block
+of pasted art is turned once it is drawn, so an underscore has to be struck
+as something that *looks* like an underscore once the sheet has moved under
+it. Bars are mapped by direction and not by which side of the cell they sit
+on: at 2.54 mm the side is invisible and the direction is everything. Where
+no honest swap exists, and where the machine has not got the rotated mark,
+the original stands.
 
 **The calligraphic hand is drawn to one rule.** Hold a broad nib at an angle
 and it draws a hairline exactly when it travels up and to the right, and a
@@ -257,24 +308,22 @@ only so many ways to draw a capital A out of blocks, and the calligraphic
 hand is informed by `caligraphy` and `caligraphy2` in the same way — but no
 glyph data is copied.
 
-That is deliberate. The FIGlet collection has a patchwork of licences: some
-public domain, some free-but-no-redistribution, a few with no stated terms at
-all. Bundling them would push that problem onto everyone who forks this.
+**Or set the real thing.** Redrawn is not identical, and sometimes identical
+is the point. The program reads FIGlet's own `.flf` font files and sets type
+with the real layout algorithm — full width, kerning, and smushing with the
+six controlled rules of the FIGfont standard — so the output is pixel for
+pixel what the TAAG site shows. Characters your machine has not got go
+through the same stand-in engine as everything else, and you are told what
+will be typed in their place; only a character with no stand-in at all is
+left blank, by name.
 
-To use them anyway, point [`figlet`](https://github.com/patorjk/figlet.js) at
-your own copy of the `.flf` files. They are worth having; they just are not
-ours to ship.
-
-**Or import the real thing.** Redrawn is not identical, and sometimes
-identical is the point. The program reads FIGlet's own `.flf` font files —
-from *your* copy, which stays on your disk the way the audio recordings do —
-and sets type with the real layout algorithm: full width, kerning, and
-smushing with the six controlled rules of the FIGfont standard, so the
-output is pixel for pixel what the TAAG site shows. Characters your machine
-has not got go through the same stand-in engine as everything else, and you
-are told what will be typed in their place; only a character with no
-stand-in at all is left blank, by name. See `fonts/README.md` for where to
-get the files:
+Nineteen fonts ship in [`fonts/`](fonts/), redistributed as received from
+the [FIGlet collection](https://github.com/patorjk/figlet.js) the way figlet
+itself, every Linux distribution and the TAAG site have redistributed them
+for thirty years. They are the work of their authors, who are named in
+[`fonts/README.md`](fonts/README.md); they are **not** covered by this
+project's MIT licence. Any `.flf` you drop into the folder works the same
+way:
 
     node tools/cli.mjs text "HELLO" --flf fonts/Roman.flf
 
