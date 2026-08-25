@@ -130,6 +130,30 @@ check('and that holds for a picture spelled out in words', () => {
   assert.ok(typed.has(')'), 'the brace was dropped rather than stood in for');
 });
 
+check('the case belongs to the picture, until --exact-case takes it back', () => {
+  /*
+   * Case is the only shading one repeating sentence has to give, so by
+   * default the picture picks it, cell by cell, from how dark that part of
+   * it is. That is a liberty taken with what was typed - a name, an
+   * initial, a German noun - and this is the flag that takes it back.
+   */
+  const args = ['image', picture, '--mode', 'sentence',
+    '--sentence', 'Ada Lovelace', '--machine', 'olympia-sm7', '--json'];
+  const written = new Set([...'Ada Lovelace']);
+  const struck = (r) => [...json(r).lines.join('')].filter((c) => c !== ' ');
+
+  const shaded = struck(run(...args));
+  assert.ok(shaded.length > 0, 'nothing was typed at all');
+  assert.ok(shaded.some((c) => !written.has(c)),
+    'the picture shaded nothing, so there was nothing to take back');
+
+  const exact = struck(run(...args, '--exact-case'));
+  assert.ok(exact.length > 0, 'nothing was typed at all');
+  const invented = exact.filter((c) => !written.has(c));
+  assert.strictEqual(invented.join(''), '',
+    'letters were struck in a case nobody typed');
+});
+
 check('a sentence with nothing typeable in it is refused, not drawn', () => {
   // There is then nothing to spell the picture with, and a sheet of
   // characters the machine cannot strike is the one outcome this whole

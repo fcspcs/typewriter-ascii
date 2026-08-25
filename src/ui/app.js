@@ -136,6 +136,7 @@ const save = () => {
       inkAmount: $('inkAmount').value,
       invert: $('invert').value,
       sentence: $('sentence').value,
+      exactCase: $('exactCase').checked,
       orientation: $('orientation').value,
       showTurned: app.showTurned,
       zoom: app.zoom,
@@ -221,6 +222,7 @@ function fillSelects(saved) {
   if (saved.inkAmount) $('inkAmount').value = saved.inkAmount;
   if (saved.invert) $('invert').value = saved.invert;
   if (saved.sentence) $('sentence').value = saved.sentence;
+  if (saved.exactCase) $('exactCase').checked = true;
   /*
    * Two dead settings are still read here, and both are somebody's last
    * visit. `landscape: true` was the original checkbox; `orientation:
@@ -1063,8 +1065,17 @@ function convert() {
        * not got, and nothing anywhere said so.
        */
       const said = sentenceForMachine();
+      /*
+       * `allowed` is handed in for the same reason the sentence was: the
+       * case this mode picks per cell is picked after typeableSentence()
+       * has had its say, so without it a lower-case `l` could still reach
+       * the paper as an `L` the machine has not got, or has switched off.
+       */
       lines = said.text.trim()
-        ? toSentence(field, grid.cols, grid.rows, said.text)
+        ? toSentence(field, grid.cols, grid.rows, said.text, {
+            keepCase: $('exactCase').checked,
+            allowed: keysOn(),
+          })
         : [];
     } else {
       lines = toCharacters(field, grid.cols, grid.rows, app.atlas, {
@@ -1736,12 +1747,20 @@ function syncLetterHint() {
 }
 
 /**
+ * The keys this machine has, narrowed to the ones switched on under
+ * Characters. A key switched off is a key the machine has not got, which is
+ * what it means everywhere else on the page.
+ */
+const keysOn = () =>
+  new Set(charset(app.machine).filter((c) => app.chosen.has(c)));
+
+/**
  * The sentence as this machine will strike it, narrowed to the keys that
  * are switched on. See typeableSentence() for why a mark with no stand-in
  * is left out rather than blanked.
  */
-const sentenceForMachine = () => typeableSentence($('sentence').value,
-  new Set(charset(app.machine).filter((c) => app.chosen.has(c))));
+const sentenceForMachine = () =>
+  typeableSentence($('sentence').value, keysOn());
 
 /**
  * Whether the sentence can be typed at all — said at the box it was typed
@@ -1757,6 +1776,17 @@ const sentenceForMachine = () => typeableSentence($('sentence').value,
  * whole program exists to prevent.
  */
 function syncSentenceFit() {
+  /*
+   * Said whether or not there is a picture yet, and so not left to draw(),
+   * which turns round above the other hints when the motif is empty. The
+   * switch is read before a picture is chosen as often as after.
+   */
+  $('exactCaseHint').textContent = $('exactCase').checked
+    ? 'Every letter is struck the way you wrote it here. The picture is '
+      + 'then made by where the letters fall, and nothing shades it.'
+    : 'The picture chooses the capitals: a dark part is spelled in capitals '
+      + 'and a pale one in small letters, whatever you typed.';
+
   const el = $('sentenceFit');
   if (!el) return;
   if ($('mode').value !== 'sentence' || currentTab() !== 'image') {
@@ -2893,7 +2923,7 @@ function wire() {
 
   // settings that only need a redraw
   ['mode', 'align', 'paper', 'machine', 'letterStyle', 'invert',
-   'ink', 'useRed', 'orientation', 'composeUnit'].forEach((id) => {
+   'ink', 'useRed', 'orientation', 'composeUnit', 'exactCase'].forEach((id) => {
     $(id).onchange = () => {
       if (id === 'machine') {
         useProfile($('machine').value);

@@ -779,6 +779,39 @@ await check('a sentence meets the machine, and says what it will strike',
       'a sentence that can still be typed was refused');
   });
 
+await check('the sentence can keep the case it was typed in', async () => {
+  /*
+   * Case is the only shading one repeating sentence has to give, so the
+   * picture picks it, cell by cell. That is a liberty taken with what was
+   * typed - a name, an initial, a German noun - and the switch takes it
+   * back. It lives in the sentence row because it is a thing to know about
+   * the box above it, and it goes away with that box.
+   */
+  assert($('sentenceRow').contains($('exactCase')),
+    'the switch outlives the field it is about');
+  assert(!$('exactCase').checked, 'the picture is no longer asked first');
+  assert(typeof $('exactCase').onchange === 'function',
+    'switching it changes nothing');
+
+  const shaded = $('exactCaseHint').textContent;
+  $('exactCase').checked = true;
+  $('exactCase').dispatchEvent(new window.Event('change'));
+  await wait(400);
+
+  const exact = $('exactCaseHint').textContent;
+  assert(exact.trim().length > 20 && shaded.trim().length > 20,
+    `the switch does not say what it does: "${shaded}" / "${exact}"`);
+  assert(exact !== shaded, 'the same explanation for both answers');
+  assert(JSON.parse(window.localStorage.getItem('typewriter-ascii')).exactCase
+    === true, 'not remembered, so it has to be found again every visit');
+
+  $('exactCase').checked = false;
+  $('exactCase').dispatchEvent(new window.Event('change'));
+  await wait(400);
+  assert($('exactCaseHint').textContent === shaded,
+    'the explanation did not come back with the picture');
+});
+
 await check('and a sentence with nothing typeable left is refused', async () => {
   // There is then nothing to spell the picture with.
   $('sentence').value = '▓▒░';

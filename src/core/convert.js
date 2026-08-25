@@ -454,15 +454,63 @@ export function toCharacters(field, cols, rows, atlas, opt = {}) {
 }
 
 /**
+ * `ch` in the case asked for, unless that case cannot be struck.
+ *
+ * Two ways a case change goes wrong, and since one cell is one keystroke
+ * both have to be caught here rather than downstream.
+ *
+ * A capital ß is `SS` in JavaScript — two characters for one cell. That
+ * pushes every later cell in the row along by one and takes the right edge
+ * of the motif with it, on a machine whose own keyboard has the key.
+ *
+ * And a letter whose other case the machine has not got, or has switched off
+ * under Characters, would reach the paper having never been checked: the
+ * sentence is met by typeableSentence(), but a case chosen here is chosen
+ * afterwards, so `l` on a machine missing `L` would be typed as `L` anyway.
+ *
+ * Either way the character stays as it was typed, which is already known to
+ * be typeable: the cell loses its shading rather than the row losing its
+ * shape.
+ *
+ * @param {string} ch
+ * @param {boolean} wantUpper
+ * @param {Set<string>|null} allowed the keys that may be struck, if known
+ */
+function caseAs(ch, wantUpper, allowed) {
+  const out = wantUpper ? ch.toUpperCase() : ch.toLowerCase();
+  if (out === ch || out.length !== 1) return ch;
+  return allowed && !allowed.has(out) ? ch : out;
+}
+
+/**
  * Build a motif out of one repeating sentence.
  *
  * The sentence must read continuously across line breaks, so the character
  * stream only advances when something is actually typed. Word gaps that
  * would land on the edge of the motif are skipped — a ragged edge is worse
  * than a missing space, because the edge is what the eye reads as shape.
+ *
+ * Whose decision the case of each letter is, is `keepCase`. By default it is
+ * the picture's: a cell holding more ink is struck as a capital, which is
+ * the only shading one repeating sentence has to give. `keepCase` hands that
+ * back to whoever typed the sentence — every letter then lands exactly as
+ * written, and the picture is made by where the letters fall rather than by
+ * how big they are. A sentence that means its own capitals, a machine whose
+ * shift is stiff, or simply wanting the words to read as words: all three
+ * are asking for the same switch.
+ *
+ * @param {Object} [opt]
+ * @param {number} [opt.threshold=0.35]  ink below which a cell stays blank
+ * @param {boolean|null} [opt.upper=null] force one case; null lets the tone
+ *   decide, cell by cell
+ * @param {boolean} [opt.keepCase=false] type the sentence exactly as given,
+ *   and let nothing here change a letter's case
+ * @param {Set<string>|null} [opt.allowed=null] the keys that may be struck
  */
 export function toSentence(field, cols, rows, phrase, opt = {}) {
-  const { threshold = 0.35, upper = null } = opt;
+  const {
+    threshold = 0.35, upper = null, keepCase = false, allowed = null,
+  } = opt;
   const { w, h, data } = field;
   const cw = w / cols;
   const chH = h / rows;
@@ -506,9 +554,10 @@ export function toSentence(field, cols, rows, phrase, opt = {}) {
       }
       let ch = chars[i % chars.length];
       i++;
-      if (upper === true) ch = ch.toUpperCase();
-      else if (upper === false) ch = ch.toLowerCase();
-      else ch = tone[r][c] > 0.62 ? ch.toUpperCase() : ch.toLowerCase();
+      if (!keepCase) {
+        const wantUpper = upper === null ? tone[r][c] > 0.62 : upper === true;
+        ch = caseAs(ch, wantUpper, allowed);
+      }
       line += ch;
     }
     lines.push(line.replace(/\s+$/, ''));

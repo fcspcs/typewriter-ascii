@@ -9,7 +9,7 @@
 import assert from 'node:assert';
 import {
   toInk, normalise, blur, contrast, cropToContent, outline, fitGrid, prepare,
-  strokes,
+  strokes, toSentence, sentenceReads,
 } from '../src/core/convert.js';
 
 let failures = 0;
@@ -280,6 +280,64 @@ check('the lines stay lines, rather than surviving as a smear', () => {
   const after = [...field.data].filter((v) => v > 0.5).length / field.data.length;
   assert.ok(after < before * 4,
     `a ${(before * 100).toFixed(1)}% drawing became ${(after * 100).toFixed(1)}%`);
+});
+
+console.log('spelling a picture out in words');
+
+/**
+ * An ink field made by hand, one pixel per cell, so the tone of every cell
+ * is exactly the number written here and no blur stands between the test
+ * and what it is asserting.
+ */
+const cells = (row) => ({
+  w: row.length, h: 1, data: Float32Array.from(row),
+});
+
+// Dark enough for a capital (> 0.62), inked but pale (> 0.35), and blank.
+const DARK = 1, PALE = 0.5;
+
+check('left alone, the picture chooses the capitals', () => {
+  const [line] = toSentence(cells([DARK, DARK, PALE, PALE]), 4, 1, 'abcd');
+  assert.strictEqual(line, 'ABcd');
+});
+
+check('asked for it, the sentence is struck exactly as it was written', () => {
+  // The whole of the switch: the case that was typed reaches the paper,
+  // whatever the picture underneath it would have preferred.
+  const [line] = toSentence(cells([DARK, DARK, PALE, PALE]), 4, 1, 'aBcD',
+    { keepCase: true });
+  assert.strictEqual(line, 'aBcD');
+});
+
+check('and it still reads straight through, line after line', () => {
+  const phrase = 'Ada Lovelace';
+  const lines = toSentence(cells(Array(20).fill(DARK)), 5, 4, phrase,
+    { keepCase: true });
+  assert.ok(sentenceReads(lines, phrase), lines.join('/'));
+});
+
+check('one cell is one keystroke, even where a capital is two letters', () => {
+  /*
+   * `'ss'.toUpperCase()` is one thing; the German sharp s is another. It
+   * becomes `SS` — two characters for one cell, which moved every cell
+   * after it and took the right edge of the motif with it. On a machine
+   * whose own keyboard has the key: the SM7 is a German QWERTZ.
+   */
+  const [line] = toSentence(cells([DARK, DARK, DARK]), 3, 1, 'ß');
+  assert.strictEqual(line.length, 3, `"${line}" is not three cells wide`);
+});
+
+check('a capital the machine has not got is not struck anyway', () => {
+  /*
+   * The sentence is met by typeableSentence() before it gets here, but the
+   * case is chosen afterwards — so a lower-case `l` on a machine with no
+   * `L` reached the paper as one, having never been checked. The cell
+   * loses its shading instead.
+   */
+  const allowed = new Set([...'abcd']);
+  const [line] = toSentence(cells([DARK, DARK, PALE, PALE]), 4, 1, 'abcd',
+    { allowed });
+  assert.strictEqual(line, 'abcd');
 });
 
 console.log(failures ? `\n${failures} failed` : '\nall green');

@@ -110,6 +110,9 @@ pictures
   --invert <auto|no|yes> default auto
   --width <n>            columns, default 60, capped by the edge of the sheet
   --sentence "<text>"    for --mode sentence
+  --exact-case           spell it exactly as written. Without this the
+                         picture picks the capitals, cell by cell, from how
+                         dark that part of it is
   --atlas <path.json>    measured glyph shapes, for --mode shape
   --preview <path.png>   write the prepared image, to see what was fed in
 `);
@@ -361,6 +364,7 @@ function pictureSettings() {
     detail: num('detail', 45) / 100,
     contrast: num('contrast', 130) / 100,
     sentence: String(opt('sentence', 'she loved him and he loved her')),
+    exactCase: Boolean(opt('exact-case')),
   };
 }
 
@@ -469,7 +473,16 @@ function convertPicture(path) {
       die(`Nothing in --sentence can be typed on the ${machine.name}, so ` +
         `there is nothing to spell the picture with.`);
     }
-    lines = toSentence(field, grid.cols, grid.rows, said.text);
+    /*
+     * `allowed` for the same reason the sentence was met by the machine at
+     * all: the case this mode picks per cell is picked after that check,
+     * so a lower-case letter could otherwise be struck as a capital the
+     * machine has not got. See toSentence().
+     */
+    lines = toSentence(field, grid.cols, grid.rows, said.text, {
+      keepCase: set.exactCase,
+      allowed: new Set(charset(machine)),
+    });
   } else {
     const render = set.mode === 'tone' || fellBack ? 'tone' : 'shape';
     lines = toCharacters(field, grid.cols, grid.rows, atlas, {
