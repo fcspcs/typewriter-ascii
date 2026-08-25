@@ -234,8 +234,16 @@ await check('pasted art is converted and untypeable characters swapped', () => {
 await new Promise((r) => setTimeout(r, 400));
 
 await check('the zero was replaced with a capital O', () => {
+  // The open line carries more than motif text now: run-length labels
+  // above the cells and, under them, the carriage's own column numbers —
+  // both legitimately full of digits, neither a character anyone types.
+  // What this checks is the typed cells themselves, the same definition
+  // `cellsOf()` uses in sheet.test.mjs.
   const text = [...window.document.querySelectorAll('.sheet .ln')]
-    .map((e) => e.textContent).join('\n');
+    .map((e) => {
+      const cells = e.querySelectorAll('.c');
+      return cells.length ? [...cells].map((c) => c.textContent).join('') : e.textContent;
+    }).join('\n');
   assert(!/0/.test(text), `still contains a zero: ${text}`);
   assert(/O/.test(text), `no substitute found: ${text}`);
 });

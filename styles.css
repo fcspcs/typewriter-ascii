@@ -807,9 +807,32 @@ ol.setup span { display: block; color: var(--faint); font-size: 12px; }
   transform: translateX(-50%);
   font-size: 0.78em; color: var(--faint); white-space: nowrap;
 }
-.run.gap { border-bottom: 1px solid var(--space); }
-.run.rep { border-bottom: 1px solid var(--ink); }
-.run .c { display: inline-block; }
+
+/*
+ * The rule under the whole open line, and not only under the runs.
+ *
+ * It used to be drawn for a run of spaces and a run of repeats and for
+ * nothing else, on the reasoning that those are the parts you have to
+ * count. True of a picture; false of everything with no repeats in it. A
+ * line of lettering is forty characters no two of which are the same, so
+ * every run is one cell long: no label, no rule, no grouping, forty
+ * characters of undifferentiated text with the spaces on either side of it
+ * the only thing you could hold on to.
+ *
+ * The rule is the line's now. What runs still say is said in its colour:
+ * paper-hairline under ordinary characters, the space tint under a gap, ink
+ * under a repeat. Same one line, three weights.
+ */
+.run { border-bottom: 1px solid var(--hair); }
+.run.gap { border-bottom-color: var(--space); }
+.run.rep { border-bottom-color: var(--ink); }
+
+/*
+ * Bottom-aligned so the cells sit *on* the rule. Left on the baseline they
+ * hang a descender's worth above it, and the ticks that rise from it stand
+ * in a gap instead of touching anything.
+ */
+.run .c { display: inline-block; position: relative; vertical-align: bottom; }
 
 /*
  * A space you must type: a tinted cell, and nothing in it.
@@ -829,26 +852,56 @@ ol.setup span { display: block; color: var(--faint); font-size: 12px; }
   box-shadow: inset -1px 0 0 var(--raised);
 }
 /*
- * The five-mark: a tick on the rule, not a stroke through the letter.
+ * The five- and ten-marks: ticks hanging off the rule, below the letters.
  *
- * It was a full-height hairline in ink down the left edge of every fifth
- * cell, and at this size that is not a separator, it is a stem: `8|8` reads
- * as one glyph with a bar through it, and the run you were trying to count
- * became the run you had to decipher.
+ * They were hairlines in ink down the left edge of every fifth cell, and at
+ * this size that is not a separator, it is a stem: `8|8` reads as one glyph
+ * with a bar through it, and the run you were trying to count became the
+ * run you had to decipher. Moved to a tick rising out of the run's own
+ * underline, they still had to share the height of the characters.
  *
- * What the mark is for is counting in fives at a glance, and a tick rising
- * out of the run's own underline does that without standing in the way of
- * anything — the same way the scale above the sheet marks its tens. Faint
- * rather than ink, because it is a grid and not a character.
+ * Below the rule they share nothing. Nothing at all is drawn between the
+ * letters now, so a row of them reads as the word it is, and the counting
+ * happens on its own line underneath — which is where a ruler goes.
+ *
+ * They are also counted in the machine's columns rather than the run's, so
+ * every fifth tick is in the same place as the `·` on the scale above the
+ * sheet and the tens line up under their own numbers. Counted per run they
+ * could not: a tick five cells into the third run of the line marks a
+ * column no scale has ever heard of.
  */
-.run .c.five { position: relative; }
-.run .c.five::before {
+.run .c.five::after, .run .c.ten::after {
   content: '';
   position: absolute;
-  left: 0; bottom: -2px;
-  width: 1px; height: 0.5em;
+  left: 50%; top: 100%;
+  transform: translateX(-50%);
+  width: 1px;
   background: var(--faint);
 }
+.run .c.five::after { height: 0.3em; opacity: 0.65; }
+.run .c.ten::after { height: 0.62em; }
+
+/*
+ * The numbers under the ticks, in the machine's own scale.
+ *
+ * The scale along the top of the sheet answers "which column is this" for
+ * the first line and for no other, because forty lines below it is off the
+ * screen. This is the same scale carried down to the line you are on, so
+ * the answer is where the question is asked.
+ *
+ * Same font and same size as the characters, for the reason written on the
+ * scale: a number set even slightly smaller has a narrower column, and by
+ * the twentieth it has drifted off the cell it belongs to. Faint, and only
+ * every ten, so it stays a ruler rather than becoming a second line of
+ * text to read.
+ */
+.ln.now .foot {
+  display: block;
+  color: var(--faint);
+  padding-top: 0.55em;
+  user-select: none;
+}
+
 .run .c.past { opacity: 0.3; }
 
 /* The typing cursor only appears while something is actually counting
@@ -856,6 +909,30 @@ ol.setup span { display: block; color: var(--faint); font-size: 12px; }
    tracked. */
 body.counting .run .c.hit {
   background: var(--ink); color: var(--paper);
+}
+
+/*
+ * A place you put there by hand, when nothing is counting for you.
+ *
+ * Clicking a character has always set the position — it is the remedy for a
+ * count gone wrong on a machine that cannot erase — but the mark it set was
+ * only ever drawn while the microphone was on, so away from the microphone
+ * the click did nothing you could see and there was no way at all to leave
+ * yourself a mark.
+ *
+ * A caret rather than the filled cell, because the two say different
+ * things. Filled, the cursor is a count claiming to be up to date. This is
+ * a bookmark: you said you were here, and nothing has claimed otherwise
+ * since. It is drawn only once you have actually placed it — every line
+ * opens at strike zero, and a caret on the first character of a line nobody
+ * has started is furniture, not information.
+ */
+body.placed:not(.counting) .run .c.hit::before {
+  content: '';
+  position: absolute;
+  left: -1px; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--ink);
 }
 
 /*
@@ -1115,7 +1192,11 @@ dialog menu { display: flex; justify-content: flex-end; gap: 1.3rem;
 @media (forced-colors: active) {
   .run.gap .c { border-bottom: 2px dotted CanvasText; }
   body.counting .run .c.hit { outline: 2px solid Highlight; }
+  body.placed:not(.counting) .run .c.hit { outline: 2px dotted CanvasText; }
   .ln.now { outline: 1px solid CanvasText; }
+  /* The ticks are backgrounds on an empty box, so they go with the rest of
+     them. The numbers under the rule survive on their own — they are text. */
+  .run .c.five::after, .run .c.ten::after { background: CanvasText; }
   .sheet-pick .pick.on, .matrix .cell.in, .matrix .cell.on,
   .key.on, .tab.on { outline: 2px solid Highlight; }
   .feed .rule i { background: Highlight; }

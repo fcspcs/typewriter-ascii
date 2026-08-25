@@ -13,6 +13,59 @@
 import { runsOf } from '../core/runs.js';
 
 /**
+ * Lay numbers along a row of cells, first come first served.
+ *
+ * Both rulers on the page place their numbers with this — the scale above
+ * the sheet and the one under the open line — because two rulers over the
+ * same cells that place their numbers by different rules are two rulers
+ * that will eventually disagree.
+ *
+ * A number goes down only where it has a blank column each side, and one
+ * already placed is never disturbed. Overwriting looked like it worked
+ * until it didn't: a label merely *adjacent* to another is overwritten by
+ * nothing, so a ten-mark at 60 and a stop at 64 printed `6064` and read as
+ * one number. Order is priority — whatever matters most is offered first,
+ * and the convenience gives way to the instruction.
+ *
+ * @param {number} width
+ * @param {Array<[number, string]>} labels [column, text], most important first
+ * @returns {string} a row of `width` characters
+ */
+export function labelRow(width, labels) {
+  const row = Array(width).fill(' ');
+  const taken = Array(width).fill(false);
+
+  for (const [at, text] of labels) {
+    const start = Math.min(Math.max(0, at), Math.max(0, width - text.length));
+    let clear = true;
+    for (let k = start - 1; k <= start + text.length; k++) {
+      if (k >= 0 && k < width && taken[k]) { clear = false; break; }
+    }
+    if (!clear) continue;
+    for (let k = 0; k < text.length && start + k < width; k++) {
+      row[start + k] = text[k];
+      taken[start + k] = true;
+    }
+  }
+  return row.join('');
+}
+
+/**
+ * The ten-marks along a row of cells, in the machine's own numbering.
+ *
+ * @param {number} width
+ * @param {number} from carriage column of the first cell
+ * @returns {Array<[number, string]>}
+ */
+export function tenMarks(width, from) {
+  const out = [];
+  for (let i = 0; i < width; i++) {
+    if ((from + i) % 10 === 0) out.push([i, String(from + i)]);
+  }
+  return out;
+}
+
+/**
  * Draw a line as plain motif text, split by ribbon colour.
  */
 function plainLine(line, colours) {
@@ -32,22 +85,46 @@ function plainLine(line, colours) {
 }
 
 /**
- * Draw the open line: the same characters, but with run lengths above them
- * and a rule under each run so the eye can group them.
+ * Draw the open line: the same characters, with what to type written above
+ * them and where they are written below.
  *
- * @param {number} strike  how many keystrokes of this line are done
+ * Above the cells: run lengths, for the parts of a line that repeat.
+ *
+ * Below them: the carriage's own scale, carried down from the top of the
+ * sheet to the one line you are on. That half was missing, and what it left
+ * behind showed the moment a motif had no repeats in it. Lettering, or a
+ * picture written in words, is forty characters no two of which are the
+ * same: every run is one cell long, so nothing was labelled, nothing was
+ * ruled, and nothing was grouped. Spaces were the only thing on such a line
+ * you could count, because spaces were the only thing that ever arrived in
+ * runs. Look at the paper, look back, and finding your place meant counting
+ * from the start of the line again.
+ *
+ * So the grouping stops being a property of the run and becomes a property
+ * of the line: a rule under every cell, a tick every five columns and a
+ * number every ten, whatever the characters happen to be. The columns are
+ * the machine's rather than the line's own — the numbers engraved on the
+ * carriage, in the same places the scale above the sheet puts them, so the
+ * two rulers agree and a column can be read off whichever is nearer.
+ *
+ * @param {string} line
+ * @param {string[]} colours 'black' | 'red' per column
+ * @param {number} strike how many keystrokes of this line are done
+ * @param {number} from carriage column of the first cell — the margin stop
  */
-function openLine(line, colours, strike) {
+function openLine(line, colours, strike, from = 1) {
   const runs = runsOf(line, colours);
   if (!runs.length) return '&nbsp;';
 
   let done = 0;
-  return runs.map((run) => {
+  const strip = runs.map((run) => {
     const cells = [];
     for (let k = 0; k < run.n; k++) {
       const idx = done + k;
+      const col = from + idx;
       const cls = ['c'];
-      if (run.n >= 3 && k && k % 5 === 0) cls.push('five');
+      if (col % 10 === 0) cls.push('ten');
+      else if (col % 5 === 0) cls.push('five');
       if (idx < strike) cls.push('past');
       else if (idx === strike) cls.push('hit');
       cells.push(
@@ -65,6 +142,16 @@ function openLine(line, colours, strike) {
     const red = run.red ? ' r' : '';
     return `<span class="run${kind}${red}">${label}${cells.join('')}</span>`;
   }).join('');
+
+  /*
+   * The numbers under the rule, in the sheet's own grid, so a number sits
+   * under the cell it names rather than near it — and at the sheet's own
+   * size for the same reason the scale is: set even slightly smaller they
+   * have a narrower column, and by the twentieth they have drifted off the
+   * cell they belong to. They recede by ink instead.
+   */
+  const foot = esc(labelRow(done, tenMarks(done, from)));
+  return `${strip}<span class="foot">${foot}</span>`;
 }
 
 const esc = (s) => String(s).replace(/[&<>"]/g,
@@ -87,7 +174,8 @@ export function renderSheet(host, lines, colours) {
  * Only the two lines that changed are redrawn — redrawing the whole sheet
  * on every keystroke makes long motifs stutter.
  */
-export function paintSheet(els, lines, colours, at, strike, previous = -1) {
+export function paintSheet(els, lines, colours, at, strike, previous = -1,
+                           from = 1) {
   const touch = new Set([at, previous].filter((i) => i >= 0 && i < els.length));
 
   // classes on every line are cheap; innerHTML is not
@@ -98,23 +186,23 @@ export function paintSheet(els, lines, colours, at, strike, previous = -1) {
 
   for (const i of touch) {
     els[i].innerHTML = i === at
-      ? openLine(lines[i], colours?.[i], strike)
+      ? openLine(lines[i], colours?.[i], strike, from)
       : plainLine(lines[i], colours?.[i]);
   }
   // first paint: fill everything that is still empty
   els.forEach((el, i) => {
     if (!el.innerHTML) {
       el.innerHTML = i === at
-        ? openLine(lines[i], colours?.[i], strike)
+        ? openLine(lines[i], colours?.[i], strike, from)
         : plainLine(lines[i], colours?.[i]);
     }
   });
 }
 
 /** Redraw only the open line — used while listening. */
-export function paintStrike(els, lines, colours, at, strike) {
+export function paintStrike(els, lines, colours, at, strike, from = 1) {
   if (at < 0 || at >= els.length) return;
-  els[at].innerHTML = openLine(lines[at], colours?.[at], strike);
+  els[at].innerHTML = openLine(lines[at], colours?.[at], strike, from);
 }
 
 /**

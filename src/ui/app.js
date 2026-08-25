@@ -34,7 +34,7 @@ import { parseFlf, flfLetter } from '../core/figlet.js';
 import { StrikeListener, LineTracker, METER_FULL_SCALE } from '../core/listen.js';
 import { buildSheetPdf, downloadPdf } from '../core/pdf.js';
 import {
-  renderSheet, paintSheet, paintStrike, keepInView,
+  renderSheet, paintSheet, paintStrike, keepInView, labelRow, tenMarks,
 } from './sheet.js';
 import { renderKeyboard, pick, learnByTyping } from './keyboard.js';
 
@@ -2473,7 +2473,17 @@ function draw() {
       app.strike = idx;
       app.tracker?.resolve(idx);
       showCount(null);
-      paintStrike(app.els, app.lines, app.colours, app.at, app.strike);
+      /*
+       * And a place put there by hand stays on screen, which it did not.
+       * The mark was drawn only while something was counting keystrokes —
+       * right about a count, wrong about a click: away from the microphone
+       * the one gesture the sheet offers for saying where you are did
+       * nothing you could see. It is drawn as a caret rather than as the
+       * filled cursor, because it is a bookmark and not a claim to be up
+       * to date. go() clears it: a new line has nowhere you have been.
+       */
+      document.body.classList.add('placed');
+      paintStrike(app.els, app.lines, app.colours, app.at, app.strike, stop());
       $('strikes').textContent =
         `${app.strike} / ${strikesInLine(app.lines[app.at] ?? '')}`;
     };
@@ -2667,7 +2677,6 @@ function drawMachineSet() {
    * scale is engraved, and the two stops marked where they actually fall.
    */
   const from = s.left;
-  const nums = Array(width).fill(' ');
   const ticks = Array(width).fill(' ');
 
   for (let i = 0; i < width; i++) {
@@ -2688,31 +2697,19 @@ function drawMachineSet() {
    * and the stop 64 with nothing between them, reading as one number.
    *
    * A stop is the instruction and a ten-mark is a convenience, so where
-   * only one of the two fits it is the stop. pdf.js applies the same rule
-   * in millimetres, so the ruled page and this scale name the same cells.
+   * only one of the two fits it is the stop — which is what an ordered list
+   * says to labelRow(). pdf.js applies the same rule in millimetres, so the
+   * ruled page and this scale name the same cells; the rule under the open
+   * line calls the same function, so the two rulers on this page cannot
+   * drift apart at all.
    */
-  const taken = Array(width).fill(false);
-  const put = (at, text) => {
-    const start = Math.min(Math.max(0, at), Math.max(0, width - text.length));
-    // One blank column each side, or the two numbers run together.
-    for (let k = start - 1; k <= start + text.length; k++) {
-      if (k >= 0 && k < width && taken[k]) return false;
-    }
-    for (let k = 0; k < text.length && start + k < width; k++) {
-      nums[start + k] = text[k];
-      taken[start + k] = true;
-    }
-    return true;
-  };
-
-  put(0, String(s.left));
-  if (width > 1) put(width - String(s.right).length, String(s.right));
-  for (let i = 0; i < width; i++) {
-    if ((from + i) % 10 === 0) put(i, String(from + i));
-  }
+  const labels = [[0, String(s.left)]];
+  if (width > 1) labels.push([width - String(s.right).length, String(s.right)]);
+  labels.push(...tenMarks(width, from));
+  const nums = labelRow(width, labels);
 
   scale.innerHTML =
-    `<span class="nums">${esc(nums.join(''))}</span>` +
+    `<span class="nums">${esc(nums)}</span>` +
     `<span class="ticks">${esc(ticks.join(''))}</span>`;
 
   /*
@@ -2739,8 +2736,18 @@ function drawMachineSet() {
 const ORDINAL_WORDS = ['first', 'second', 'third', 'fourth'];
 const ordinalWord = (n) => ORDINAL_WORDS[n - 1] ?? `${n}th`;
 
+/**
+ * The carriage column the first character of every line sits under.
+ *
+ * The scale above the sheet is numbered in it and so is the rule under the
+ * open line, which is the only way the two can be read against each other.
+ * One before a setup exists: column 1, the leftmost the carriage has.
+ */
+const stop = () => app.setup?.left ?? 1;
+
 function paint(previous = -1) {
-  paintSheet(app.els, app.lines, app.colours, app.at, app.strike, previous);
+  paintSheet(app.els, app.lines, app.colours, app.at, app.strike, previous,
+    stop());
 
   const n = app.lines.length || 1;
   $('bar').style.width = `${Math.round(app.at / n * 100)}%`;
@@ -2769,6 +2776,9 @@ function go(i, scroll = true, byHand = true) {
   }
   app.at = clamp(i, 0, Math.max(0, app.lines.length - 1));
   app.strike = 0;
+  // A line you have not started has no place you have been, so the
+  // hand-placed caret does not follow you onto it.
+  document.body.classList.remove('placed');
   paint(prev);
   if (scroll) keepInView(app.els[app.at], headerHeight());
   save();
@@ -2794,7 +2804,7 @@ function strike() {
     else { app.strike = total; paint(); }
     return;
   }
-  paintStrike(app.els, app.lines, app.colours, app.at, app.strike);
+  paintStrike(app.els, app.lines, app.colours, app.at, app.strike, stop());
   $('strikes').textContent = `${app.strike} / ${total}`;
 }
 
@@ -3029,7 +3039,7 @@ function wire() {
   $('back1').onclick = () => {
     app.strike = Math.max(0, app.strike - 1);
     app.tracker?.strike(-1);
-    paintStrike(app.els, app.lines, app.colours, app.at, app.strike);
+    paintStrike(app.els, app.lines, app.colours, app.at, app.strike, stop());
     // The readout is the only thing that says where the count now is. It
     // was left showing the number before the correction, so pressing -1
     // appeared to do nothing at all.
@@ -3360,6 +3370,9 @@ async function toggleListen() {
   app.listener = l;
   app.tracker = new LineTracker().begin(strikesInLine(app.lines[app.at] ?? ''));
   document.body.classList.add('counting');
+  // The ear takes the position over from here, so a mark left by hand is
+  // not left standing to be read as one the ear agrees with.
+  document.body.classList.remove('placed');
   $('ear').hidden = false;
   $('listen').textContent = 'stop listening';
   $('listen').classList.add('on');
