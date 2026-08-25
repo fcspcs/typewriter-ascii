@@ -22,6 +22,44 @@ export function cellAspect(m) {
   return cellWidthMm(m) / cellHeightMm(m);
 }
 
+/**
+ * A block of typed characters as a picture, for setting type sideways.
+ *
+ * Fixed letterforms cannot be resampled the way a photograph can, and laying
+ * a finished block down cell by cell stretches it 2.77 times over: a quarter
+ * turn swaps the cell's 2.54 mm width and 4.23 mm height, and glyph data has
+ * no way to follow. So a word planned sideways is turned into ink first —
+ * each cell becomes a 3 × 5 patch of pixels, the cell's own shape near
+ * enough exactly — and the ordinary picture pipeline takes it from there,
+ * resampling it like it would a drawing.
+ *
+ * Solid patches, deliberately: drawing the marks as the glyphs they are
+ * needs a canvas, and the browser uses one where it has it (see app.js).
+ * What matters here is that the silhouette is right.
+ *
+ * @param {string[]} rows characters; a space is paper
+ * @returns {{width: number, height: number, data: Uint8ClampedArray}}
+ *          the shape toInk() reads
+ */
+export function blockImage(rows, cw = 3, ch = 5) {
+  const cols = Math.max(1, ...rows.map((r) => r.length));
+  const w = cols * cw;
+  const h = Math.max(1, rows.length) * ch;
+  const data = new Uint8ClampedArray(w * h * 4).fill(255);
+  rows.forEach((row, y) => {
+    [...row].forEach((c, x) => {
+      if (c === ' ') return;
+      for (let py = y * ch; py < (y + 1) * ch; py++) {
+        for (let px = x * cw; px < (x + 1) * cw; px++) {
+          const i = (py * w + px) * 4;
+          data[i] = data[i + 1] = data[i + 2] = 0;
+        }
+      }
+    });
+  });
+  return { width: w, height: h, data };
+}
+
 /* ------------------------------------------------------------------ */
 /* 1 + 2: from picture to ink                                          */
 /* ------------------------------------------------------------------ */

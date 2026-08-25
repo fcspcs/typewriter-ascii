@@ -39,6 +39,20 @@ Everywhere:
 | `--json` | off | the whole result as one object on stdout |
 | `--quiet` | off | skip the line-by-line typing instructions |
 
+`text` only:
+
+| Option | Default | |
+| --- | --- | --- |
+| `--flf <path.flf>` | none | set the word in a FIGlet font; nineteen ship in `fonts/` |
+| `--style <oblique\|obliqueBig>` | `oblique` | the drawn three-dimensional face |
+
+`\n` in the word starts a second line of letters, since a shell makes a
+real newline awkward to type. Marks the machine has not got are typed as
+their stand-ins and named; a mark with no stand-in is left blank, by name.
+With `--turn` the word is set as a picture rather than laid down cell by
+cell — see [lettering.md](lettering.md#sideways-the-word-becomes-a-picture)
+— which means `--atlas` applies to it too.
+
 Pictures only:
 
 | Option | Default | |

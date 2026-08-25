@@ -16,7 +16,7 @@
  *   node tools/cli.mjs image rose.png --mode tone --pdf out.pdf
  *   node tools/cli.mjs inspect rose.png            # why is it blank?
  *   node tools/cli.mjs image rose.png --json       # for scripts and agents
- *   node tools/cli.mjs text "HELLO" --style outline
+ *   node tools/cli.mjs text "HELLO" --flf fonts/Roman.flf
  *   node tools/cli.mjs machines
  */
 
@@ -38,6 +38,7 @@ import { buildSheetPdf } from '../src/core/pdf.js';
 import { tableAtlas } from '../src/core/glyphs.js';
 import {
   prepare, fitGrid, toCharacters, toSentence, cellAspect, keystrokes,
+  blockImage,
 } from '../src/core/convert.js';
 import { readImage, scaleTo, encodeField } from './png.mjs';
 
@@ -90,11 +91,12 @@ options
   --down <1-4>    …and this many rows of them. Each sheet is typed on its
                   own, with its own stops; lay them out afterwards.
   --red <lines>   e.g. 0-15,20 — put these lines on the red ribbon
-  --style <id>    for 'text'; \\n in the word starts a second line
-  --flf <path>    for 'text': set the word in a FIGlet font file instead.
-                  Read from your disk, never bundled - the collection's
-                  licences are a patchwork. Characters the machine lacks
-                  are typed as their stand-ins, and named.
+  --style <id>    for 'text': oblique or obliqueBig, the drawn
+                  three-dimensional face; \\n starts a second line
+  --flf <path>    for 'text': set the word in a FIGlet font file. Nineteen
+                  ship in fonts/, as received — fonts/README.md says whose
+                  they are. Characters the machine lacks are typed as their
+                  stand-ins, and named.
   --pdf <path>    also write a printable PDF
   --json          machine-readable output on stdout
   --quiet         only the setup summary
@@ -602,7 +604,59 @@ if (cmd === 'image') {
   if (!word) die('Which word?');
 
   const flfPath = opt('flf', '');
-  if (flfPath) {
+  if (isTurned(turn)) {
+    /*
+     * Planned sideways, the word is set as a picture.
+     *
+     * Letterforms cannot be resampled the way a photograph can, and laying
+     * the finished block down cell by cell stretched it 2.77 times over: a
+     * quarter turn swaps the cell's 2.54 mm width and 4.23 mm height, and
+     * fixed glyphs have no way to follow. So the block becomes ink — see
+     * blockImage() in convert.js — and the picture pipeline takes it from
+     * there, which keeps the proportions and spends the turned sheet's
+     * millimetres. No stand-ins on this path: every mark is picked from the
+     * machine's keys by the matcher.
+     */
+    let block;
+    if (flfPath) {
+      const font = parseFlf(fs.readFileSync(flfPath, 'utf8'),
+        flfPath.replace(/^.*[\\\/]/, '').replace(/\.flf$/i, ''));
+      const fset = flfLetter(font, word.replace(/\\n/g, '\n'), { maxCols: 0 });
+      if (fset.unknown.size) {
+        console.error(`note: ${font.name} has no ` +
+          `${[...fset.unknown].join(' ')} - left blank`);
+      }
+      block = fset.lines;
+    } else {
+      const style = opt('style', 'oblique');
+      if (!STYLES[style]) {
+        die(`Unknown style: ${style}. One of: ${Object.keys(STYLES).join(' ')}`);
+      }
+      block = letter(word.replace(/\\n/g, '\n'),
+        { style, align: align === 'topleft' ? 'left' : 'centre' });
+    }
+    if (!block.some((l) => l.trim())) die('Nothing to type.');
+
+    const atlas = pictureAtlas();
+    const maxCols = Math.min(num('width', planEdge.cols), planEdge.cols);
+    const { field } = prepare(blockImage(block), {
+      invert: false, contrast: 1, mode: 'shape', maxCols, turn,
+    });
+    const room = textArea(sheet, machine);
+    const grid = fitGrid(room.cols, Math.min(maxCols, sheetGrid(sheet, machine).rows),
+                         field.w, field.h, cellAspect(machine));
+    // Same bargain the picture path makes: shape matching needs rendered
+    // glyphs, so without --atlas this is a tone match, and it is said.
+    if (!atlas.hasShapes) {
+      console.error('note: no glyph shapes without a canvas, so the marks ' +
+        'were matched by tone. Pass --atlas <file.json> for a measured atlas.');
+    }
+    lines = toCharacters(field, grid.cols, grid.rows, atlas, {
+      mode: atlas.hasShapes ? 'shape' : 'tone',
+      allowed: new Set(charset(machine)),
+      toneWeight: 0.35,
+    });
+  } else if (flfPath) {
     /*
      * An imported font is the paste path with a typesetter in front: the
      * glyphs are whatever the file says, so the output is treated like
@@ -631,11 +685,11 @@ if (cmd === 'image') {
         `${machine.name} - left blank`);
     }
     const gone = new Set(missing);
-    lines = turnRows(fset.lines.map((row) => [...row]
+    lines = fset.lines.map((row) => [...row]
       .map((c) => swaps.get(c) ?? (gone.has(c) ? ' ' : c))
-      .join('').replace(/\s+$/, '')), turn, new Set(charset(machine)));
+      .join('').replace(/\s+$/, ''));
   } else {
-  const style = opt('style', 'block');
+  const style = opt('style', 'oblique');
   if (!STYLES[style]) {
     die(`Unknown style: ${style}. One of: ${Object.keys(STYLES).join(' ')}`);
   }
@@ -651,7 +705,7 @@ if (cmd === 'image') {
   });
   if (missing.length) {
     die(`--style ${style} is drawn with ${missing.join(' ')}, and the ` +
-      `${machine.name} has nothing that will stand in. Try --style block.`);
+      `${machine.name} has nothing that will stand in. Try --flf fonts/Roman.flf.`);
   }
   if (swaps.size) {
     console.error(`note: typing ${[...swaps].map(([a, b]) => `${a} as ${b}`)
@@ -663,11 +717,10 @@ if (cmd === 'image') {
   const tones = toneRamp(Math.max(1, tonesOf(style)),
     { allowed: charset(machine) });
   // Wrapped to the margins of the chosen paper, like the page does. Without
-  // it "GUTEN MORGEN LYON" in Block is 101 columns on an A4 that holds 82,
-  // and the only output is a refusal.
-  lines = turnRows(letter(word.replace(/\\n/g, '\n'),
-    { style, tones, maxCols: planRoom.cols,
-      substitutes: swaps }), turn, new Set(charset(machine)));
+  // it a sentence simply runs off the sheet, and the only output is a
+  // refusal.
+  lines = letter(word.replace(/\\n/g, '\n'),
+    { style, tones, maxCols: planRoom.cols, substitutes: swaps });
   }
 } else {
   die(`Unknown command: ${cmd}`);

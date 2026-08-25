@@ -1,35 +1,28 @@
 /**
  * lettering.js — words built out of characters.
  *
- * The letterforms here are drawn from scratch. They are *informed* by the
- * classic FIGlet faces — anyone who has seen `banner`, `big` or `slant`
- * will recognise the family resemblance, because there are only so many
- * ways to draw a capital A out of blocks — but no glyph data is copied.
+ * This file used to hold forty-one drawn faces. It holds one now, in two
+ * sizes: the three-dimensional face, which exists because no FIGlet font
+ * can do what it does — the classic isometric faces all need a backslash,
+ * and a great many typewriters (the Olympia SM7 among them) simply do not
+ * have one. Everything else the drawn faces attempted, the real FIGlet
+ * fonts in fonts/ do better, and they are what the picker offers first —
+ * see figlet.js, and fonts/README.md for whose they are.
  *
- * That matters practically, not just legally: the FIGlet collection has a
- * patchwork of licences, some of which forbid redistribution. Shipping them
- * would push that problem onto everyone who forks this.
- *
- * Three hand-drawn faces:
+ * Two hand-drawn alphabets feed it:
  *   BIG     seven rows, generous, for a sheet of A4
  *   BLOCK   five rows, compact, for a postcard or a long word
- *   SCRIPT  sixteen rows, a broad-nib hand with flourishes
  *
- * Most of the rest is a transform of the first two, which is where most of
- * the variety comes from: hollowing, shearing, stencilling, doubling,
- * shadows. SCRIPT takes almost none of them: a transform that reads `#` and
- * writes something else erases the hairlines the hand is made of.
+ * They are drawn from scratch — informed by `banner` and `big` the way any
+ * blocky capital A is, but no glyph data is copied.
  *
  * Glyph data uses:
  *   #  ink        the heaviest character the machine has
- *   +  mid tone   a second, lighter character
- *   ~  faint      a third, lighter still
  *   .  paper
  *
- * Three placeholders rather than two because two is not enough to draw a
- * raised surface. A relief needs a lit edge, a body and a shaded edge; with
- * one tone for the whole outline the light has no direction and the letter
- * reads as a hollow box with a fill. See relief().
+ * The transform emits `/` and `_` as literal marks; whether the machine in
+ * the room can strike them is the stand-in engine's question — see
+ * marksOf() below and standIns() in machine.js.
  */
 
 /* ------------------------------------------------------------------ */
@@ -153,1015 +146,19 @@ const BLOCK = {
   ' ': ['.....', '.....', '.....', '.....', '.....'],
 };
 
-/* ------------------------------------------------------------------ */
-/* SCRIPT — a broad-nib hand, sixteen rows                             */
-/* ------------------------------------------------------------------ */
-
-/**
- * A calligraphic face, drawn to one rule.
- *
- * Hold a broad nib at an angle and it draws a hairline exactly when it
- * travels up and to the right, and a thick stroke everywhere else. That is
- * the whole face: `##` for stems, bowls and down-strokes, `/` for the
- * up-strokes of A, K, V, X, Y and Z, and for the flourishes.
- *
- * `/` is also the only diagonal a typewriter can be relied on to have — the
- * same reason the three-dimensional face uses oblique projection instead of
- * isometric — so the rule that makes the letters right is also the rule that
- * makes them typeable. That is luck, but it is the kind worth taking.
- *
- * The bodies below are eleven rows: cap line at the top, baseline at the
- * bottom. penned() adds the three rows above and two below where the
- * flourishes live, so every glyph enters and leaves the same way and none of
- * it is drawn twice. See there for what `enter` and `exit` mean.
- *
- * It is a large face and it is meant to be: at sixteen rows a five-letter
- * word fills an upright A4 line and there is no compact version, because a
- * flourish shortened until it fits is just a serif. Use Block for a long
- * word.
- */
-const SCRIPT_BODIES = {
-  A: { enter: 10, exit: 3, body: [
-    '........##.....',
-    '......./###....',
-    '....../.###....',
-    '....../.###....',
-    '...../..###....',
-    '...../...###...',
-    '..../....###...',
-    '..../....###...',
-    '.../########...',
-    '.../.....###...',
-    '.../.....###...',
-  ] },
-  B: { enter: 5, exit: 3, body: [
-    '...########...',
-    '...##....##...',
-    '...##.....##..',
-    '...##.....##..',
-    '...##....##...',
-    '...#######....',
-    '...##....##...',
-    '...##.....##..',
-    '...##.....##..',
-    '...##....##...',
-    '...########...',
-  ] },
-  C: { enter: 10, exit: 4, body: [
-    '....######....',
-    '...##....##...',
-    '..##......##..',
-    '..##..........',
-    '..##..........',
-    '..##..........',
-    '..##..........',
-    '..##..........',
-    '..##......##..',
-    '...##....##...',
-    '....######....',
-  ] },
-  D: { enter: 5, exit: 3, body: [
-    '...#######....',
-    '...##....##...',
-    '...##.....##..',
-    '...##.....##..',
-    '...##.....##..',
-    '...##.....##..',
-    '...##.....##..',
-    '...##.....##..',
-    '...##.....##..',
-    '...##....##...',
-    '...#######....',
-  ] },
-  E: { enter: 5, exit: 3, body: [
-    '...#########..',
-    '...##.........',
-    '...##.........',
-    '...##.........',
-    '...##.........',
-    '...#######....',
-    '...##.........',
-    '...##.........',
-    '...##.........',
-    '...##.........',
-    '...#########..',
-  ] },
-  F: { enter: 5, exit: 3, body: [
-    '...#########..',
-    '...##.........',
-    '...##.........',
-    '...##.........',
-    '...##.........',
-    '...#######....',
-    '...##.........',
-    '...##.........',
-    '...##.........',
-    '...##.........',
-    '...##.........',
-  ] },
-  G: { enter: 10, exit: 4, body: [
-    '....######....',
-    '...##....##...',
-    '..##......##..',
-    '..##..........',
-    '..##..........',
-    '..##...#####..',
-    '..##......##..',
-    '..##......##..',
-    '..##......##..',
-    '...##....##...',
-    '....######....',
-  ] },
-  H: { enter: 5, exit: 3, body: [
-    '...##....##...',
-    '...##....##...',
-    '...##....##...',
-    '...##....##...',
-    '...##....##...',
-    '...########...',
-    '...##....##...',
-    '...##....##...',
-    '...##....##...',
-    '...##....##...',
-    '...##....##...',
-  ] },
-  I: { enter: 5, exit: 3, body: [
-    '...##....',
-    '...##....',
-    '...##....',
-    '...##....',
-    '...##....',
-    '...##....',
-    '...##....',
-    '...##....',
-    '...##....',
-    '...##....',
-    '...##....',
-  ] },
-  J: { enter: 8, exit: 3, body: [
-    '......##....',
-    '......##....',
-    '......##....',
-    '......##....',
-    '......##....',
-    '......##....',
-    '......##....',
-    '......##....',
-    '......##....',
-    '..##..##....',
-    '...#####....',
-  ] },
-  K: { enter: 5, exit: 3, body: [
-    '...##....../..',
-    '...##...../...',
-    '...##..../....',
-    '...##.../.....',
-    '...##../......',
-    '...####/......',
-    '...#####......',
-    '...##..##.....',
-    '...##...##....',
-    '...##....##...',
-    '...##.....##..',
-  ] },
-  L: { enter: 5, exit: 3, body: [
-    '...##........',
-    '...##........',
-    '...##........',
-    '...##........',
-    '...##........',
-    '...##........',
-    '...##........',
-    '...##........',
-    '...##........',
-    '...##........',
-    '...#########.',
-  ] },
-  M: { enter: 5, exit: 3, body: [
-    '...##.......##...',
-    '...###.....###...',
-    '...####...####...',
-    '...##.##.##.##...',
-    '...##..###..##...',
-    '...##...#...##...',
-    '...##.......##...',
-    '...##.......##...',
-    '...##.......##...',
-    '...##.......##...',
-    '...##.......##...',
-  ] },
-  N: { enter: 6, exit: 3, body: [
-    '...###.....##..',
-    '...###.....##..',
-    '...####....##..',
-    '...##.##...##..',
-    '...##.##...##..',
-    '...##..##..##..',
-    '...##..##..##..',
-    '...##...##.##..',
-    '...##....####..',
-    '...##.....###..',
-    '...##......##..',
-  ] },
-  O: { enter: 10, exit: 4, body: [
-    '....######....',
-    '...##....##...',
-    '..##......##..',
-    '..##......##..',
-    '..##......##..',
-    '..##......##..',
-    '..##......##..',
-    '..##......##..',
-    '..##......##..',
-    '...##....##...',
-    '....######....',
-  ] },
-  P: { enter: 5, exit: 3, body: [
-    '...#######....',
-    '...##....##...',
-    '...##.....##..',
-    '...##.....##..',
-    '...##....##...',
-    '...#######....',
-    '...##.........',
-    '...##.........',
-    '...##.........',
-    '...##.........',
-    '...##.........',
-  ] },
-  // The tail is drawn in `below` rather than as a longer body, because it
-  // belongs in the two rows under the baseline that every glyph already has.
-  Q: { enter: 10, exit: 4, below: ['........###...', '.........###..'], body: [
-    '....######....',
-    '...##....##...',
-    '..##......##..',
-    '..##......##..',
-    '..##......##..',
-    '..##......##..',
-    '..##......##..',
-    '..##......##..',
-    '..##......##..',
-    '...##....##...',
-    '....######....',
-  ] },
-  R: { enter: 5, exit: 3, body: [
-    '...#######.....',
-    '...##....##....',
-    '...##.....##...',
-    '...##.....##...',
-    '...##....##....',
-    '...#######.....',
-    '...##..###.....',
-    '...##...###....',
-    '...##....###...',
-    '...##.....###..',
-    '...##......###.',
-  ] },
-  S: { enter: 10, exit: 4, body: [
-    '....######....',
-    '...##....##...',
-    '..##......##..',
-    '..##..........',
-    '...###........',
-    '.....####.....',
-    '........###...',
-    '..........##..',
-    '..##......##..',
-    '...##....##...',
-    '....######....',
-  ] },
-  T: { enter: 12, exit: 6, body: [
-    '..##########..',
-    '......##......',
-    '......##......',
-    '......##......',
-    '......##......',
-    '......##......',
-    '......##......',
-    '......##......',
-    '......##......',
-    '......##......',
-    '......##......',
-  ] },
-  U: { enter: 5, exit: 4, body: [
-    '...##....##...',
-    '...##....##...',
-    '...##....##...',
-    '...##....##...',
-    '...##....##...',
-    '...##....##...',
-    '...##....##...',
-    '...##....##...',
-    '...##....##...',
-    '...##....##...',
-    '....######....',
-  ] },
-  V: { enter: 5, exit: 8, body: [
-    '...##......../.',
-    '...##......../.',
-    '....##....../..',
-    '....##....../..',
-    '.....##..../...',
-    '.....##..../...',
-    '......##.../...',
-    '......##../....',
-    '.......##./....',
-    '.......##./....',
-    '........##.....',
-  ] },
-  // Three stems and two bowls: a double U, which is what the letter is
-  // called and, in a round hand, what it looks like.
-  W: { enter: 5, exit: 4, body: [
-    '...##...##...##...',
-    '...##...##...##...',
-    '...##...##...##...',
-    '...##...##...##...',
-    '...##...##...##...',
-    '...##...##...##...',
-    '...##...##...##...',
-    '...##...##...##...',
-    '...##...##...##...',
-    '...##...##...##...',
-    '....####..####....',
-  ] },
-  X: { enter: 5, exit: 3, body: [
-    '...##......./..',
-    '...##......./..',
-    '....##...../...',
-    '.....##.../....',
-    '......##./.....',
-    '......##/......',
-    '....../.##.....',
-    '...../..##.....',
-    '...../..##.....',
-    '..../....##....',
-    '.../......##...',
-  ] },
-  Y: { enter: 5, exit: 6, body: [
-    '...##......./..',
-    '....##...../...',
-    '.....##.../....',
-    '......##./.....',
-    '......##/......',
-    '......##.......',
-    '......##.......',
-    '......##.......',
-    '......##.......',
-    '......##.......',
-    '......##.......',
-  ] },
-  Z: { enter: 12, exit: 3, body: [
-    '...#########...',
-    '........../....',
-    '........./.....',
-    '........./.....',
-    '......../......',
-    '......./.......',
-    '....../........',
-    '...../.........',
-    '..../..........',
-    '..../..........',
-    '...#########...',
-  ] },
-
-  0: { enter: 9, exit: 4, body: [
-    '....#####...',
-    '...##...##..',
-    '..##.....##.',
-    '..##.....##.',
-    '..##.....##.',
-    '..##.....##.',
-    '..##.....##.',
-    '..##.....##.',
-    '..##.....##.',
-    '...##...##..',
-    '....#####...',
-  ] },
-  1: { enter: 6, exit: 3, body: [
-    '.../##......',
-    '....##......',
-    '....##......',
-    '....##......',
-    '....##......',
-    '....##......',
-    '....##......',
-    '....##......',
-    '....##......',
-    '....##......',
-    '...######...',
-  ] },
-  2: { enter: 9, exit: 3, body: [
-    '....#####...',
-    '...##...##..',
-    '.........##.',
-    '........./..',
-    '......../...',
-    '......./....',
-    '....../.....',
-    '...../......',
-    '..../.......',
-    '.../........',
-    '...########.',
-  ] },
-  3: { enter: 9, exit: 4, body: [
-    '....#####...',
-    '...##...##..',
-    '........##..',
-    '.......##...',
-    '....#####...',
-    '.......##...',
-    '........##..',
-    '.........##.',
-    '..##.....##.',
-    '...##...##..',
-    '....#####...',
-  ] },
-  4: { enter: 9, exit: 7, body: [
-    '....../##...',
-    '...../.##...',
-    '..../..##...',
-    '.../...##...',
-    '../....##...',
-    '.#########..',
-    '.......##...',
-    '.......##...',
-    '.......##...',
-    '.......##...',
-    '.......##...',
-  ] },
-  5: { enter: 5, exit: 4, body: [
-    '...#######..',
-    '...##.......',
-    '...##.......',
-    '...######...',
-    '.........##.',
-    '.........##.',
-    '.........##.',
-    '.........##.',
-    '..##.....##.',
-    '...##...##..',
-    '....#####...',
-  ] },
-  6: { enter: 9, exit: 4, body: [
-    '....#####...',
-    '...##...##..',
-    '..##........',
-    '..##........',
-    '..#######...',
-    '..##....##..',
-    '..##.....##.',
-    '..##.....##.',
-    '..##.....##.',
-    '...##...##..',
-    '....#####...',
-  ] },
-  7: { enter: 11, exit: 3, body: [
-    '..#########.',
-    '........./..',
-    '......../...',
-    '......../...',
-    '......./....',
-    '....../.....',
-    '....../.....',
-    '...../......',
-    '..../.......',
-    '..../.......',
-    '...##.......',
-  ] },
-  8: { enter: 9, exit: 4, body: [
-    '....#####...',
-    '...##...##..',
-    '...##...##..',
-    '...##...##..',
-    '....#####...',
-    '...##...##..',
-    '..##.....##.',
-    '..##.....##.',
-    '..##.....##.',
-    '...##...##..',
-    '....#####...',
-  ] },
-  9: { enter: 9, exit: 4, body: [
-    '....#####...',
-    '...##...##..',
-    '..##.....##.',
-    '..##.....##.',
-    '..##.....##.',
-    '...##...##..',
-    '....######..',
-    '.........##.',
-    '.........##.',
-    '...##...##..',
-    '....#####...',
-  ] },
-
-  // Punctuation is set without flourishes. A comma with a swash on it is a
-  // comma nobody can find.
-  '!': { body: [
-    '.##..', '.##..', '.##..', '.##..', '.##..', '.##..', '.##..',
-    '.##..', '.....', '.##..', '.##..',
-  ] },
-  '?': { enter: 9, body: [
-    '....#####...',
-    '...##...##..',
-    '........##..',
-    '.......##...',
-    '.....###....',
-    '.....##.....',
-    '.....##.....',
-    '............',
-    '............',
-    '.....##.....',
-    '.....##.....',
-  ] },
-  '.': { body: [
-    '.....', '.....', '.....', '.....', '.....', '.....', '.....',
-    '.....', '.....', '.##..', '.##..',
-  ] },
-  ',': { below: ['.#...', '#....'], body: [
-    '.....', '.....', '.....', '.....', '.....', '.....', '.....',
-    '.....', '.....', '.##..', '.##..',
-  ] },
-  '-': { body: [
-    '..........', '..........', '..........', '..........', '..........',
-    '.########.', '..........', '..........', '..........', '..........',
-    '..........',
-  ] },
-  ':': { body: [
-    '.....', '.....', '.##..', '.##..', '.....', '.....', '.....',
-    '.....', '.##..', '.##..', '.....',
-  ] },
-  "'": { body: [
-    '.##..', '.##..', './...', '.....', '.....', '.....', '.....',
-    '.....', '.....', '.....', '.....',
-  ] },
-  '&': { enter: 9, exit: 4, body: [
-    '....####......',
-    '...##..##.....',
-    '...##..##.....',
-    '....####......',
-    '...#####......',
-    '..##..##......',
-    '..##...##...#.',
-    '..##....##.##.',
-    '..##.....###..',
-    '...##...####..',
-    '....#####...##',
-  ] },
-  '/': { body: [
-    '.........../',
-    '........../.',
-    '........./..',
-    '......../...',
-    '......./....',
-    '....../.....',
-    '...../......',
-    '..../.......',
-    '.../........',
-    '../.........',
-    './..........',
-  ] },
-  '+': { body: [
-    '............',
-    '............',
-    '............',
-    '.....##.....',
-    '.....##.....',
-    '..########..',
-    '..########..',
-    '.....##.....',
-    '.....##.....',
-    '............',
-    '............',
-  ] },
-  '=': { body: [
-    '............',
-    '............',
-    '............',
-    '..########..',
-    '..########..',
-    '............',
-    '..########..',
-    '..########..',
-    '............',
-    '............',
-    '............',
-  ] },
-  '(': { body: [
-    '.....##.', '....##..', '...##...', '...##...', '...##...', '...##...',
-    '...##...', '...##...', '...##...', '....##..', '.....##.',
-  ] },
-  ')': { body: [
-    '.##.....', '..##....', '...##...', '...##...', '...##...', '...##...',
-    '...##...', '...##...', '...##...', '..##....', '.##.....',
-  ] },
-  ' ': { body: [
-    '.......', '.......', '.......', '.......', '.......', '.......',
-    '.......', '.......', '.......', '.......', '.......',
-  ] },
-};
-
-/**
- * Wrap a body in the strokes the pen makes on either side of it.
- *
- * `enter` is the column the pen lifts from at the top of the first stroke,
- * flicking up and to the right for three rows. `exit` is the column of the
- * foot it leaves at the baseline, sweeping down and to the left into a
- * terminal. Both are `/`, both are optional, and a glyph that wants
- * something else under the baseline — Q's tail, the comma — passes it as
- * `below` and it is laid over the swash.
- *
- * Deriving the flourishes rather than drawing them into each glyph is not
- * only shorter. It is the only way they come out the same: thirty-eight
- * hand-drawn swashes would be thirty-eight slightly different swashes, and
- * a hand that varies its exit stroke at random does not read as a hand.
- *
- * `exit` may not sit left of column three, because the terminal needs the
- * room, and this refuses rather than draws it wrong. A mark written at a
- * negative column does not fall off the glyph: `slice` counts backwards from
- * the end, so the row comes back twice as long with the terminal loose in
- * the middle of it. The face is constant data, so the throw happens on
- * import and the whole suite stops on it.
- */
-function penned({ body, enter = null, exit = null, below = [] }) {
-  if (exit !== null && exit < 3) {
-    throw new Error(`a terminal at column ${exit} has nowhere to land`);
-  }
-  const w = Math.max(
-    ...body.map((r) => r.length),
-    ...below.map((r) => r.length),
-    enter === null ? 0 : enter + 3);
-  const blank = '.'.repeat(w);
-  const put = (row, x, mark) =>
-    row.slice(0, x) + mark + row.slice(x + mark.length);
-
-  const above = [blank, blank, blank];
-  if (enter !== null) {
-    above[0] = put(above[0], enter + 2, '/');
-    above[1] = put(above[1], enter + 1, '/');
-    above[2] = put(above[2], enter, '/');
-  }
-  const under = [blank, blank];
-  if (exit !== null) {
-    under[0] = put(under[0], exit - 1, '/');
-    under[1] = put(under[1], exit - 3, '##');
-  }
-  below.forEach((row, i) => {
-    under[i] = [...under[i]]
-      .map((c, x) => (row[x] && row[x] !== '.' ? row[x] : c)).join('');
-  });
-  return [...above, ...body.map((r) => r.padEnd(w, '.')), ...under];
-}
-
-const SCRIPT = Object.fromEntries(Object.entries(SCRIPT_BODIES)
-  .map(([ch, spec]) => [ch, penned(spec)]));
+const FACES = { big: BIG, block: BLOCK };
 
 /* ------------------------------------------------------------------ */
-/* GOTHIC — a broken hand, eleven rows                                 */
-/* ------------------------------------------------------------------ */
-
-/**
- * Blackletter, as far as a grid of whole characters can take it.
- *
- * Two rules do the work. Every stroke is a heavy vertical three cells wide,
- * and every stroke is *cut at the pen angle*: one cell of ink up and to the
- * right at the head, one down and to the left at the foot. That slant is the
- * whole reason blackletter looks like blackletter — the nib is held at an
- * angle and never turned, so the terminals all lean the same way.
- *
- * The second rule is that nothing is round. Where a roman face draws a bowl,
- * this draws a lozenge: two verticals with angled joins top and bottom. That
- * is what "broken script" means, and on a grid this coarse it is also the
- * only honest option — a circle eleven rows high made of whole characters is
- * an octagon whichever way you draw it, so it may as well be one on purpose.
- *
- * Nothing here is a transform of the roman faces. An angular blackletter is
- * not a bold roman with the corners knocked off, and every attempt to make
- * it one produced a face that read as damaged rather than as gothic.
- */
-const GOTHIC = {
-  A: [
-    '...##.....', '..####....', '.##..##...', '###...###.', '###...###.',
-    '#########.', '###...###.', '###...###.', '###...###.', '###...###.',
-    '#.....#...',
-  ],
-  B: [
-    '..#.......', '#######...', '###..###..', '###..###..', '#######...',
-    '###..###..', '###...###.', '###...###.', '###...###.', '###..###..',
-    '#######...',
-  ],
-  C: [
-    '...####...', '.######...', '###..##...', '###.......', '###.......',
-    '###.......', '###.......', '###.......', '###..##...', '.######...',
-    '...####...',
-  ],
-  D: [
-    '..#.......', '#######...', '###..###..', '###...###.', '###...###.',
-    '###...###.', '###...###.', '###...###.', '###..###..', '###..###..',
-    '#######...',
-  ],
-  E: [
-    '...####...', '.######...', '###..##...', '###.......', '######....',
-    '###.......', '###.......', '###.......', '###..##...', '.######...',
-    '...####...',
-  ],
-  F: [
-    '..#####...', '.######...', '###.##....', '###.......', '######....',
-    '###.......', '###.......', '###.......', '###.......', '###.......',
-    '#.........',
-  ],
-  G: [
-    '...####...', '.######...', '###..##...', '###.......', '###.......',
-    '###.####..', '###...###.', '###...###.', '###..###..', '.######...',
-    '...####...',
-  ],
-  H: [
-    '..#.....#.', '###...###.', '###...###.', '###...###.', '###...###.',
-    '#########.', '###...###.', '###...###.', '###...###.', '###...###.',
-    '#.....#...',
-  ],
-  I: [
-    '..#..', '###..', '###..', '###..', '###..', '###..', '###..', '###..',
-    '###..', '###..', '#....',
-  ],
-  J: [
-    '.....#..', '..###...', '..###...', '..###...', '..###...', '..###...',
-    '..###...', '..###...', '#..###..', '#####...', '.###....',
-  ],
-  K: [
-    '..#....#..', '###..###..', '###.###...', '######....', '#####.....',
-    '######....', '###.###...', '###..###..', '###...###.', '###...###.',
-    '#.....#...',
-  ],
-  L: [
-    '..#......', '###......', '###......', '###......', '###......',
-    '###......', '###......', '###......', '###..##..', '########.',
-    '..#####..',
-  ],
-  M: [
-    '..#.......#...', '###.....###...', '####...####...', '#####.#####...',
-    '###.###.###...', '###..#..###...', '###.....###...', '###.....###...',
-    '###.....###...', '###.....###...', '#.......#.....',
-  ],
-  N: [
-    '..#.....#..', '###...###..', '####..###..', '#####.###..',
-    '#########..', '###.#####..', '###..####..', '###...###..',
-    '###...###..', '###...###..', '#.....#....',
-  ],
-  O: [
-    '..####....', '.######...', '###..###..', '###...###.', '###...###.',
-    '###...###.', '###...###.', '###...###.', '###..###..', '.######...',
-    '..####....',
-  ],
-  P: [
-    '..#.......', '#######...', '###..###..', '###...###.', '###...###.',
-    '###..###..', '#######...', '###.......', '###.......', '###.......',
-    '#.........',
-  ],
-  Q: [
-    '..####....', '.######...', '###..###..', '###...###.', '###...###.',
-    '###...###.', '###...###.', '###...###.', '###..###..', '.######...',
-    '..####.##.',
-  ],
-  R: [
-    '..#.......', '#######...', '###..###..', '###...###.', '###..###..',
-    '#######...', '###.###...', '###..###..', '###...###.', '###...###.',
-    '#.....#...',
-  ],
-  S: [
-    '...####...', '.######...', '###..##...', '###.......', '.####.....',
-    '...####...', '.....###..', '......###.', '###..###..', '.######...',
-    '...####...',
-  ],
-  T: [
-    '..######..', '#########.', '..###.....', '..###.....', '..###.....',
-    '..###.....', '..###.....', '..###.....', '..###.....', '..###.....',
-    '.#####....',
-  ],
-  U: [
-    '..#.....#.', '###...###.', '###...###.', '###...###.', '###...###.',
-    '###...###.', '###...###.', '###...###.', '###..###..', '.######...',
-    '..####....',
-  ],
-  V: [
-    '..#......#.', '###....###.', '###....###.', '.###..###..',
-    '.###..###..', '..###.###..', '..######...', '..######...',
-    '...####....', '...####....', '....##.....',
-  ],
-  W: [
-    '..#....#....#...', '###..###..###...', '###..###..###...',
-    '###..###..###...', '###..###..###...', '###..###..###...',
-    '###..###..###...', '###..###..###...', '###..###..###...',
-    '.############...', '..#########.....',
-  ],
-  X: [
-    '..#......#.', '###....###.', '.###..###..', '..######...',
-    '...####....', '....##.....', '...####....', '..######...',
-    '.###..###..', '###....###.', '#........#.',
-  ],
-  Y: [
-    '..#......#.', '###....###.', '.###..###..', '..######...',
-    '...####....', '...####....', '...###.....', '...###.....',
-    '...###.....', '...###.....', '..#####....',
-  ],
-  Z: [
-    '..######..', '#########.', '.....###..', '....###...', '...###....',
-    '..###.....', '.###......', '###.......', '###....##.', '#########.',
-    '..######..',
-  ],
-
-  0: [
-    '..####..', '.######.', '###..###', '###..###', '###..###', '###..###',
-    '###..###', '###..###', '###..###', '.######.', '..####..',
-  ],
-  1: [
-    '..#.....', '.###....', '#####...', '..###...', '..###...', '..###...',
-    '..###...', '..###...', '..###...', '.#####..', '#######.',
-  ],
-  2: [
-    '..####..', '.######.', '###..###', '.....###', '....###.', '...###..',
-    '..###...', '.###....', '###.....', '########', '########',
-  ],
-  3: [
-    '..####..', '.######.', '###..###', '.....###', '...####.', '...####.',
-    '.....###', '###..###', '###..###', '.######.', '..####..',
-  ],
-  4: [
-    '.....##.', '....###.', '...####.', '..##.##.', '.##..##.', '##...##.',
-    '########', '########', '.....##.', '.....##.', '.....##.',
-  ],
-  5: [
-    '########', '########', '###.....', '###.....', '######..', '.######.',
-    '.....###', '###..###', '###..###', '.######.', '..####..',
-  ],
-  6: [
-    '..####..', '.######.', '###..###', '###.....', '######..', '.######.',
-    '###..###', '###..###', '###..###', '.######.', '..####..',
-  ],
-  7: [
-    '########', '########', '.....###', '....###.', '....###.', '...###..',
-    '...###..', '..###...', '..###...', '.###....', '.###....',
-  ],
-  8: [
-    '..####..', '.######.', '###..###', '###..###', '.######.', '.######.',
-    '###..###', '###..###', '###..###', '.######.', '..####..',
-  ],
-  9: [
-    '..####..', '.######.', '###..###', '###..###', '###..###', '.#######',
-    '.....###', '###..###', '###..###', '.######.', '..####..',
-  ],
-
-  '!': [
-    '###.', '###.', '###.', '###.', '###.', '###.', '.#..', '....', '.##.',
-    '###.', '.##.',
-  ],
-  '?': [
-    '..####..', '.######.', '###..###', '.....###', '....###.', '...###..',
-    '...###..', '........', '...###..', '...###..', '...###..',
-  ],
-  '.': [
-    '....', '....', '....', '....', '....', '....', '....', '....', '.##.',
-    '###.', '.##.',
-  ],
-  ',': [
-    '....', '....', '....', '....', '....', '....', '....', '....', '.##.',
-    '###.', '##..',
-  ],
-  '-': [
-    '........', '........', '........', '........', '########', '########',
-    '........', '........', '........', '........', '........',
-  ],
-  ':': [
-    '....', '....', '.##.', '###.', '.##.', '....', '....', '.##.', '###.',
-    '.##.', '....',
-  ],
-  "'": [
-    '###.', '###.', '.#..', '....', '....', '....', '....', '....', '....',
-    '....', '....',
-  ],
-  '&': [
-    '..####....', '.######...', '###..###..', '.######...', '.#####....',
-    '###.###...', '###..###..', '###...###.', '.####..##.', '.######.##',
-    '..####..##',
-  ],
-  '/': [
-    '.....###', '.....###', '....###.', '....###.', '...###..', '...###..',
-    '..###...', '..###...', '.###....', '.###....', '###.....',
-  ],
-  '+': [
-    '........', '........', '...##...', '...##...', '########', '########',
-    '...##...', '...##...', '........', '........', '........',
-  ],
-  '=': [
-    '........', '........', '........', '########', '########', '........',
-    '########', '########', '........', '........', '........',
-  ],
-  '(': [
-    '..##.', '.##..', '##...', '##...', '##...', '##...', '##...', '##...',
-    '##...', '.##..', '..##.',
-  ],
-  ')': [
-    '.##..', '..##.', '...##', '...##', '...##', '...##', '...##', '...##',
-    '...##', '..##.', '.##..',
-  ],
-  ' ': [
-    '.....', '.....', '.....', '.....', '.....', '.....', '.....', '.....',
-    '.....', '.....', '.....',
-  ],
-};
-
-/* ------------------------------------------------------------------ */
-/* TINY — three rows                                                   */
-/* ------------------------------------------------------------------ */
-
-/**
- * The smallest face here, for a word that has to fit.
- *
- * Three rows is below the resolution at which an alphabet can be read cold:
- * `O` and `0` are the same shape, and so are `S` and `5`, because at three
- * rows they genuinely are. A typewriter has no zero anyway — you type a
- * capital O — so one of those two collisions was never a collision.
- *
- * That is the trade, stated rather than hidden. This is a face for a word
- * the reader already expects: a name across the top of a letter, a caption
- * under a picture, a long word that will not fit any other way. `WEIHNACHTS-
- * GRUESSE` is 21 characters, which is 251 columns in Block and will not go
- * on any sheet this program knows about; here it is 83, and turned sideways
- * it fits.
- */
-const TINY = {
-  A: ['###', '###', '#.#'],
-  B: ['##.', '###', '##.'],
-  C: ['###', '#..', '###'],
-  D: ['##.', '#.#', '##.'],
-  E: ['###', '##.', '###'],
-  F: ['###', '##.', '#..'],
-  G: ['###', '#.#', '.##'],
-  H: ['#.#', '###', '#.#'],
-  I: ['#', '#', '#'],
-  J: ['..#', '..#', '##.'],
-  K: ['#.#', '##.', '#.#'],
-  L: ['#..', '#..', '###'],
-  M: ['##.##', '#.#.#', '#...#'],
-  N: ['##.#', '#.##', '#..#'],
-  O: ['###', '#.#', '###'],
-  P: ['###', '###', '#..'],
-  Q: ['###', '#.#', '####'],
-  R: ['###', '##.', '#.#'],
-  S: ['.##', '.#.', '##.'],
-  T: ['###', '.#.', '.#.'],
-  U: ['#.#', '#.#', '###'],
-  V: ['#.#', '#.#', '.#.'],
-  W: ['#...#', '#.#.#', '##.##'],
-  X: ['#.#', '.#.', '#.#'],
-  Y: ['#.#', '.#.', '.#.'],
-  Z: ['##.', '.#.', '.##'],
-
-  0: ['###', '#.#', '###'],
-  1: ['##', '.#', '.#'],
-  2: ['##.', '.#.', '.##'],
-  3: ['##.', '.##', '##.'],
-  4: ['#.#', '###', '..#'],
-  5: ['.##', '.#.', '##.'],
-  6: ['#..', '###', '###'],
-  7: ['###', '..#', '.#.'],
-  8: ['###', '###', '###'],
-  9: ['###', '###', '..#'],
-
-  '!': ['#', '#', '.'],
-  '?': ['##', '.#', '.#'],
-  '.': ['.', '.', '#'],
-  ',': ['.', '.', '#'],
-  '-': ['..', '##', '..'],
-  ':': ['.', '#', '#'],
-  "'": ['#', '.', '.'],
-  '&': ['##.', '###', '.##'],
-  '/': ['..#', '.#.', '#..'],
-  '+': ['.#.', '###', '.#.'],
-  '=': ['##', '..', '##'],
-  '(': ['.#', '#.', '.#'],
-  ')': ['#.', '.#', '#.'],
-  ' ': ['..', '..', '..'],
-};
-
-const FACES = { big: BIG, block: BLOCK, script: SCRIPT, gothic: GOTHIC, tiny: TINY };
-
-/* ------------------------------------------------------------------ */
-/* Transforms                                                          */
+/* The transform                                                       */
 /* ------------------------------------------------------------------ */
 
 /**
  * Placeholders for the machine's tones, heaviest first.
  *
- * `#`, `+` and `~` were always these three; the last two are here so a graded
- * face has somewhere to put five bands. They are reserved: a face may not
- * draw a literal `%` or `*`, because the moment it does, a style that asked
- * for four tones prints the ramp's fourth character where the face wanted a
- * per-cent sign. `test/core.test.mjs` reads every face and fails on it.
- *
- * A ramp shorter than the style asks for degrades to its last character
- * rather than failing — see letter(). That is what lets a machine with two
- * usable keys still draw a five-band gradient, as two bands.
+ * Only `#` is drawn these days, but the ramp mechanism stays: the heaviest
+ * character is *chosen* from what the machine has, never assumed. A face may
+ * not draw a literal ramp character — the moment it does, a tone prints
+ * where the face wanted that mark.
  */
 const INKS = '#+~%*';
 
@@ -1180,141 +177,6 @@ function scaleBy(rows, n) {
   }
   return out;
 }
-
-/** Keep only the ink that touches paper. */
-function hollow(rows) {
-  const g = pad(rows);
-  const h = g.length;
-  const w = g[0].length;
-  const at = (y, x) => (y < 0 || x < 0 || y >= h || x >= w ? '.' : g[y][x]);
-  return g.map((row, y) =>
-    [...row].map((c, x) => {
-      if (c !== '#') return '.';
-      const open = at(y - 1, x) !== '#' || at(y + 1, x) !== '#' ||
-                   at(y, x - 1) !== '#' || at(y, x + 1) !== '#';
-      return open ? '#' : '.';
-    }).join(''));
-}
-
-/**
- * Hollow letters need room to be hollow.
- *
- * The factor must be at least 3, and this is worth stating plainly because
- * getting it wrong is invisible: at 2× every cell of a stroke still touches
- * paper, so hollowing removes nothing and you get a larger *solid* letter
- * labelled "hollow" — measured density 0.46 against 0.44 for the solid face.
- * At 3× the middle of each stroke is enclosed and actually drops out.
- *
- * `test/core.test.mjs` compares density, not raw strokes, so a regression
- * here fails the suite rather than shipping quietly.
- */
-function outlineOf(rows) {
-  return hollow(scaleBy(rows, 3));
-}
-
-/** Lean the letter to the right, top rows furthest over. */
-function slant(rows, lean = 1) {
-  const g = pad(rows);
-  const h = g.length;
-  const shift = (y) => Math.round((h - 1 - y) * lean * 0.5);
-  const most = shift(0);
-  return g.map((row, y) => {
-    const s = shift(y);
-    return '.'.repeat(s) + row + '.'.repeat(most - s);
-  });
-}
-
-/**
- * A gentler lean, for a face that is already sixteen rows tall.
- *
- * slant() shifts half a column per row, which over SCRIPT's sixteen rows is
- * eight columns of shear: the flourishes lie almost flat and a four-letter
- * word stops fitting an upright A4 line — measured, `TYPE` goes from 59
- * columns to 87 against the 82 the sheet holds. Half of that is an italic.
- */
-const lean = (rows) => slant(rows, 0.5);
-
-/**
- * Cut horizontal breaks through the strokes, the way a stencil is bridged.
- *
- * Only meaningful on a face whose strokes are more than one cell thick. On a
- * thin face the break severs the letter instead of bridging it, which is why
- * there is no small stencil style.
- */
-function stencil(rows) {
-  const g = pad(rows);
-  const h = g.length;
-  // Break rows chosen to fall inside the letter, never on the first or last.
-  const cuts = h >= 7 ? [2, 4] : [1, 3];
-  return g.map((row, y) =>
-    cuts.includes(y)
-      ? [...row].map((c, x) => (c === '#' && x % 4 === 1 ? '.' : c)).join('')
-      : row);
-}
-
-/** Twice as wide. Reads as heavier without adding height. */
-function widen(rows) {
-  return pad(rows).map((r) => [...r].map((c) => c + c).join(''));
-}
-
-/** Offset copy below-right, drawn with a second, lighter character. */
-function shadow(rows, offset = 1) {
-  const g = pad(rows);
-  const h = g.length;
-  const w = g[0].length;
-  const out = Array.from({ length: h + offset },
-    () => Array(w + offset).fill('.'));
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (g[y][x] === '#') out[y + offset][x + offset] = '+';
-    }
-  }
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) if (g[y][x] === '#') out[y][x] = '#';
-  }
-  return out.map((r) => r.join(''));
-}
-
-/** Rules above and below, like a nameplate. */
-function slab(rows) {
-  const g = pad(rows);
-  const w = g[0].length;
-  return ['#'.repeat(w), ...g, '#'.repeat(w)];
-}
-
-/**
- * Raised surface: lit edge, body, shaded edge.
- *
- * The two-tone version drew the whole outline in one character and the
- * interior in another. That is a hollow letter with a fill, not a relief:
- * an edge lit from every side at once carries no light direction, so nothing
- * appears to stand up off the page.
- *
- * Three tones fix it for the price of one more character. The light comes
- * from the top left, as it does in every drawing that wants to look solid,
- * so the top and left edges take the heaviest character, the bottom and
- * right edges the faintest, and the body sits between them. On the SM7 that
- * is `B` / `2` / `-` and the letter genuinely lifts.
- *
- * Needs a stroke thick enough to have an inside, hence the scaling — see
- * outlineOf().
- */
-function relief(rows) {
-  const g = pad(scaleBy(rows, 3));
-  const h = g.length;
-  const w = g[0].length;
-  const ink = (y, x) => y >= 0 && x >= 0 && y < h && x < w && g[y][x] === '#';
-
-  return g.map((row, y) =>
-    [...row].map((c, x) => {
-      if (c !== '#') return '.';
-      // Lit before shaded: a top-left corner is lit, not both at once.
-      if (!ink(y - 1, x) || !ink(y, x - 1)) return '#';
-      if (!ink(y + 1, x) || !ink(y, x + 1)) return '~';
-      return '+';
-    }).join(''));
-}
-
 
 /**
  * Oblique projection — depth without a backslash.
@@ -1402,283 +264,6 @@ function extrude(rows, depth = 2) {
   return out.map((r) => r.join(''));
 }
 
-/**
- * Draughted outline: each edge picks a character that matches its direction.
- *
- * Horizontal edges become `_`, vertical edges `!`, and corners `/`. The
- * exclamation mark as a vertical stroke is an old typewriter-art habit and
- * the reason this face works on machines with no pipe character.
- */
-function drafted(rows) {
-  const g = pad(scaleBy(rows, 2));
-  const h = g.length;
-  const w = g[0].length;
-  const ink = (y, x) => y >= 0 && x >= 0 && y < h && x < w && g[y][x] === '#';
-
-  return g.map((row, y) =>
-    [...row].map((c, x) => {
-      if (c !== '#') return '.';
-      const up = !ink(y - 1, x);
-      const down = !ink(y + 1, x);
-      const left = !ink(y, x - 1);
-      const right = !ink(y, x + 1);
-      if (!up && !down && !left && !right) return '.';   // interior
-      if ((up || down) && (left || right)) return '/';   // corner
-      if (up || down) return '_';
-      return '!';
-    }).join(''));
-}
-
-/**
- * Rounded, bulb-like face: the outline drawn with brackets and underscores.
- *
- * Left edges take `(`, right edges `)`, horizontals `_`. Every one of those
- * exists on essentially any typewriter, which is the point.
- */
-function bulb(rows) {
-  const g = pad(scaleBy(rows, 2));
-  const h = g.length;
-  const w = g[0].length;
-  const ink = (y, x) => y >= 0 && x >= 0 && y < h && x < w && g[y][x] === '#';
-
-  return g.map((row, y) =>
-    [...row].map((c, x) => {
-      if (c !== '#') return '.';
-      const up = !ink(y - 1, x);
-      const down = !ink(y + 1, x);
-      const left = !ink(y, x - 1);
-      const right = !ink(y, x + 1);
-      if (!up && !down && !left && !right) return '.';
-      if (left && !right) return '(';
-      if (right && !left) return ')';
-      if (up || down) return '_';
-      return '(';
-    }).join(''));
-}
-
-/* ------------------------------------------------------------------ */
-/* Painting a face with marks                                          */
-/* ------------------------------------------------------------------ */
-
-/**
- * Where a cell sits in the stroke it belongs to.
- *
- * This is the whole idea behind the mark faces. A typewriter has no shading
- * and no half tones, but it has ninety-odd shapes, and a great deal of
- * typewriter art works by picking the shape that matches the *direction* of
- * the stroke rather than its darkness: `_` where a stroke ends flat, `(` and
- * `)` where it turns, `!` where it runs down the page. drafted() and bulb()
- * each did this with one hard-coded set. This is the same reading of the
- * cell, handed out so a face can choose its own marks.
- *
- * `flatH` and `flatV` are the cases the earlier two got wrong by not having:
- * a run one cell thick is open on *both* sides, so asking only "is the top
- * open" calls it a top edge and draws a lid with no box under it.
- */
-function shapeOf(ink, y, x) {
-  const up = !ink(y - 1, x);
-  const down = !ink(y + 1, x);
-  const left = !ink(y, x - 1);
-  const right = !ink(y, x + 1);
-  if (up && down && left && right) return 'dot';
-  if (up && down) return 'flatH';
-  if (left && right) return 'flatV';
-  if (up && left) return 'tl';
-  if (up && right) return 'tr';
-  if (down && left) return 'bl';
-  if (down && right) return 'br';
-  if (up) return 'top';
-  if (down) return 'bottom';
-  if (left) return 'left';
-  if (right) return 'right';
-  return 'inside';
-}
-
-/**
- * What to fall back to when a face does not name a mark for a case.
- *
- * A face that says `{ inside: 'M', top: 'o' }` means it: corners follow the
- * edge they belong to, edges follow the body. Without this every mark map
- * would have to name all eleven cases, and eleven marks is more than most of
- * these faces have opinions about.
- */
-const FALLS_TO = {
-  tl: 'top', tr: 'top', bl: 'bottom', br: 'bottom', flatH: 'top',
-  flatV: 'left', dot: 'inside',
-  top: 'inside', bottom: 'inside', left: 'inside', right: 'inside',
-};
-
-const markFor = (marks, kind) => {
-  for (let k = kind; k; k = FALLS_TO[k]) {
-    if (marks[k]) return marks[k];
-  }
-  return marks.inside ?? '#';
-};
-
-/**
- * Draw a face with marks chosen by where each cell sits in its stroke.
- *
- * `scale` matters more than it looks. At 1 every cell of a one-cell stroke
- * is a corner and the letter comes out as a bag of full stops; at 2 a stem
- * has a left edge and a right edge but no middle, so `inside` is never
- * reached and a face whose whole character is its body mark loses it. Three
- * is the first scale at which a stroke has an inside — the same reason
- * outlineOf() insists on three.
- *
- * Marks that are not `#` pass through untouched, so this can be laid over
- * the calligraphic hand without eating its hairlines.
- *
- * `paper` is for the faces that fill the whole rectangle — the ruled face
- * draws its letters as holes in a field of underscores. It costs a keystroke
- * per cell of the block, which the sheet panel will happily tell you about.
- *
- * One mark is spoken for: `.` is paper everywhere in this file, so a map
- * that says `tl: '.'` cuts the corner off rather than typing a full stop
- * there. That is useful — it is how the roman faces get their bracketed
- * shoulders — but it does mean a face wanting a literal full stop has to
- * reach for `,` or `:` instead. Kban's feet are `,` here for exactly that
- * reason, and they read the same at arm's length.
- */
-function inked(marks, scale = 3) {
-  return (rows) => {
-    const g = pad(scale > 1 ? scaleBy(rows, scale) : rows);
-    const h = g.length;
-    const w = g[0].length;
-    const ink = (y, x) =>
-      y >= 0 && x >= 0 && y < h && x < w && g[y][x] === '#';
-
-    return g.map((row, y) => [...row].map((c, x) => {
-      if (c === '.') return marks.paper ?? '.';
-      if (c !== '#') return c;
-      return markFor(marks, shapeOf(ink, y, x));
-    }).join(''));
-  };
-}
-
-/**
- * Lay the machine's tones across the letter in horizontal bands.
- *
- * The point of this project is that the tones come from the machine rather
- * than from a wish, and a graded letter is the plainest way to show it: on
- * an SM7 five bands come out `B` `M` `2` `-` `'`, which is a real ramp read
- * off a real keyboard. On a machine stripped to two keys in the characters
- * dialog it degrades to two bands rather than failing, the same way the
- * raised face does.
- *
- * Bands are cut on the block, not on the glyph, so every letter of a word
- * shades together. Cutting per glyph would grade a short letter over its own
- * height and put the dark end of an `O` next to the light end of a `T`.
- */
-function banded(n) {
-  return (rows) => {
-    const g = pad(rows);
-    const h = g.length;
-    return g.map((row, y) => {
-      const mark = INKS[Math.min(n - 1, Math.floor((y / h) * n))];
-      return [...row].map((c) => (c === '#' ? mark : c)).join('');
-    });
-  };
-}
-
-/**
- * Let the ink run off the bottom of the letter.
- *
- * Deterministic, not random: the drip under a given column is decided by the
- * column number, so the same word always comes out the same. A generator
- * that reaches for Math.random() cannot be tested, cannot be reproduced, and
- * — worse here — cannot be typed twice the same way, which is the one thing
- * somebody standing at a typewriter with a sheet half finished needs.
- *
- * The pattern is deliberately uneven. Dripping every third column reads as a
- * fringe; these lengths read as ink.
- */
-const DRIPS = [0, 2, 0, 0, 3, 0, 1, 0, 0, 2, 1, 0, 0, 0, 3];
-
-function dripped(rows) {
-  const g = pad(rows);
-  const h = g.length;
-  const w = g[0].length;
-  const most = Math.max(...DRIPS);
-  const out = g.map((r) => [...r]);
-  for (let k = 0; k < most; k++) out.push(Array(w).fill('.'));
-
-  for (let x = 0; x < w; x++) {
-    // The lowest ink in this column is where a drip would hang from. A
-    // column whose ink stops halfway up is the waist of an `A`, not an edge
-    // the ink could gather on.
-    let foot = -1;
-    for (let y = 0; y < h; y++) if (g[y][x] !== '.') foot = y;
-    if (foot !== h - 1) continue;
-    const run = DRIPS[x % DRIPS.length];
-    for (let k = 1; k <= run; k++) out[foot + k][x] = g[foot][x];
-  }
-  return out.map((r) => r.join(''));
-}
-
-/**
- * Eat the letter away from the bottom up.
- *
- * The mirror of dripped(): instead of ink running off the foot, the foot is
- * gone. Applied under a band it reads as something corroding, which is the
- * whole of the poison face — the letter is intact at the top and coming
- * apart where it stands.
- */
-function eaten(rows) {
-  const g = pad(rows);
-  const h = g.length;
-  return g.map((row, y) => {
-    // Nothing is eaten above the waist, and never the whole bottom row —
-    // a letter with no baseline left stops being a letter.
-    if (y < h - 3) return row;
-    const bite = (y - (h - 3)) + 1;
-    return [...row].map((c, x) =>
-      (c === '.' || (x + y) % (5 - bite) !== 0 ? c : '.')).join('');
-  });
-}
-
-/**
- * Repeat every row, for a face that is wide enough but not tall enough.
- *
- * The stroke faces are drawn on Block because Block's strokes are one cell
- * thick, which is what `struck` needs — two-cell strokes come out as `_//_//`
- * and read as a wall. But Block is five rows, and five rows of one-cell
- * stroke next to a fifteen-row bracketed face looks like a mistake rather
- * than a choice. Stretching downwards costs no width, which is the scarce
- * direction on a sheet of paper.
- */
-const taller = (n) => (rows) => rows.flatMap((r) => Array(n).fill(r));
-
-/**
- * A half-tone screen: every other cell drops to the lighter tone.
- *
- * Two weights in a checker read as one weight in between, which is the
- * oldest trick in printing and the only grey a machine with no grey can
- * make. It wants a stroke at least three cells thick, or the screen removes
- * half of a one-cell stroke and what is left is a dotted line.
- */
-const screened = (rows) => pad(rows).map((row, y) =>
-  [...row].map((c, x) => (c === '#' && (x + y) % 2 ? '+' : c)).join(''));
-
-/**
- * Every ink cell becomes a stroke: one mark to open the run, one to carry it.
- *
- * This is the family the FIGlet faces built out of `_/` and `/^` belong to —
- * the letter is not filled, it is *drawn*, one short stroke per cell, and
- * the two marks are the whole identity of the face. `open` and `carry` must
- * be the same width or the columns stop lining up, which is checked rather
- * than assumed: a face whose columns drift is unreadable and the cause is
- * invisible in the data.
- */
-function struck(open, carry) {
-  if (open.length !== carry.length) {
-    throw new Error(`stroke marks differ in width: ${open} / ${carry}`);
-  }
-  return (rows) => pad(rows).map((row) =>
-    [...row].map((c, x) => (
-      c !== '#' ? '.'.repeat(open.length)
-        : row[x - 1] === '#' ? carry : open)).join(''));
-}
-
 /* ------------------------------------------------------------------ */
 /* Styles                                                              */
 /* ------------------------------------------------------------------ */
@@ -1686,138 +271,20 @@ function struck(open, carry) {
 /**
  * A style is a face plus a chain of transforms.
  *
- * `tones` is how many weights of character the style draws with, and it is
- * the number the caller uses to ask the machine for a ramp. One means a
- * silhouette; two a face and a shadow behind it; three a lit edge, a body
- * and a shaded edge. `two` is kept as a derived convenience for the ribbon
- * schemes, which only ever ask "is there a second surface to colour".
+ * `tones` is how many weights of character the style draws with — one, here:
+ * a silhouette, filled with the heaviest character the machine has. `uses`
+ * is the fixed marks the projection insists on, and the picker warns if the
+ * machine has no stand-in for one.
+ *
+ * The real FIGlet fonts are not in this table on purpose: they are files,
+ * not data baked into the program, and figlet.js reads them as such. This
+ * table is only for what no font file can be — see the head of this file.
  */
 export const STYLES = {
-  big:      { name: 'Big',            face: 'big',   fns: [], tones: 1 },
-  block:    { name: 'Block',          face: 'block', fns: [], tones: 1 },
-  /*
-   * One ink and a fixed `/`, like the drawn faces below, except that this
-   * one does have a surface: the stems and bowls are solid, so the ramp is
-   * asked for a character and uses it. `uses` is the hairline the hand
-   * insists on, and the picker warns if the machine has no slash.
-   */
-  script:   { name: 'Calligraphic',   face: 'script', fns: [],
-              uses: '/', tones: 1 },
-  scriptLean:{ name: 'Calligraphic, leaning', face: 'script', fns: [lean],
-              uses: '/', tones: 1 },
-  hollow:   { name: 'Hollow',         face: 'block', fns: [outlineOf], tones: 1 },
-  hollowBig:{ name: 'Hollow, big',    face: 'big',   fns: [outlineOf], tones: 1 },
-  slant:    { name: 'Slanted',        face: 'big',   fns: [slant], tones: 1 },
-  slantBlock:{ name: 'Slanted, small', face: 'block', fns: [slant], tones: 1 },
-  shadow:   { name: 'Shadowed',       face: 'block', fns: [shadow], tones: 2 },
-  shadowBig:{ name: 'Shadowed, big',  face: 'big',   fns: [shadow], tones: 2 },
-  relief:   { name: 'Raised',         face: 'block', fns: [relief], tones: 3 },
-  stencil:  { name: 'Stencil',        face: 'big',   fns: [stencil], tones: 1 },
-  wide:     { name: 'Wide',           face: 'block', fns: [widen], tones: 1 },
-  slab:     { name: 'Nameplate',      face: 'block', fns: [slab], tones: 1 },
-  slantHollow: { name: 'Slanted hollow', face: 'block', fns: [outlineOf, slant],
-              tones: 1 },
-  reliefBig:{ name: 'Raised, big',    face: 'big',   fns: [relief], tones: 3 },
   oblique:  { name: 'Three dimensional', face: 'block', fns: [extrude],
               uses: '/_', tones: 1 },
   obliqueBig:{ name: 'Three dimensional, big', face: 'big', fns: [extrude],
               uses: '/_', tones: 1 },
-  /*
-   * Zero tones is not an oversight. These two draw every stroke with a
-   * character chosen for its *direction* - `!` up, `_` across, `/` at a
-   * corner, brackets for a curve - so there is no surface for a tone to
-   * fill and the ramp is never consulted. Declaring 1 would make the
-   * interface reserve a character the style then ignores, which is exactly
-   * the class of quiet nothing this pass is here to remove.
-   */
-  drafted:  { name: 'Drafted',        face: 'block', fns: [drafted],
-              uses: '/_!', tones: 0 },
-  draftedBig:{ name: 'Drafted, big',  face: 'big',   fns: [drafted],
-              uses: '/_!', tones: 0 },
-  bulb:     { name: 'Rounded',        face: 'block', fns: [bulb],
-              uses: '()_', tones: 0 },
-  bulbBig:  { name: 'Rounded, big',   face: 'big',   fns: [bulb],
-              uses: '()_', tones: 0 },
-  wideBig:  { name: 'Wide, big',      face: 'big',   fns: [widen], tones: 1 },
-
-  /* ---------------------------------------------------------------- */
-  /* Mark faces                                                       */
-  /* ---------------------------------------------------------------- */
-
-  /*
-   * These draw the letter out of other letters. It is the oldest kind of
-   * typewriter art there is and it costs nothing extra at the machine: a
-   * key is a key. `uses` names every mark, so a machine that lacks one says
-   * so in the picker instead of printing a hole.
-   */
-  o8:       { name: 'Rings',          face: 'block',
-              fns: [inked({ inside: '8', top: 'o', bottom: 'o' })],
-              uses: '8o', tones: 0 },
-  os2:      { name: 'Rings on a rule', face: 'block',
-              fns: [inked({ inside: 'o', paper: '_' })],
-              uses: 'o_', tones: 0 },
-  roman:    { name: 'Roman',          face: 'big',
-              fns: [inked({ inside: '8', top: 'o', bottom: 'o',
-                tl: '.', tr: '.', bl: 'o', br: 'o' }, 2)],
-              uses: '8o', tones: 0 },
-  georgia:  { name: 'Roman, heavy',   face: 'big',
-              fns: [inked({ inside: 'M', tl: '.', tr: '.',
-                bl: 'J', br: 'L' }, 2)],
-              uses: 'MJL', tones: 0 },
-  rowanCap: { name: 'Rounded caps',   face: 'block',
-              fns: [inked({ left: 'd', inside: 'M', right: 'P',
-                tl: 'a', tr: 'b', bl: 'V', br: 'P' })],
-              uses: 'dMPabV', tones: 0 },
-  kban:     { name: 'Ruled',          face: 'block',
-              fns: [inked({ inside: '|', flatH: "'", top: "'", bottom: ',',
-                tl: "'", tr: "'", bl: ',', br: ',' })],
-              uses: "|',", tones: 0 },
-  henry:    { name: 'Bracketed',      face: 'block',
-              fns: [inked({ inside: '.', top: '_', bottom: '_',
-                left: '|', right: '|', tl: 'F', tr: ']', bl: 'L', br: 'J',
-                flatH: '_', flatV: '|' })],
-              uses: '_|FJL]', tones: 0 },
-  nvScript: { name: 'Calligraphic, inked', face: 'script',
-              fns: [inked({ inside: '8', left: 'd', right: 'b',
-                top: 'P', bottom: 'Y', flatH: 'P', flatV: '8' }, 1)],
-              uses: '8dbPY/', tones: 0 },
-
-  /* ---------------------------------------------------------------- */
-  /* Stroke faces                                                     */
-  /* ---------------------------------------------------------------- */
-
-  catwalk:  { name: 'Catwalk',        face: 'block',
-              fns: [taller(2), struck('_//', '///')], uses: '_/', tones: 0 },
-  peaks:    { name: 'Peaks',          face: 'block',
-              fns: [taller(2), struck('/^^', '^^^')],
-              uses: '/^', tones: 0 },
-  lean:     { name: 'Leaning strokes', face: 'block',
-              fns: [struck('_/', '_/'), slant], uses: '_/', tones: 0 },
-  italic:   { name: 'Italic outline', face: 'block',
-              fns: [inked({ inside: '.', top: '_', bottom: '_',
-                left: '(', right: ')', tl: '/', tr: '_', bl: '/', br: '/',
-                flatH: '_' }, 2), slant],
-              uses: '_()/', tones: 0 },
-
-  /* ---------------------------------------------------------------- */
-  /* Graded faces                                                     */
-  /* ---------------------------------------------------------------- */
-
-  gradient: { name: 'Graded',         face: 'big',
-              fns: [(r) => scaleBy(r, 2), banded(5)], tones: 5 },
-  poison:   { name: 'Corroded',       face: 'big',
-              fns: [(r) => scaleBy(r, 2), eaten, banded(3)], tones: 3 },
-  sBlood:   { name: 'Running ink',    face: 'block',
-              fns: [(r) => scaleBy(r, 2), dripped, banded(3)], tones: 3 },
-  filter:   { name: 'Screened',       face: 'block',
-              fns: [(r) => scaleBy(r, 3), screened], tones: 2 },
-
-  /* ---------------------------------------------------------------- */
-  /* The other two alphabets                                          */
-  /* ---------------------------------------------------------------- */
-
-  gothic:   { name: 'Gothic',         face: 'gothic', fns: [], tones: 1 },
-  tiny:     { name: 'Miniature',      face: 'tiny',   fns: [], tones: 1 },
 };
 
 /** How many weights of character a style draws with. */
@@ -1829,37 +296,30 @@ export function tonesOf(style) {
  * Blank rows between one line of lettering and the next.
  *
  * A quarter of the block height, at least one row. Set from the block rather
- * than fixed, because the faces differ and so do the transforms: BLOCK is
- * five rows and BIG seven, and relief scales its face by three. Measured on
- * the two plain faces this gives 1 blank row under BLOCK and 2 under BIG.
- * One row under BIG leaves the descender of one line crowding the cap of the
- * next; three under BLOCK reads as two separate motifs rather than two lines
- * of one.
+ * than fixed, because the two sizes differ and the transform changes them
+ * again: extrude doubles its face and adds the depth on top.
  */
 const leadingFor = (h) => Math.max(1, Math.round(h / 4));
 
 /**
  * How wide each letter comes out, after the style's transforms.
  *
- * Measuring the *input* string is useless here: one `M` is 5 columns in
- * Block and 24 in Raised, big.
+ * Measuring the *input* string is useless here: extrude doubles the face
+ * and adds its depth, so one `M` is 5 columns in BLOCK and 12 on the sheet.
  *
  * The cache outlives the call, and it is safe for it to: the faces are
  * constant data at the top of this file and every transform is a pure
- * function of its rows, so the width of `M` in Raised, big is a fact about
- * the program rather than about this render. Per call it was already worth
- * having — a chain that scales by three and floods a background is not
- * something to run once per letter per candidate line — but the picker asks
- * all forty-one styles how wide a word comes out on every redraw, and paying
- * that again each time is 13 to 57 milliseconds of stutter on the keystroke
- * that asked. Measured once, it is free from the second redraw on.
+ * function of its rows, so the width of `M` in a style is a fact about the
+ * program rather than about this render. The picker asks how wide a word
+ * comes out on every redraw; measured once, the answer is free from the
+ * second redraw on.
  */
 const GLYPH_W = new Map();
 
 function glyphWidthsOf(style, spec, face) {
   return (ch) => {
     const up = ch.toUpperCase();
-    const key = `${style} ${up}`;
+    const key = `${style} ${up}`;
     let w = GLYPH_W.get(key);
     if (w === undefined) {
       let rows = face[up] ?? face[' '];
@@ -1880,11 +340,6 @@ function glyphWidthsOf(style, spec, face) {
  * than the paper cannot be rescued by a narrower column, a bigger margin or
  * a longer sentence. It is the face that has to change, or the paper.
  *
- * Measured from the glyph widths rather than from a render, and that is the
- * whole point of it: rendering forty-one styles to find out which ones fit
- * costs tens of milliseconds, and this costs nothing once the widths are
- * known.
- *
  * An upper bound, never an under-estimate, and it can sit one column high.
  * letter() trims the blank columns every line shares, which is a property of
  * the finished block rather than of any one glyph, so the only way to know
@@ -1898,17 +353,16 @@ function glyphWidthsOf(style, spec, face) {
  * @returns {number} columns, an upper bound
  */
 export function widestWord(text, style, spacing = 1) {
-  const spec = STYLES[style] ?? STYLES.big;
+  const spec = STYLES[style] ?? STYLES.oblique;
   const face = FACES[spec.face];
   const widthOf = glyphWidthsOf(style, spec, face);
-  const gap = spacing * (spec.fns.includes(widen) ? 2 : 1);
 
   let most = 0;
   for (const word of String(text).toUpperCase().split(/[\s\n]+/)) {
     const chars = [...word];
     if (!chars.length) continue;
     most = Math.max(most,
-      chars.reduce((n, ch) => n + widthOf(ch), 0) + gap * (chars.length - 1));
+      chars.reduce((n, ch) => n + widthOf(ch), 0) + spacing * (chars.length - 1));
   }
   return most;
 }
@@ -1956,7 +410,7 @@ function wrapToWidth(text, maxCols, widthOf, gap) {
 
 /**
  * Render one line of a word into placeholder rows.
- * '#', '+', '~' are the three inks; '.' is paper.
+ * '#' is the ink; '.' is paper.
  */
 function renderRow(word, spec, face, spacing) {
   const chars = [...String(word).toUpperCase()];
@@ -1968,14 +422,13 @@ function renderRow(word, spec, face, spacing) {
   if (!glyphs.length) return [];
 
   const h = Math.max(...glyphs.map((g) => g.length));
-  const gap = spacing * (spec.fns.includes(widen) ? 2 : 1);
 
   const out = [];
   for (let y = 0; y < h; y++) {
     let line = '';
     glyphs.forEach((g, i) => {
       line += g[y] ?? '.'.repeat(g[0].length);
-      if (i < glyphs.length - 1) line += '.'.repeat(gap);
+      if (i < glyphs.length - 1) line += '.'.repeat(spacing);
     });
     out.push(line);
   }
@@ -1990,21 +443,19 @@ function renderRow(word, spec, face, spacing) {
  * gives a whole blank block, so a blank line works as deliberate spacing
  * rather than collapsing away.
  *
- * Tones may be given as `tones: ['B', '2', '-']`, heaviest first, which is
- * what a caller gets from toneRamp() in ink.js. `fill` and `light` remain as
- * the one- and two-tone shorthand, so existing callers keep working.
+ * Tones may be given as `tones: ['B']`, heaviest first, which is what a
+ * caller gets from toneRamp() in ink.js. `fill` and `light` remain as the
+ * one- and two-tone shorthand, so existing callers keep working.
  *
  * `maxCols` wraps lines too wide for the paper, at spaces. Without it a
- * sentence simply runs off the sheet: measured on an SM7 at pica, "GUTEN
- * MORGEN LYON" in Block is 101 columns against the 82 an upright A4 holds,
- * and forty characters of input reach 239 columns — 291% of the sheet.
+ * sentence simply runs off the sheet.
  *
  * @param {string} word
  * @param {Object} [opt]
- * @param {keyof STYLES} [opt.style='big']
+ * @param {keyof STYLES} [opt.style='oblique']
  * @param {string[]} [opt.tones]     characters, heaviest first
  * @param {string} [opt.fill='#']    heaviest character
- * @param {string} [opt.light='+']   second character, for shadow and relief
+ * @param {string} [opt.light='+']   second character, kept for callers
  * @param {number} [opt.spacing=1]   blank columns between letters
  * @param {number} [opt.maxCols]     wrap to this many columns
  * @param {'centre'|'left'} [opt.align='centre'] how lines of one word line
@@ -2015,7 +466,7 @@ function renderRow(word, spec, face, spacing) {
  */
 export function letter(word, opt = {}) {
   const {
-    style = 'big',
+    style = 'oblique',
     fill = '#',
     light = '+',
     spacing = 1,
@@ -2023,18 +474,11 @@ export function letter(word, opt = {}) {
     align = 'centre',
   } = opt;
 
-  const spec = STYLES[style] ?? STYLES.big;
+  const spec = STYLES[style] ?? STYLES.oblique;
   const face = FACES[spec.face];
 
-  /*
-   * Three inks, and a short ramp has to degrade rather than fail.
-   *
-   * A machine with two usable characters cannot draw a three-tone relief, so
-   * the faint tone falls back to the mid one and the style quietly becomes
-   * its two-tone self. Falling back to `fill` instead would paint the shaded
-   * edge in the same character as the lit edge, which is not a degraded
-   * relief — it is a solid blob.
-   */
+  // A ramp shorter than the style asks for degrades to its last character
+  // rather than failing.
   const ramp = Array.isArray(opt.tones) && opt.tones.length
     ? opt.tones : [fill, light];
   const inkAt = (i) => ramp[Math.min(i, ramp.length - 1)] ?? fill;
@@ -2042,36 +486,27 @@ export function letter(word, opt = {}) {
 
   /*
    * Wrap first, then render. The break has to be decided on how wide the
-   * letters actually come out - one `M` is 5 columns in Block and 24 in
-   * Raised, big - so it cannot be done on the input string, and it cannot
-   * be done after rendering either, because by then the words have been
-   * flattened into rows of characters with no word boundaries left.
+   * letters actually come out - extrude doubles the face and adds depth -
+   * so it cannot be done on the input string, and it cannot be done after
+   * rendering either, because by then the words have been flattened into
+   * rows of characters with no word boundaries left.
    */
-  const gap = spacing * (spec.fns.includes(widen) ? 2 : 1);
   const widthOf = glyphWidthsOf(style, spec, face);
   const rowsIn = String(word).split('\n');
   const wrapped = maxCols > 0
     ? rowsIn.flatMap((row) =>
-        (row.trim() ? wrapToWidth(row, maxCols, widthOf, gap) : ['']))
+        (row.trim() ? wrapToWidth(row, maxCols, widthOf, spacing) : ['']))
     : rowsIn;
 
   const blocks = wrapped.map((row) => renderRow(row, spec, face, spacing));
 
   /*
    * The lines of one word are set against each other, not only against the
-   * paper.
-   *
-   * Every block was laid flush left and the *rectangle* around them was then
-   * centred on the sheet, which is not the same thing and looks nothing like
-   * it. Measured in Block: `GUTEN MORGEN LYON` wraps to three lines of 29,
-   * 35 and 23 columns, so LYON sat six columns left of where it belonged
-   * while the app said `Centred` — and the shorter the last line, the more
-   * obviously wrong it looked.
-   *
-   * Which way they line up follows the caller's alignment, because that is
-   * the setting which says what centring is supposed to mean here. Nothing
-   * grows: the widest block keeps its place and only the narrower ones move,
-   * so a word wrapped exactly to `maxCols` still ends exactly at `maxCols`.
+   * paper. Which way they line up follows the caller's alignment, because
+   * that is the setting which says what centring is supposed to mean here.
+   * Nothing grows: the widest block keeps its place and only the narrower
+   * ones move, so a word wrapped exactly to `maxCols` still ends exactly at
+   * `maxCols`.
    */
   if (align !== 'left') {
     const wide = Math.max(0, ...blocks.map((b) => b[0]?.length ?? 0));
@@ -2083,7 +518,7 @@ export function letter(word, opt = {}) {
 
   // Height of a rendered block, for the leading and for blank lines. Taken
   // from a block that has one rather than from the face itself, because the
-  // transforms change it: relief scales by three, extrude adds its depth.
+  // transform changes it: extrude doubles the face and adds its depth.
   const blockH = Math.max(1, ...blocks.map((b) => b.length));
   const gapRows = leadingFor(blockH);
 
@@ -2097,11 +532,10 @@ export function letter(word, opt = {}) {
   });
 
   const lines = rows.map((row) =>
-    // '#', '+' and '~' are placeholders for the three inks. Anything else a
-    // transform emitted is a literal character it chose deliberately - the
-    // diagonals and brackets that make the drawn faces work - and must pass
-    // through untouched. Mapping them to blanks silently erased three whole
-    // styles.
+    // '#' is a placeholder for the ink. Anything else the transform emitted
+    // is a literal character it chose deliberately - the diagonals and
+    // rules that make the projection work - and must pass through
+    // untouched.
     [...row].map((c) => {
       const tone = INKS.indexOf(c);
       if (tone >= 0) return inkAt(tone);
@@ -2121,19 +555,10 @@ export function letter(word, opt = {}) {
 
   /*
    * And the blank columns down the left, which are not part of the word
-   * either.
-   *
-   * The two trims above have always been here; this is the same trim a
-   * quarter turn round, and leaving it out is what made a centred word land
-   * off centre. Any face that opens with empty cells reported them as motif
-   * — `TYPE` slanted is 39 columns of which the first two are blank, the
-   * calligraphic hand the same, `slantHollow` six — so setUp() centred a box
-   * wider than the ink and pushed the word right by half the difference.
-   *
-   * They cost keystrokes as well as accuracy. The margin stop is set to the
-   * left edge of the motif, so a blank column at the front of every line is
-   * a spacebar press on every line, typed to reach a place the stop could
-   * simply have been set to.
+   * either. Any block that opens with empty cells would report them as
+   * motif, so setUp() would centre a box wider than the ink — and they cost
+   * keystrokes: the margin stop is set to the motif's left edge, so a blank
+   * column at the front of every line is a spacebar press on every line.
    *
    * Only what every line shares. A blank column at the front of *one* line
    * is that line's own indent — the centring above puts it there on purpose
@@ -2149,8 +574,8 @@ export function letter(word, opt = {}) {
  * Every character a style will actually strike, so the picker can warn.
  *
  * Both halves matter: the tones it takes from the machine, and the fixed
- * marks a drawn face insists on. A style can have no tones at all and still
- * need three specific keys - see `drafted`.
+ * marks the face insists on — for the three-dimensional face, the `/` and
+ * `_` its projection is drawn with.
  */
 export function charsUsed(style, tones = ['#', '+', '~']) {
   return [...new Set([
@@ -2165,14 +590,13 @@ export function charsUsed(style, tones = ['#', '+', '~']) {
  * Tones are not among them and must not be: those are *chosen* from what the
  * machine has, so they are available by construction. These are the other
  * half — the marks that carry the shape rather than the weight, and the ones
- * a machine might not have. Peaks is built out of carets and the bracketed
- * face out of brackets; whether this machine can strike them is not a
+ * a machine might not have. Whether this machine can strike them is not a
  * question this file is in a position to answer.
  *
  * So it does not try. Hand the result to standIns() in machine.js with the
  * machine's keys, get back what to type instead, and pass that to letter()
  * as `substitutes`. Faces stay written in the marks they were designed in,
- * and a machine that has a pipe gets a pipe.
+ * and a machine that has an underscore gets an underscore.
  *
  * @param {keyof STYLES} style
  * @returns {string[]}

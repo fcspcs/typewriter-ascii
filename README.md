@@ -20,9 +20,9 @@ Not "ASCII art you look at on a screen". Art you sit down and type, one
 keystroke at a time, on a machine with no undo. That constraint changes
 everything about how it has to work.
 
-![The app: lettering controls on the left, and TYPE drawn in the calligraphic hand on an A4 sheet, exactly as the Olympia SM7 will type it](docs/img/ui-lettering.png)
+![The app: lettering controls on the left, and Type set in the real Caligraphy2 FIGlet font on an A4 sheet, exactly as the Olympia SM7 will type it](docs/img/ui-lettering.png)
 
-<div align="center"><sub><code>TYPE</code> in the calligraphic hand — 59 × 16 characters, 162 keystrokes, counted before you sit down.</sub></div>
+<div align="center"><sub><code>Type</code> in Caligraphy2 — 49 × 19 characters, 264 keystrokes, counted before you sit down.</sub></div>
 
 ## Why this is not a normal ASCII generator
 
@@ -44,8 +44,8 @@ A generator that ignores the machine produces art that cannot be typed:
 
 - **Images** → shape-matched characters, tone-matched characters, outline
   only, or a repeating sentence that reads continuously through the picture
-- **Lettering** → words, or several lines of them, drawn from scratch in
-  forty-one faces — or set in a real FIGlet font
+- **Lettering** → words, or several lines of them, set in nineteen real
+  FIGlet fonts — plus one drawn face no font file can be
   ([see below](#lettering))
 - **Compose** → spread one motif over several sheets and lay them side by
   side. A typewriter's cell is 2.54 × 4.23 mm and nothing makes it smaller,
@@ -54,7 +54,8 @@ A generator that ignores the machine produces art that cannot be typed:
 - **Sideways** → plan a motif to be *read* sideways. The paper still goes in
   upright — a typewriter cannot take A4 on its long edge — so the motif is
   laid down instead, typed on an upright sheet, and you turn the finished
-  sheet a quarter turn. A 16:9 photograph goes from 168 × 93 mm to 254 × 142
+  sheet a quarter turn. A 16:9 photograph goes from 168 × 93 mm to 254 × 142;
+  a word is set as a picture, so the letterforms keep their proportions
 - **Existing art** → paste it in; characters your machine lacks are swapped
   for the nearest shape it has, and you are told what changed
 - **Setup instructions** → paper guide, margin stops, how far to wind on
@@ -144,58 +145,50 @@ conversion command in the message.
 
 ## Lettering
 
-Forty-one faces, built from five hand-drawn alphabets and a set of
-transforms, every one checked against your machine — a face never asks for a
-key you have not got. The calligraphic hand is drawn to one rule: a broad
-nib held at an angle leaves a hairline exactly when it travels up and to the
-right, and a thick stroke everywhere else. `/` happens to be the one
-diagonal a typewriter can be relied on to have, so the rule that makes the
-letters right is the rule that makes them typeable:
+Nineteen original FIGlet fonts, set with the real layout algorithm — full
+width, kerning, and smushing with the six controlled rules of the FIGfont
+standard — so the output is pixel for pixel what the TAAG site shows,
+before the marks your machine lacks are swapped for what it can strike.
+`Type` in Caligraphy2, on an Olympia SM7 (`#` typed as `+`):
 
 ```text
-            /        /               /              /
-           /        /               /              /
-          /        /               /              /
-BBBBBBBBBB       BB       /      BBBBBBB        BBBBBBBBB
-    BB            BB     /       BB    BB       BB
-    BB             BB   /        BB     BB      BB
-    BB              BB /         BB     BB      BB
-    BB              BB/          BB    BB       BB
-    BB              BB           BBBBBBB        BBBBBBB
-    BB              BB           BB             BB
-    BB              BB           BB             BB
-    BB              BB           BB             BB
-    BB              BB           BB             BB
-    BB              BB           BB             BBBBBBBBB
-   /               /            /              /
- BB              BB           BB             BB
+  /+++           /
+ /  ++++++++++++/
+/     +++++++++
++     /  +
+ ++  /  ++
+    /  +++      ++   ++++         /+++     /++
+   ++   ++       ++    +++  /    / +++  / / +++
+   ++   ++       ++     +++/    /   +++/ /   +++
+   ++   ++       ++      ++    ++    ++ ++    +++
+   ++   ++       ++      ++    ++    ++ ++++++++
+    ++  ++       ++      ++    ++    ++ +++++++
+     ++ +      / ++      ++    ++    ++ ++
+      +++     /  ++      ++    ++    ++ ++++    /
+       ++++++/    +++++++++    +++++++   ++++++/
+         +++        ++++ +++   ++++++     +++++
+                          +++  ++
+                   +++++   +++ ++
+                 /+++++++  /+  ++
+                /      +++/     ++
 ```
 
-<details>
-<summary><b>More faces</b> — Roman, Three-dimensional, Graded</summary>
+The fonts ship in [`fonts/`](fonts/), redistributed **as received** and
+credited to their authors in [`fonts/README.md`](fonts/README.md); they are
+not covered by this repository's MIT licence. Any `.flf` you drop into the
+folder works from the command line as it is, and joins the browser's picker
+once it is named in [`fonts/index.json`](fonts/index.json):
 
-Roman — a key is a key, so serifs cost nothing:
-
-```text
- oooooooooo   oo      oo   oooooooo     oooooooooo
-oooo8888oooo 8888    8888 8888oooo88   8888oooooooo
-    8888     8888    8888 8888    88o  8888
-    8888     oo88    88oo 8888    8888 8888
-    8888       88oooo88   8888    8888 8888
-    8888       oo8888oo   8888    88oo 8888
-    8888         8888     8888oooo88   8888ooooo
-    8888         8888     8888oooooo   8888oooooo
-    8888         8888     8888         8888
-    8888         8888     8888         8888
-    8888         8888     8888         8888
-    8888         8888     8888         8888
-    8888         8888     8888         8888ooooooo
-    oooo         oooo     oooo         oooooooooooo
+```sh
+node tools/cli.mjs text "HELLO" --flf fonts/Roman.flf
 ```
 
-Three-dimensional — *oblique* projection rather than isometric, because a
-great many typewriters have no backslash and one `/` can do the work of
-both:
+One face is still drawn by hand, because no font file can be it. The
+classic isometric FIGlet faces all need a backslash, and a great many
+typewriters — the SM7 among them — have no backslash key at all. The drawn
+three-dimensional face uses *oblique* projection instead: every depth line
+runs at the same 45-degree angle, so one `/` does the work of both
+diagonals:
 
 ```text
   __________   __      __   ________     __________
@@ -212,58 +205,17 @@ BBBBBBBBBB   BB /// /BB   BBBBBBBB /// BBBBBBBBBB
     BB           BB       BB           BBBBBBBBBB
 ```
 
-Graded — the ramp `B b 2 z -` is read off the SM7's keys by rank, not
-wished for; on a machine stripped to two keys it comes out in two bands
-rather than failing:
+Fonts are set in their own marks — Caligraphy2 really does say `#` — and
+the machine is met at the end by a stand-in engine: a substitution table
+for the judgement calls, a measured shape match for everything else, and an
+honest note about what changed (`Typed # as +`). Only a mark with nothing
+at all to stand in for it is left blank, by name.
 
-```text
-BBBBBBBBBBBB BBBB    BBBB BBBBBBBBBB   BBBBBBBBBBBB
-BBBBBBBBBBBB BBBB    BBBB BBBBBBBBBB   BBBBBBBBBBBB
-    BBBB     BBBB    BBBB BBBB    BBBB BBBB
-    bbbb     bbbb    bbbb bbbb    bbbb bbbb
-    bbbb       bbbbbbbb   bbbb    bbbb bbbb
-    bbbb       bbbbbbbb   bbbb    bbbb bbbb
-    2222         2222     2222222222   2222222222
-    2222         2222     2222222222   2222222222
-    2222         2222     2222         2222
-    zzzz         zzzz     zzzz         zzzz
-    zzzz         zzzz     zzzz         zzzz
-    zzzz         zzzz     zzzz         zzzz
-    ----         ----     ----         ------------
-    ----         ----     ----         ------------
-```
-
-</details>
-
-Faces are written in their own marks — the ruled face really does say `|`,
-the bracketed face `[` and `]` — and the machine is met at the end by a
-stand-in engine: a substitution table for the judgement calls, a measured
-shape match for everything else, and an honest note about what changed
-(`typing | as ! — the Olympia SM7 de Luxe has no |`). Only a mark with
-nothing at all to stand in for it greys a face out.
-
-Keystrokes vary a lot between faces, which matters when you are the printer:
-`TYPE` costs 24 keystrokes in Miniature, 44 in Block, 162 in the
-calligraphic hand, 327 in the three-dimensional face. Hollow faces cost
-roughly a third of what solid ones do.
-
-**Or set the real thing.** Nineteen original FIGlet fonts ship in
-[`fonts/`](fonts/) and appear in the browser's face picker beside the drawn
-faces, set with the real layout algorithm — full width, kerning, and
-smushing with the six controlled rules of the FIGfont standard — so the
-output is pixel for pixel what the TAAG site shows, before the marks the
-machine lacks are swapped for what it can strike, and you are told what
-changed. They are redistributed as received and credited to their authors
-in [`fonts/README.md`](fonts/README.md). The command line reads them too,
-and any `.flf` you drop into the folder joins in:
-
-```sh
-node tools/cli.mjs text "HELLO" --flf fonts/Roman.flf
-```
-
-How the faces are drawn, why the flourishes are derived rather than drawn
-in, how the stand-in engine works, and what each face owes to the classic
-FIGlet collection: **[docs/lettering.md](docs/lettering.md)**.
+Keystrokes vary a lot between fonts, which matters when you are the
+printer: `TYPE` costs 327 keystrokes in the three-dimensional face, and
+`Type` in Caligraphy2 costs 264. How the stand-in engine works, what
+planning a word sideways does, and what happened to the thirty-nine drawn
+faces that used to live here: **[docs/lettering.md](docs/lettering.md)**.
 
 ## Compose
 
@@ -347,10 +299,21 @@ So a wide picture comes out half as big again, and gains its detail down the
 other axis — two and a third times the keystrokes for one and a half times
 the picture. Which way you turn the finished sheet is offered, because both
 are real: identical at the machine, differing only in which corner is typed
-first. And marks in turned words or pasted art are swapped for what will
-look right afterwards — an underscore has to be struck as something that
-*looks* like an underscore once the sheet has moved under it; where no
-honest swap exists, the original stands.
+first. And marks in turned pasted art are swapped for what will look right
+afterwards — an underscore has to be struck as something that *looks* like
+an underscore once the sheet has moved under it; where no honest swap
+exists, the original stands.
+
+**A word planned sideways is set as a picture.** A quarter turn swaps the
+cell's 2.54 mm width and its 4.23 mm height, and letterforms cannot be
+resampled the way a photograph can — laid down cell by cell they came out
+stretched 2.77 times over, which ate the whole gain. So the finished block
+of letters is turned into ink and run through the picture pipeline: laid on
+its side, scaled into the turned sheet, matched against your machine's keys.
+
+![The same word planned sideways: the preview held the way the finished sheet will be, with Type filling the width of a landscape A4](docs/img/ui-sideways.png)
+
+<div align="center"><sub><code>Type</code> in Caligraphy2 again — 125 × 80 mm upright, 254 × 165 mm read sideways. Twice the size, in proportion, for four times the typing.</sub></div>
 
 ## Typing it
 
@@ -421,9 +384,9 @@ Same modules, no browser, no dependencies:
 
 ```sh
 node tools/cli.mjs machines
-node tools/cli.mjs text "HELLO" --style relief
-node tools/cli.mjs text 'PIANO\nSTIMMER' --style block
 node tools/cli.mjs text "HELLO" --flf fonts/Roman.flf
+node tools/cli.mjs text 'PIANO\nSTIMMER' --flf fonts/Georgia11.flf
+node tools/cli.mjs text "HELLO" --style oblique
 node tools/cli.mjs file rose.txt --paper a4 --red 0-15 --pdf out.pdf
 node tools/cli.mjs image drawing.png --mode tone --turn left --pdf out.pdf
 ```
@@ -493,7 +456,7 @@ nothing reaches the sheet that the machine cannot type.
 | | |
 | --- | --- |
 | [docs/command-line.md](docs/command-line.md) | Every command and flag, and the JSON shapes |
-| [docs/lettering.md](docs/lettering.md) | How the faces are drawn, the stand-in engine, the FIGlet lineage |
+| [docs/lettering.md](docs/lettering.md) | The fonts, the stand-in engine, and setting a word sideways |
 | [docs/adding-a-machine.md](docs/adding-a-machine.md) | Measuring and adding a machine profile |
 | [docs/machine-tricks.md](docs/machine-tricks.md) | Things the machine can do that a printer cannot |
 | [docs/listening-research.md](docs/listening-research.md) | The listening maths: measurements, sources, open questions |
@@ -507,17 +470,18 @@ character against the shape of the cell, not just its darkness. Tone
 matching alone gives you halftone mush; shape matching gives you something
 that reads as a drawing.
 
-The lettering faces are drawn from scratch, informed by the classic FIGlet
-collection (figlet.org) and its decades of contributors — redrawn, not
-converted, and no glyph data is copied. The full lineage, face by face:
-[docs/lettering.md](docs/lettering.md#the-figlet-lineage).
+The lettering comes from the FIGlet project (figlet.org) and its decades of
+contributors: the `.flf` format, the layout algorithm implemented here from
+the FIGfont standard, and the nineteen fonts themselves, which are the work
+of their authors and are named in [fonts/README.md](fonts/README.md).
 
 ## Contributing
 
-Machine profiles and lettering faces are both plain data, and both are meant
-to grow. Open a pull request — and keep `npm test` green: among other
-things it renders every face in every letter and digit, and fails if a
-single character is not on the machine.
+Machine profiles are plain data and are meant to grow; so is the font
+folder, where an `.flf` and a line in `index.json` is the whole of it. Open
+a pull request — and keep `npm test` green: among other things it sets
+every bundled font and every drawn face in every letter and digit, and
+fails if a single character is not on the machine.
 
 ## Licence
 

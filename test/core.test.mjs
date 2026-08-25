@@ -27,7 +27,9 @@ import {
   letter, STYLES, charsUsed, tonesOf, usesTwo, marksOf,
 } from '../src/core/lettering.js';
 import { toneRamp, inkLadder, inkWeights } from '../src/core/ink.js';
-import { fitGrid, sentenceReads, keystrokes } from '../src/core/convert.js';
+import {
+  fitGrid, sentenceReads, keystrokes, blockImage,
+} from '../src/core/convert.js';
 
 let failures = 0;
 const check = (name, fn) => {
@@ -364,9 +366,10 @@ check('a space is never coloured, whatever the scheme', () => {
 });
 
 check('shadow colours the shadow and leaves the face alone', () => {
-  // The point of the scheme: a shadowed style already draws two surfaces
-  // with two characters, so the ribbon can simply follow that division.
-  const art = letter('A', { style: 'shadow', fill: '#', light: '+' });
+  // The point of the scheme: art drawn in two weights lets the ribbon
+  // simply follow that division. Built by hand — no drawn face ships with
+  // a second surface any more, but pasted art still arrives with one.
+  const art = ['##++', '##++', '##++'];
   const map = inkPlan(art, { scheme: 'shadow' });
   art.forEach((line, r) => {
     [...line].forEach((ch, c) => {
@@ -401,7 +404,9 @@ check('more amount means more red, never less', () => {
 check('every scheme in the list is actually implemented', () => {
   // A name in the menu that falls through to "no red" is a control that
   // does nothing, which is the fault this whole feature was replacing.
-  const art = letter('AB', { style: 'shadow', fill: '#', light: '+' });
+  // Hand-built art with several weights and enough rows for the banded
+  // schemes to cut into.
+  const art = ['####', '##++', '##++', '++--', '++--', '----'];
   for (const s of INK_SCHEMES) {
     if (s.id === 'none') continue;
     const opt = { scheme: s.id, amount: 0.5 };
@@ -423,48 +428,24 @@ check('every scheme offered has a name and an explanation', () => {
 console.log('lettering');
 
 check('a word renders to a block of lines', () => {
-  const l = letter('AB', { style: 'block' });
-  assert.strictEqual(l.length, 5);
+  // BLOCK is five rows; extrude doubles them and adds two of depth.
+  const l = letter('AB', { style: 'oblique' });
+  assert.strictEqual(l.length, 12);
   const w = Math.max(...l.map((x) => x.length));
   assert.ok(l.every((x) => x.length <= w), 'a line overran the block');
 });
 
 check('lettering uses only the fill characters it was given', () => {
-  const l = letter('HI', { style: 'block', fill: 'X' });
+  // The '#' placeholder becomes the fill; the '/' and '_' the projection
+  // draws with are literal marks and pass through as themselves.
+  const l = letter('HI', { style: 'oblique', fill: 'X' });
   const used = new Set(l.join('').replace(/ /g, ''));
-  assert.deepStrictEqual([...used], ['X']);
+  assert.deepStrictEqual([...used].sort(), ['/', 'X', '_'].sort());
 });
-
-check('the shadow style uses both characters', () => {
-  const l = letter('A', { style: 'shadow', fill: '#', light: '+' });
-  const used = new Set(l.join('').replace(/ /g, ''));
-  assert.ok(used.has('#') && used.has('+'), [...used].join(''));
-});
-
-check('every hollow style really is hollow', () => {
-  // Compare ink DENSITY, not raw strokes: hollow faces are drawn larger, so
-  // counting strokes would compare two different things and pass for the
-  // wrong reason. This has caught the same mistake twice - at 2x scale the
-  // hollowing silently does nothing.
-  const density = (style) => {
-    const l = letter('OO', { style });
-    const cells = l.length * Math.max(...l.map((x) => x.length));
-    return keystrokes(l) / cells;
-  };
-  const pairs = [['block', 'hollow'], ['big', 'hollowBig']];
-  for (const [solid, thin] of pairs) {
-    const a = density(solid);
-    const b = density(thin);
-    assert.ok(b < a * 0.85,
-      `${thin} ${b.toFixed(2)} is not lighter than ${solid} ${a.toFixed(2)}`);
-  }
-});
-
-
 
 check('unknown characters become blanks, not crashes', () => {
-  const l = letter('A\u4f60B', { style: 'block' });
-  assert.strictEqual(l.length, 5);
+  const l = letter('A\u4f60B', { style: 'oblique' });
+  assert.strictEqual(l.length, 12);
 });
 
 
@@ -516,32 +497,6 @@ check('styles have no blank rows top or bottom', () => {
   }
 });
 
-
-check('every letter of the calligraphic hand is entered and left', () => {
-  // The flourishes are derived once rather than drawn into all thirty-eight
-  // glyphs (see penned), which is the only way they come out the same - but
-  // it also means one wrong default strips them from every glyph at once
-  // and leaves a face that is Block again, only three times as tall.
-  for (const ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') {
-    const art = letter(ch, { style: 'script', fill: '#' });
-    assert.strictEqual(art[0].trim(), '/', `${ch} is not entered`);
-    assert.ok(art[art.length - 1].trimStart().startsWith('##'),
-      `${ch} has no terminal: ${JSON.stringify(art[art.length - 1])}`);
-  }
-});
-
-check('the calligraphic hand leans without falling over', () => {
-  // slant() shears half a column per row, which on a sixteen-row face is
-  // eight columns and takes a four-letter word past the width of an upright
-  // A4 line. `lean` is half of that; if it ever goes back to the full slant
-  // this fails rather than quietly wrapping every word onto two lines.
-  const upright = letter('TYPE', { style: 'script', fill: '#' });
-  const leaning = letter('TYPE', { style: 'scriptLean', fill: '#' });
-  const cols = (art) => Math.max(...art.map((r) => r.length));
-  assert.ok(cols(leaning) > cols(upright), 'the leaning face did not lean');
-  assert.ok(cols(leaning) <= 82,
-    `${cols(leaning)} columns will not fit an upright A4 line`);
-});
 
 check('every lettering style comes out typeable, on both machines', () => {
   // The whole point, and now the end of the chain rather than a property of
@@ -599,10 +554,10 @@ check('every style has a stand-in for every mark, on both machines', () => {
 
 check('the stand-in engine is actually doing something', () => {
   // A test that only checks `missing` is empty would also pass if every face
-  // happened to use nothing but letters. These two are the reason the engine
-  // exists: the peaks face is built out of carets and the SM7 has none.
+  // happened to use nothing but letters. The caret is the reason the engine
+  // exists: FIGlet faces are full of them and the SM7 has none.
   const have = new Set(charset(sm7));
-  const { swaps } = standIns(marksOf('peaks'), { have });
+  const { swaps } = standIns(['^'], { have });
   assert.strictEqual(swaps.get('^'), '´', 'the caret was not stood in for');
 
   const { missing } = standIns(['☃'], { have });
@@ -1182,14 +1137,14 @@ check('the faintest tone is a mark on the line, not one above it', () => {
 console.log('several lines of lettering');
 
 check('a newline makes a second line of letters', () => {
-  const one = letter('AB', { style: 'block', fill: '#' });
-  const two = letter('AB\nCD', { style: 'block', fill: '#' });
+  const one = letter('AB', { style: 'oblique', fill: '#' });
+  const two = letter('AB\nCD', { style: 'oblique', fill: '#' });
   assert.ok(two.length > one.length * 2,
     `${two.length} rows for two lines against ${one.length} for one`);
 });
 
 check('the two blocks are separated by blank rows', () => {
-  const two = letter('AB\nCD', { style: 'block', fill: '#' });
+  const two = letter('AB\nCD', { style: 'oblique', fill: '#' });
   const blanks = two.filter((l) => !l.trim()).length;
   assert.ok(blanks >= 1, 'the two lines run straight into each other');
   // Never at the ends - those are keystrokes nobody types.
@@ -1199,14 +1154,14 @@ check('the two blocks are separated by blank rows', () => {
 check('a blank line is kept as a gap', () => {
   // Otherwise there is no way to ask for air between two lines, and a blank
   // line silently does nothing.
-  const tight = letter('AB\nCD', { style: 'block', fill: '#' });
-  const airy = letter('AB\n\nCD', { style: 'block', fill: '#' });
+  const tight = letter('AB\nCD', { style: 'oblique', fill: '#' });
+  const airy = letter('AB\n\nCD', { style: 'oblique', fill: '#' });
   assert.ok(airy.length > tight.length,
     `${airy.length} rows against ${tight.length} - the blank line vanished`);
 });
 
 check('every line of a multi-line word is drawn', () => {
-  const art = letter('A\nB\nC', { style: 'block', fill: '#' }).join('\n');
+  const art = letter('A\nB\nC', { style: 'oblique', fill: '#' }).join('\n');
   // Three separate blocks means three groups of inked rows.
   const groups = art.split('\n').reduce((n, l, i, all) =>
     n + (l.trim() && !(all[i - 1] ?? '').trim() ? 1 : 0), 0);
@@ -1214,25 +1169,25 @@ check('every line of a multi-line word is drawn', () => {
 });
 
 check('a single line is unchanged by the multi-line support', () => {
-  // The common case must not have grown a blank row or shifted.
-  const l = letter('HELLO', { style: 'big', fill: '#' });
-  assert.strictEqual(l.length, 7);
+  // The common case must not have grown a blank row or shifted. BIG is
+  // seven rows; extrude doubles them and adds two of depth.
+  const l = letter('HELLO', { style: 'obliqueBig', fill: '#' });
+  assert.strictEqual(l.length, 16);
   assert.ok(l.every((x) => x.trim()), 'a blank row crept into one line');
 });
 
 console.log('wrapping lettering to the paper');
 
 check('a sentence too wide for the sheet is broken at spaces', () => {
-  // Measured on an SM7 at pica: "GUTEN MORGEN LYON" in Block is 101 columns
-  // against the 82 an upright A4 holds - 123% of the sheet. It simply ran
-  // off the paper.
+  // Every word here fits the margins on its own; the sentence as one line
+  // does not, so it has to break rather than run off the paper.
   const cap = textArea(paperById('a4'), sm7).cols;
-  const loose = letter('GUTEN MORGEN LYON', { style: 'block', tones: ['B'] });
-  assert.strictEqual(Math.max(...loose.map((l) => l.length)), 101,
-    'the unwrapped width has moved; the rest of this test assumes it');
+  const text = 'HALLO WELT WIE GEHT';
+  const loose = letter(text, { style: 'oblique', tones: ['B'] });
+  assert.ok(Math.max(...loose.map((l) => l.length)) > cap,
+    'the unwrapped sentence should overrun the margins, or this tests nothing');
 
-  const wrapped = letter('GUTEN MORGEN LYON',
-    { style: 'block', tones: ['B'], maxCols: cap });
+  const wrapped = letter(text, { style: 'oblique', tones: ['B'], maxCols: cap });
   const width = Math.max(...wrapped.map((l) => l.length));
   assert.ok(width <= cap, `wrapped to ${width} columns against a cap of ${cap}`);
   assert.ok(wrapped.length > loose.length, 'it did not take more rows');
@@ -1243,16 +1198,16 @@ check('it fits, unless a single word cannot be broken', () => {
    * The guarantee, stated precisely, because "never wider than the sheet"
    * is not achievable and pretending otherwise would mean hyphenating.
    *
-   * Wrapping can only break at spaces. In a heavy face one word is already
-   * over the limit on its own - measured on an SM7 at pica, "MORGEN" in
-   * Hollow is 95 columns against 66 inside the margins - and no amount of
-   * wrapping helps. So: the result is within the cap whenever every word
-   * fits, and otherwise no wider than the widest single word needs.
+   * Wrapping can only break at spaces. In the big size one word is already
+   * over the limit on its own - "MORGEN" in Three dimensional, big overruns
+   * the 66 columns inside the margins - and no amount of wrapping helps.
+   * So: the result is within the cap whenever every word fits, and
+   * otherwise no wider than the widest single word needs.
    */
   const a4 = paperById('a4');
   const cap = textArea(a4, sm7).cols;
   const text = 'HALLO WELT WIE GEHT ES DIR HEUTE AM MORGEN';
-  for (const style of ['block', 'big', 'wide', 'hollow', 'relief', 'slab']) {
+  for (const style of ['oblique', 'obliqueBig']) {
     const tones = ['B', '2', '-'];
     const art = letter(text, { style, tones, maxCols: cap });
     const width = Math.max(...art.map((l) => l.length));
@@ -1270,30 +1225,28 @@ check('it fits, unless a single word cannot be broken', () => {
   }
 });
 
-check('a word planned sideways wraps narrower and comes out wider', () => {
-  // Both halves matter, and the first one reads like a regression until you
-  // see the second. Turning gives a word *fewer* columns to wrap into — 60
-  // inside the margins against 66 — so it takes more rows. What it gets back
-  // is millimetres: those 60 cells reach 254 mm of paper where the 66 reach
-  // 168, because a turned cell is 4.23 mm wide and an upright one is 2.54.
-  const a4 = paperById('a4');
-  const up = textArea(a4, sm7).cols;
-  const across = planningGrid(textArea(a4, sm7), 'left').cols;
-  assert.ok(across < up, `${across} columns turned against ${up} upright`);
+check('a word planned sideways becomes a picture, not a stretched block', () => {
+  /*
+   * It used to be laid down cell by cell, which stretched it 2.77 times
+   * over: a quarter turn swaps the cell's 2.54 mm width and its 4.23 mm
+   * height, and fixed letterforms cannot follow the way a photograph can.
+   * So the block becomes ink first — blockImage(), three by five pixels
+   * per cell, the cell's own shape near enough exactly — and the picture
+   * pipeline takes it from there, resampling it like a drawing, in
+   * proportion.
+   */
+  const block = letter('TYPE', { style: 'oblique', tones: ['B'] });
+  const img = blockImage(block);
+  const cols = Math.max(...block.map((l) => l.length));
+  assert.strictEqual(img.width, cols * 3, 'three pixels per cell across');
+  assert.strictEqual(img.height, block.length * 5, 'five pixels per cell down');
 
-  const text = 'HALLO WELT WIE GEHT ES DIR';
-  const tall = letter(text, { style: 'block', tones: ['B'], maxCols: up });
-  const wide = letter(text, { style: 'block', tones: ['B'], maxCols: across });
-  assert.ok(Math.max(...wide.map((l) => l.length)) <= across,
-    'wrapped past the width it was given');
-  assert.ok(across * cellHeightMm(sm7) > up * cellWidthMm(sm7) * 1.4,
-    'turning did not buy the millimetres it is for');
-
-  // And once it is laid down, what was its width is a count of typed lines.
-  const laid = turnRows(wide, 'left', new Set([...'B ']));
-  assert.strictEqual(laid.length, Math.max(...wide.map((l) => l.length)));
-  assert.ok(laid.length <= sheetGrid(a4, sm7).rows,
-    `${laid.length} lines on a sheet that holds ${sheetGrid(a4, sm7).rows}`);
+  const cells = block.join('').replace(/ /g, '').length;
+  let dark = 0;
+  for (let i = 0; i < img.data.length; i += 4) {
+    if (img.data[i] === 0) dark++;
+  }
+  assert.strictEqual(dark, cells * 15, 'a cell is 15 pixels of ink, or none');
 });
 
 check('a single word too wide to break is left whole', () => {
@@ -1303,22 +1256,22 @@ check('a single word too wide to break is left whole', () => {
   // into a mess.
   const cap = textArea(paperById('a4'), sm7).cols;
   const word = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCD';
-  const art = letter(word, { style: 'block', tones: ['B'], maxCols: cap });
-  const plain = letter(word, { style: 'block', tones: ['B'] });
+  const art = letter(word, { style: 'oblique', tones: ['B'], maxCols: cap });
+  const plain = letter(word, { style: 'oblique', tones: ['B'] });
   assert.deepStrictEqual(art, plain, 'the word was broken up');
 
   // And the refusal is still raised, which is what tells the user to act.
   const width = Math.max(...art.map((l) => l.length));
   const stop = setUp(width, art.length, paperById('a4'), sm7).warnings
     .some((w) => w.level === 'stop');
-  assert.ok(stop, 'no refusal for a motif 239 columns wide');
+  assert.ok(stop, 'no refusal for a motif far wider than the sheet');
 });
 
 check('a long word does not drag the next one onto its line', () => {
   const cap = textArea(paperById('a4'), sm7).cols;
   const art = letter('ABCDEFGHIJKLMNOPQRSTUVWXYZ HI',
-    { style: 'block', tones: ['B'], maxCols: cap });
-  const alone = letter('HI', { style: 'block', tones: ['B'] });
+    { style: 'oblique', tones: ['B'], maxCols: cap });
+  const alone = letter('HI', { style: 'oblique', tones: ['B'] });
   /*
    * The short word ends up on a line of its own, so the last block carries
    * exactly as much ink as 'HI' rendered by itself.
@@ -1342,14 +1295,17 @@ check('the lines of one word are centred against each other', () => {
    * block was laid flush left and only the box around them was centred, so a
    * short last line hung left of centre under a `Centred` heading.
    */
-  const art = letter('MORGEN\nHI', { style: 'block', tones: ['B'] });
+  const art = letter('MORGEN\nHI', { style: 'oblique', tones: ['B'] });
   const w = Math.max(...art.map((l) => l.length));
-  const short = art[art.length - 1];
-  const left = short.length - short.trimStart().length;
-  const right = w - short.replace(/\s+$/, '').length;
+  // The short block's envelope, not its last row: extrude's bottom row
+  // stops short of the depth it casts up and to the right.
+  const lastBlank = art.reduce((at, l, i) => (l.trim() ? at : i), -1);
+  const shortRows = art.slice(lastBlank + 1);
+  const left = Math.min(...shortRows.map((l) => l.length - l.trimStart().length));
+  const right = w - Math.max(...shortRows.map((l) => l.replace(/\s+$/, '').length));
   assert.ok(Math.abs(left - right) <= 1,
-    `the short line sits ${left} from the left and ${right} from the right`);
-  assert.ok(left > 1, 'the short line was not moved at all');
+    `the short block sits ${left} from the left and ${right} from the right`);
+  assert.ok(left > 1, 'the short block was not moved at all');
 });
 
 check('top left leaves the lines flush left', () => {
@@ -1357,7 +1313,7 @@ check('top left leaves the lines flush left', () => {
   // A word set top left that quietly centred its own lines would be
   // answering a question with the other question's answer.
   const art = letter('MORGEN\nHI',
-    { style: 'block', tones: ['B'], align: 'left' });
+    { style: 'oblique', tones: ['B'], align: 'left' });
   const short = art[art.length - 1];
   assert.strictEqual(short.length - short.trimStart().length, 0,
     'the short line was indented although the word is set left');
@@ -1389,8 +1345,8 @@ check('no motif carries a blank column down its whole left edge', () => {
 
 check('wrapping respects the line breaks already there', () => {
   const cap = textArea(paperById('a4'), sm7).cols;
-  const art = letter('GUTEN MORGEN LYON\n\nHI',
-    { style: 'block', tones: ['B'], maxCols: cap });
+  const art = letter('HALLO WELT WIE GEHT\n\nHI',
+    { style: 'oblique', tones: ['B'], maxCols: cap });
   assert.ok(Math.max(...art.map((l) => l.length)) <= cap);
   // The deliberate blank line survives the wrapping.
   assert.ok(art.some((l) => !l.trim()), 'the blank line was lost');
@@ -1398,7 +1354,7 @@ check('wrapping respects the line breaks already there', () => {
 
 check('a word that fits is not touched', () => {
   // Wrapping must be invisible when it has nothing to do.
-  for (const style of ['block', 'big', 'relief']) {
+  for (const style of ['oblique', 'obliqueBig']) {
     const tones = ['B', '2', '-'];
     assert.deepStrictEqual(
       letter('HI', { style, tones, maxCols: 66 }),
@@ -1407,73 +1363,14 @@ check('a word that fits is not touched', () => {
   }
 });
 
-console.log('the raised face has a light direction');
-
-check('raised draws three distinct weights', () => {
-  // Two tones is a hollow letter with a fill: an edge lit from every side at
-  // once has no light direction and nothing stands off the page.
-  for (const style of ['relief', 'reliefBig']) {
-    const art = letter('O', { style, tones: ['1', '2', '3'] }).join('');
-    for (const t of ['1', '2', '3']) {
-      assert.ok(art.includes(t), `${style} never used tone ${t}`);
-    }
-  }
-});
-
-check('the lit edge is up and left, the shaded edge down and right', () => {
-  // The direction is the whole point: with no direction it is a hollow
-  // letter with a fill. The leftmost cell of the bottom row is a corner and
-  // is lit, so this counts rather than forbidding.
-  const art = letter('L', { style: 'relief', tones: ['1', '2', '3'] });
-  const count = (row, t) => [...row].filter((c) => c === t).length;
-  const top = art[0];
-  const bottom = art[art.length - 1];
-  assert.ok(count(top, '1') > 0 && count(top, '3') === 0,
-    `the top row is not lit: ${top}`);
-  assert.ok(count(bottom, '3') > count(bottom, '1'),
-    `the bottom row is not shaded: ${bottom}`);
-
-  // And the same sideways, on a row that crosses the upright.
-  const mid = art[Math.floor(art.length / 2)];
-  assert.ok(mid.indexOf('1') < mid.lastIndexOf('3'),
-    `the light does not run left to right: ${mid}`);
-});
-
-check('a two-key machine degrades the raised face instead of failing', () => {
-  // The shaded edge falls back to the body, never to the lit edge - that
-  // would paint both edges the same and give a solid blob.
-  const art = letter('O', { style: 'relief', tones: ['A', 'B'] }).join('');
-  assert.ok(art.includes('A') && art.includes('B'));
-  assert.ok(!/[^AB ]/.test(art), `leaked a placeholder: ${art.slice(0, 40)}`);
-});
-
-check('the shadow scheme finds the shadow whatever it is drawn with', () => {
-  // It used to test a fixed list of characters, which named '+' and ':'
-  // because those were the only light characters the old code could pick.
-  // On an SM7 the shadow now comes out as '-' or '2', neither of which was
-  // on the list, and the scheme quietly reddened nothing.
-  for (const tones of [['#', '+'], ['B', '-'], ['M', '2'], ['W', 'x']]) {
-    const art = letter('AB', { style: 'shadow', tones });
-    const map = inkPlan(art, { scheme: 'shadow' });
-    let face = 0, shade = 0;
-    art.forEach((line, r) => [...line].forEach((ch, c) => {
-      if (ch === tones[0]) { face++; assert.strictEqual(map[r][c], 'black',
-        `${tones.join('/')}: the face went red`); }
-      if (ch === tones[1]) { shade++; assert.strictEqual(map[r][c], 'red',
-        `${tones.join('/')}: the shadow stayed black`); }
-    }));
-    assert.ok(face > 0 && shade > 0, `${tones.join('/')}: nothing drawn`);
-  }
-});
-
 check('charsUsed names the fixed marks a drawn face needs', () => {
-  // `drafted` draws every stroke with a character chosen for its direction,
-  // so it takes no tone at all - but it still needs three specific keys, and
-  // a picker that only reported tones would say it needs nothing.
-  assert.deepStrictEqual(charsUsed('drafted', ['B', '2', '-']).sort(),
-    ['!', '/', '_']);
-  assert.deepStrictEqual(charsUsed('block', ['B', '2', '-']), ['B']);
-  assert.deepStrictEqual(charsUsed('relief', ['B', '2', '-']), ['B', '2', '-']);
+  // The three-dimensional face draws its depth with `/` and `_`, so it
+  // needs those two keys as well as the tone it fills with - and a picker
+  // that only reported tones would say it needs only the tone.
+  assert.deepStrictEqual(charsUsed('oblique', ['B', '2', '-']).sort(),
+    ['/', 'B', '_'].sort());
+  assert.deepStrictEqual(charsUsed('obliqueBig', ['B', '2', '-']).sort(),
+    ['/', 'B', '_'].sort());
 });
 
 console.log(failures ? `\n${failures} failed` : '\nall green');

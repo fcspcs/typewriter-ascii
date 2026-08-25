@@ -20,7 +20,7 @@ import {
 } from '../core/compose.js';
 import { buildAtlas, nearestChar } from '../core/glyphs.js';
 import {
-  prepare, fitGrid, toCharacters, toSentence, cellAspect,
+  prepare, fitGrid, toCharacters, toSentence, cellAspect, blockImage,
 } from '../core/convert.js';
 import {
   inkPlan, INK_SCHEMES, inkTally, inkLevels, parseRows, strikesInLine, runsOf,
@@ -598,6 +598,43 @@ function flfLines(font, word, { have, maxCols }) {
   };
 }
 
+/**
+ * The word as a picture, for a motif planned sideways.
+ *
+ * With a canvas the marks are drawn as the glyphs they are, at the cell's
+ * true 2.54 : 4.23 shape, so a hairline stays a hairline through the
+ * resample. Without one — the tests — each cell becomes a solid patch of
+ * the cell's shape instead: see blockImage() in convert.js, which is also
+ * what the command line uses.
+ */
+function letterImage(rows) {
+  const CW = 12;
+  const CH = 20;                                  // 2.54 : 4.23, near enough
+  try {
+    const cols = Math.max(1, ...rows.map((r) => r.length));
+    const cv = document.createElement('canvas');
+    cv.width = cols * CW;
+    cv.height = Math.max(1, rows.length) * CH;
+    const ctx = cv.getContext('2d');
+    if (!ctx) return blockImage(rows);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = '#000';
+    // The same face the atlas measures, so the ink the matcher reads is the
+    // ink the preview shows.
+    ctx.font = `${CH}px "Courier New", monospace`;
+    ctx.textBaseline = 'top';
+    rows.forEach((row, y) => {
+      [...row].forEach((c, x) => {
+        if (c !== ' ') ctx.fillText(c, x * CW, y * CH);
+      });
+    });
+    return ctx.getImageData(0, 0, cv.width, cv.height);
+  } catch {
+    return blockImage(rows);
+  }
+}
+
 function convert() {
   const tab = currentTab();
   /*
@@ -658,8 +695,48 @@ function convert() {
       word = $('letterText').placeholder;
       ghost = true;
     }
-    if (word.trim() && isFlf($('letterStyle').value)) {
-      const font = flfFont($('letterStyle').value.slice(FLF.length));
+    const flf = isFlf($('letterStyle').value);
+    const font = flf && word.trim()
+      ? flfFont($('letterStyle').value.slice(FLF.length)) : null;
+    if (word.trim() && isTurned(turn) && (!flf || font)) {
+      /*
+       * Planned sideways, the word is set as a picture.
+       *
+       * Letterforms cannot be resampled the way a photograph can, and
+       * laying the finished block down cell by cell stretched it 2.77
+       * times over — a quarter turn swaps the cell's 2.54 mm width and
+       * 4.23 mm height, and fixed glyphs have no way to follow. So the
+       * block is drawn as ink and handed to the pipeline a picture goes
+       * through, which keeps the proportions and spends the turned sheet's
+       * millimetres: a word really does come out bigger. The marks are
+       * chosen by the matcher rather than by the face — that is the price,
+       * and the hint says so where the face is picked. No stand-ins here:
+       * nothing is typed that the matcher did not pick from your keys.
+       */
+      let block;
+      if (flf) {
+        const fset = flfLetter(font, word, { maxCols: 0 });
+        if (fset.unknown.size && !ghost) {
+          note(`${font.name} has no ${[...fset.unknown].join(' ')} — left blank.`);
+        }
+        block = fset.lines;
+      } else {
+        block = letter(word, {
+          style: $('letterStyle').value, maxCols: 0,
+          align: $('align').value === 'topleft' ? 'left' : 'centre',
+        });
+      }
+      if (block.some((l) => l.trim())) {
+        const { field } = prepare(letterImage(block), {
+          invert: false, contrast: 1, mode: 'shape', maxCols, turn,
+        });
+        const grid = fitGrid(room.cols, Math.min(maxCols, sheet.rows),
+                             field.w, field.h, cellAspect(app.machine));
+        lines = toCharacters(field, grid.cols, grid.rows, app.atlas, {
+          mode: 'shape', allowed: app.chosen, toneWeight: 0.35,
+        });
+      }
+    } else if (word.trim() && flf) {
       if (font) {
         const r = flfLines(font, word, { have, maxCols: planRoom.cols });
         /*
@@ -682,7 +759,7 @@ function convert() {
                `left blank.`);
         }
         if (said.length && !ghost) note(said.join(' '));
-        lines = turnRows(r.lines, turn, have);
+        lines = r.lines;
       }
     } else if (word.trim()) {
       const style = $('letterStyle').value;
@@ -690,17 +767,14 @@ function convert() {
        * Wrapped to the margins, not to the edge of the paper.
        *
        * `textArea` rather than `sheetGrid`, and it is worth saying why,
-       * because both "fit". Measured on an SM7 at pica, "GUTEN MORGEN LYON"
-       * in Block: wrapped to the sheet's 82 columns it comes out 71 wide and
-       * setUp() answers "wider than the usual margins - 71 against 66";
-       * wrapped to the margins' 66 it is 65 wide, in the same eleven rows,
-       * and setUp() says nothing at all. Same amount of typing, one fewer
-       * thing to read past. Wrapping to the sheet edge would put that note
-       * on essentially every sentence, which trains people to ignore the one
-       * place the app warns them.
+       * because both "fit". Wrapped to the margins a sentence sits inside
+       * them and setUp() says nothing; wrapped to the sheet edge it earns
+       * the "wider than the usual margins" note on essentially every
+       * sentence, which trains people to ignore the one place the app
+       * warns them.
        */
       const { swaps } = letterStandIns(style);
-      lines = turnRows(letter(word, {
+      lines = letter(word, {
         style, tones: letterTones(style), maxCols: planRoom.cols,
         substitutes: swaps,
         /*
@@ -710,7 +784,7 @@ function convert() {
          * which is the half that used to be flush left whatever you chose.
          */
         align: $('align').value === 'topleft' ? 'left' : 'centre',
-      }), turn, have);
+      });
     }
   } else if (tab === 'paste') {
     const raw = $('pasted').value.replace(/\t/g, '    ');
@@ -1277,8 +1351,11 @@ function syncLetterHint() {
       opt.textContent = `${name} — no stand-in for ${missing.join(' ')}`;
       continue;
     }
+    // Planned sideways nothing is too wide: the word is set as a picture
+    // and scaled to the sheet, so the label would warn about a fit that
+    // cannot fail.
     const w = widestWord(word, opt.value);
-    opt.textContent = w > room
+    opt.textContent = !isTurned(app.turn) && w > room
       ? `${name} — too wide, ${w} of ${room} columns` : name;
   }
 
@@ -1301,23 +1378,41 @@ function syncLetterHint() {
       el.textContent = `${name} — fetching the font…`;
       return;
     }
-    const have = new Set(charset(app.machine).filter((c) => app.chosen.has(c)));
-    const r = flfLines(font, word, { have, maxCols: room });
-    const w = Math.max(0, ...r.lines.map((l) => l.length));
     const parts = [];
-    if (w > room) {
-      parts.push(`Too wide — ${w} columns against the ${room} this sheet ` +
-        `holds, and a word is only ever broken at a space.`);
-    }
-    if (r.swaps.size) {
-      parts.push(`Typed ${[...r.swaps]
-        .map(([a, b]) => `${a} as ${b}`).join(', ')}.`);
-    }
-    if (r.missing.length) {
-      parts.push(`No stand-in for ${r.missing.join(' ')} — left blank.`);
+    if (isTurned(app.turn)) {
+      // Sideways there are no stand-ins and no refusals to report: the word
+      // is set as a picture, scaled to the sheet, and every mark on it was
+      // picked from this machine's keys by the matcher.
+      parts.push('Planned sideways, the word is set as a picture — the ' +
+        'letterforms keep their shape, struck in marks matched from your keys.');
+    } else {
+      const have = new Set(charset(app.machine).filter((c) => app.chosen.has(c)));
+      const r = flfLines(font, word, { have, maxCols: room });
+      const w = Math.max(0, ...r.lines.map((l) => l.length));
+      if (w > room) {
+        parts.push(`Too wide — ${w} columns against the ${room} this sheet ` +
+          `holds, and a word is only ever broken at a space.`);
+      }
+      if (r.swaps.size) {
+        parts.push(`Typed ${[...r.swaps]
+          .map(([a, b]) => `${a} as ${b}`).join(', ')}.`);
+      }
+      if (r.missing.length) {
+        parts.push(`No stand-in for ${r.missing.join(' ')} — left blank.`);
+      }
     }
     parts.push('A FIGlet font, set exactly as received — fonts/README.md ' +
       'says whose it is.');
+    if (app.ghost) {
+      parts.push(`Showing ${$('letterText').placeholder} until you type something.`);
+    }
+    el.textContent = parts.join(' ');
+    return;
+  }
+
+  if (isTurned(app.turn)) {
+    const parts = ['Planned sideways, the word is set as a picture — the ' +
+      'letterforms keep their shape, struck in marks matched from your keys.'];
     if (app.ghost) {
       parts.push(`Showing ${$('letterText').placeholder} until you type something.`);
     }
@@ -1363,8 +1458,7 @@ function syncLetterHint() {
   }
   if (used.length) {
     parts.push(`${weight} — ${used.join(' ')}.` +
-      (stood.length ? ` Typed ${stood.join(', ')}.` : '') +
-      ` Hollow and stencil faces cost far fewer keystrokes than solid ones.`);
+      (stood.length ? ` Typed ${stood.join(', ')}.` : ''));
   }
   // Said where the faces are chosen, because that is where somebody
   // clicking through them is looking — and because the preview is

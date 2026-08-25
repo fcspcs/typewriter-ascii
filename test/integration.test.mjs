@@ -270,7 +270,7 @@ await check('the red half is off until it is switched on', async () => {
   // decision, not a style, so it starts off and says so.
   [...window.document.querySelectorAll('.tab')]
     .find((t) => t.dataset.tab === 'text').click();
-  $('letterStyle').value = 'shadow';
+  $('letterStyle').value = 'oblique';
   $('letterStyle').dispatchEvent(new window.Event('change'));
   $('letterText').value = 'AB';
   $('letterText').dispatchEvent(new window.Event('input'));
@@ -303,20 +303,17 @@ await check('every scheme offered reddens something', async () => {
   }
 });
 
-await check('shadow is only offered where there is a shadow to colour', async () => {
-  // It colours the second surface of a lettering style that draws one.
-  // On a plain face there is no second surface and it would do nothing.
-  $('letterStyle').value = 'shadow';
-  $('letterStyle').dispatchEvent(new window.Event('change'));
-  await wait(300);
-  assert([...$('ink').options].some((o) => o.value === 'shadow'),
-    'not offered on a shadowed style');
-
-  $('letterStyle').value = 'block';
+await check('shadow is not offered where there is no shadow to colour', async () => {
+  // It colours the second surface of art that draws one. No drawn face
+  // ships with a second surface any more — the three-dimensional face is
+  // one weight plus its projection marks — and a picture never had a
+  // shadow layer. The scheme itself stays for pasted art that arrives in
+  // two weights.
+  $('letterStyle').value = 'oblique';
   $('letterStyle').dispatchEvent(new window.Event('change'));
   await wait(300);
   assert(![...$('ink').options].some((o) => o.value === 'shadow'),
-    'offered on a plain face, where it cannot do anything');
+    'offered on a face with no second surface');
 
   [...window.document.querySelectorAll('.tab')]
     .find((t) => t.dataset.tab === 'image').click();
@@ -330,9 +327,9 @@ await check('shadow is only offered where there is a shadow to colour', async ()
 });
 
 await check('the amount slider only shows where it is read', async () => {
-  $('letterStyle').value = 'shadow';
+  $('letterStyle').value = 'oblique';
   $('letterStyle').dispatchEvent(new window.Event('change'));
-  await setInk('shadow');
+  await setInk('bands');
   assert($('inkAmountRow').hidden,
     'an amount is offered for a scheme that takes its rule from the motif');
 
@@ -822,7 +819,7 @@ const motifCols = () => Math.max(0,
     .filter((e) => !e.classList.contains('now'))
     .map((e) => e.textContent.replace(/\u00a0/g, ' ').replace(/\s+$/, '').length));
 
-const typeWord = async (text, style = 'block') => {
+const typeWord = async (text, style = 'oblique') => {
   [...window.document.querySelectorAll('.tab')]
     .find((t) => t.dataset.tab === 'text').click();
   $('letterStyle').value = style;
@@ -846,15 +843,24 @@ const typeWord = async (text, style = 'block') => {
  * business here.
  */
 const shortLineOffsets = () => {
-  const rows = $('mini').textContent.split('\n').filter((r) => r.trim());
-  const edges = rows.map((r) => ({
+  const all = $('mini').textContent.split('\n');
+  while (all.length && !all[all.length - 1].trim()) all.pop();
+  const rows = all.filter((r) => r.trim());
+  const edges = (rs) => rs.map((r) => ({
     left: r.length - r.trimStart().length,
     right: r.replace(/\s+$/, '').length,
   }));
-  const from = Math.min(...edges.map((e) => e.left));
-  const to = Math.max(...edges.map((e) => e.right));
-  const last = edges[edges.length - 1];
-  return { left: last.left - from, right: to - last.right };
+  const whole = edges(rows);
+  const from = Math.min(...whole.map((e) => e.left));
+  const to = Math.max(...whole.map((e) => e.right));
+  // The last *block's* envelope, not its last row: extrude's bottom row
+  // stops short of the depth the projection casts up and to the right.
+  const lastBlank = all.reduce((at, l, i) => (l.trim() ? at : i), -1);
+  const block = edges(all.slice(lastBlank + 1).filter((r) => r.trim()));
+  return {
+    left: Math.min(...block.map((e) => e.left)) - from,
+    right: to - Math.max(...block.map((e) => e.right)),
+  };
 };
 
 const setOrientation = async (which) => {
@@ -878,7 +884,7 @@ await check('the paper stays upright whichever way the motif is planned',
      * A sheet goes in on its short edge. That is the edge the platen is as
      * wide as, and no setting on this page can change it.
      */
-    await typeWord('HI', 'block');
+    await typeWord('HI', 'oblique');
     const view = window.document.querySelector('.paper-view');
     for (const which of ['upright', 'left', 'right']) {
       await setOrientation(which);
@@ -1091,7 +1097,7 @@ await check('a small word stays sideways once sideways is chosen', async () => {
    * depending on the word. It is a stated choice now, and only that.
    */
   await setOrientation('left');
-  await typeWord('HI', 'block');
+  await typeWord('HI', 'oblique');
   assert(/turn the finished sheet to the left/i
     .test($('instructions').textContent),
     'sideways was chosen but the instructions do not say so');
@@ -1349,11 +1355,10 @@ console.log('lettering wraps to the sheet');
 
 await check('a long sentence is broken instead of running off the paper',
   async () => {
-    // Measured on an SM7 at pica: "GUTEN MORGEN LYON" in Block is 101
-    // columns against the 82 an upright A4 holds - 123% of the sheet. It
-    // overran the preview.
+    // Every word here fits the margins on its own; the sentence as one
+    // line does not, so it has to break rather than overrun the preview.
     await setOrientation('upright');
-    await typeWord('GUTEN MORGEN LYON', 'block');
+    await typeWord('HALLO WELT WIE GEHT', 'oblique');
 
     const width = motifCols();
     assert(width > 0, 'nothing was drawn');
@@ -1367,62 +1372,34 @@ await check('a long sentence is broken instead of running off the paper',
 
 await check('wrapping to the margins leaves nothing to complain about',
   async () => {
-    // textArea rather than sheetGrid. Wrapped to the sheet's 82 columns the
-    // same sentence is 71 wide and setUp() answers "wider than the usual
-    // margins - 71 against 66"; wrapped to the margins it is 65 wide in the
-    // same eleven rows and setUp() says nothing. Same typing, one fewer
-    // thing to read past - and a note on every sentence trains people to
-    // ignore the one place the app warns them.
+    // textArea rather than sheetGrid: wrapped to the margins a sentence
+    // sits inside them and setUp() says nothing. A note on every sentence
+    // trains people to ignore the one place the app warns them.
     assert($('warnings').textContent.trim() === '',
       `a warning survived wrapping: ${$('warnings').textContent}`);
   });
 
-await check('planning sideways wraps narrower and reads wider', async () => {
+await check('planning sideways sets the word as a picture', async () => {
   /*
-   * Both halves matter, and the first reads like a regression until you see
-   * the second. A turned sheet gives a word FEWER columns to wrap into — 60
-   * inside the margins against 66 — so it takes more rows. What it gets back
-   * is millimetres: those 60 cells reach 254 mm of paper where 66 upright
-   * cells reach 168.
-   *
-   * The old test here asserted the opposite ("turning the sheet takes fewer
-   * rows") and was true only because the sheet was pretending to be 297 mm
-   * wide.
+   * A turned cell is 4.23 mm wide against 2.54 upright, so the same sheet
+   * reads half again as wide. Laying fixed letterforms down cell by cell
+   * stretched them 2.77 times over; planned sideways the word is set as a
+   * picture instead — scaled into the turned sheet, proportions kept.
    */
   await setOrientation('upright');
-  await typeWord('HALLO WELT WIE GEHT ES DIR', 'block');
+  await typeWord('HALLO WELT WIE GEHT ES DIR', 'oblique');
   const upright = motifCols();
   assert(upright > 0 && upright <= 66,
     `${upright} columns against upright margins of 66`);
 
   await setOrientation('left');
-  // Laid down, what was the motif's width is now a count of typed lines.
   const lines = window.document.querySelectorAll('.sheet .ln').length;
   assert(lines <= 70,
     `${lines} lines on an A4 that holds 70`);
-  assert(motifCols() <= 60,
-    `${motifCols()} columns typed, against the 60 a turned A4 wraps to`);
-  assert(!/warn stop/.test($('warnings').innerHTML),
-    `refused after wrapping: ${$('warnings').textContent}`);
-  await setOrientation('upright');
-});
-
-await check('the layout is wrapped for the way it will be read', async () => {
-  /*
-   * The fault this guards against used to be subtle and is now impossible,
-   * which is the reason for stating it. Deciding the orientation *after*
-   * laying the word out meant wrapping to one width and printing on another.
-   * The turn is stated up front, so each way round wraps to its own margins.
-   */
-  await setOrientation('upright');
-  await typeWord('GUTEN MORGEN LYON', 'block');
   assert(motifCols() <= 66,
-    `laid out for a sheet it is not on: ${motifCols()} columns against ` +
-    `upright margins of 66`);
-
-  await setOrientation('left');
-  assert(motifCols() <= 60,
-    `${motifCols()} columns typed, against turned margins of 60`);
+    `${motifCols()} columns typed, more than the margins hold`);
+  assert(!/warn stop/.test($('warnings').innerHTML),
+    `refused although the picture path always fits: ${$('warnings').textContent}`);
   await setOrientation('upright');
 });
 
@@ -1431,7 +1408,7 @@ await check('a word too wide to break is still refused, not mangled',
     // Wrapping can only break at spaces. Hyphenating would produce something
     // nobody can read and would hide the one message that tells the user
     // what to do about it.
-    await typeWord('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCD', 'block');
+    await typeWord('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCD', 'oblique');
     assert(/warn stop/.test($('warnings').innerHTML),
       `239 columns was not refused: ${$('warnings').textContent}`);
     assert(/smaller style|larger sheet/i.test($('warnings').textContent),
@@ -1479,18 +1456,33 @@ await check('the choice is on screen in every mode, and survives the change',
     await setOrientation('upright');
   });
 
-await check('a word lies down', async () => {
+await check('a word lies down, in proportion', async () => {
+  /*
+   * It used to lie down cell by cell, which kept the counts equal and
+   * stretched the letterforms 2.77 times over — a quarter turn swaps the
+   * cell's 2.54 mm width and its 4.23 mm height. Set as a picture, the
+   * block is laid down and resampled, so what is asserted here is the
+   * shape of the result, not a cell-for-cell identity.
+   */
   await setOrientation('upright');
-  await typeWord('LORENZ', 'block');
+  await typeWord('LORENZ', 'oblique');
   const upright = motifCols();
   const uprightLines = window.document.querySelectorAll('.sheet .ln').length;
+  assert(upright > uprightLines, 'a word should be wider than tall upright');
 
   await setOrientation('left');
   const lines = window.document.querySelectorAll('.sheet .ln').length;
-  assert(lines === upright,
-    `${lines} lines typed for a word that was ${upright} columns wide`);
-  assert(motifCols() === uprightLines,
-    `${motifCols()} columns typed for a word that was ${uprightLines} tall`);
+  const cols = motifCols();
+  assert(lines > cols,
+    `laid down it should be taller than wide: ${cols} × ${lines}`);
+
+  // As read, the proportions survive the trip. The bounds are loose —
+  // blur and the blank threshold nibble at the preview's edges — but they
+  // sit far inside the 2.77× stretch that laying the cells down produced.
+  const drawn = (upright * 2.54) / (uprightLines * 4.23);
+  const read = (lines * 4.23) / (cols * 2.54);
+  assert(read > drawn * 0.55 && read < drawn * 1.8,
+    `read ${read.toFixed(2)}:1 against drawn ${drawn.toFixed(2)}:1`);
   assert(/turn the finished sheet/i.test($('instructions').textContent),
     'no instruction to turn the finished sheet');
 });
@@ -1580,9 +1572,9 @@ await check('a picture can be made wider than the margins hold', async () => {
 console.log('several lines of lettering');
 
 await check('a newline gives a second line of letters', async () => {
-  await typeWord('HI', 'block');
+  await typeWord('HI', 'oblique');
   const one = window.document.querySelectorAll('.sheet .ln').length;
-  await typeWord('HI\nHO', 'block');
+  await typeWord('HI\nHO', 'oblique');
   const two = window.document.querySelectorAll('.sheet .ln').length;
   assert(two > one * 2, `${two} lines for two words against ${one} for one`);
 });
@@ -1598,7 +1590,7 @@ await check('the word box is one you can actually type two lines into', () => {
 await check('the letters are drawn with keys the machine has', async () => {
   // The fault this replaced: app.js asked for '#', the SM7 has none, and
   // every style fell through to a wall of 'H'.
-  await typeWord('HI', 'block');
+  await typeWord('HI', 'oblique');
   const art = [...window.document.querySelectorAll('.sheet .ln')]
     .map((e) => e.textContent).join('');
   const have = new Set([...$('charsetText').value || '']);
@@ -1607,14 +1599,12 @@ await check('the letters are drawn with keys the machine has', async () => {
 });
 
 await check('the style hint names the keys it will strike', async () => {
-  await typeWord('HI', 'relief');
+  await typeWord('HI', 'oblique');
   const t = $('letterStyleHint').textContent;
-  assert(/three weights/i.test(t), `raised is not described: "${t}"`);
-
-  await typeWord('HI', 'block');
-  const plain = $('letterStyleHint').textContent;
-  assert(/one character/i.test(plain), `block is not described: "${plain}"`);
-  assert(plain !== t, 'the hint did not follow the style');
+  assert(/one character/i.test(t), `the face is not described: "${t}"`);
+  // The projection's own marks are named too — the face insists on them.
+  assert(/\//.test(t) && /_/.test(t),
+    `the depth marks are not named: "${t}"`);
 });
 
 await check('two lines of a word are centred against each other', async () => {
@@ -1627,7 +1617,7 @@ await check('two lines of a word are centred against each other', async () => {
    */
   $('align').value = 'centre';
   $('align').dispatchEvent(new window.Event('change'));
-  await typeWord('MORGEN\nHI', 'block');
+  await typeWord('MORGEN\nHI', 'oblique');
 
   const { left, right } = shortLineOffsets();
   assert(Math.abs(left - right) <= 1,
@@ -1638,7 +1628,7 @@ await check('two lines of a word are centred against each other', async () => {
 await check('top left leaves them flush left', async () => {
   $('align').value = 'topleft';
   $('align').dispatchEvent(new window.Event('change'));
-  await typeWord('MORGEN\nHI', 'block');
+  await typeWord('MORGEN\nHI', 'oblique');
 
   assert(shortLineOffsets().left === 0,
     'the lines were centred although the word is set top left');
@@ -1655,19 +1645,19 @@ await check('the picker says which faces are too wide for the paper', async () =
    * faces on offer do that to `HELLO` on an upright A4, and the only way to
    * find out used to be to pick one and watch it get cut in half.
    */
-  await typeWord('HELLO', 'block');
+  await typeWord('MORGEN', 'oblique');
   const labels = [...$('letterStyle').options].map((o) => o.textContent);
   const wide = labels.filter((t) => /too wide/.test(t));
   assert(wide.length > 0, 'no face is called out as too wide for A4');
   assert(/\d+ of \d+ columns/.test(wide[0]),
     `the label does not give both numbers: "${wide[0]}"`);
   // And a face that does fit is named plainly, with no warning attached.
-  const block = labels.find((t) => /^Block/.test(t));
-  assert(!/too wide/.test(block), `Block is called too wide: "${block}"`);
+  assert(labels.some((t) => t === 'Three dimensional'),
+    `the fitting face is not named plainly: ${labels.join(' | ')}`);
 });
 
 await check('and the hint says what to do about it', async () => {
-  await typeWord('HELLO', 'slantHollow');
+  await typeWord('MORGEN', 'obliqueBig');
   const t = $('letterStyleHint').textContent;
   assert(/cut off at the edge/.test(t), `no warning in the hint: "${t}"`);
   assert(/turn the sheet|more paper|narrower face/.test(t),
@@ -1675,7 +1665,7 @@ await check('and the hint says what to do about it', async () => {
 
   // It goes away again when the face fits, rather than staying on screen
   // complaining about a choice that has been changed.
-  await typeWord('HELLO', 'tiny');
+  await typeWord('MORGEN', 'oblique');
   assert(!/cut off at the edge/.test($('letterStyleHint').textContent),
     'the width warning outlived the face that caused it');
 });
@@ -1686,18 +1676,19 @@ const usable = () =>
   [...$('letterStyle').options].filter((o) => !o.disabled).map((o) => o.value);
 
 await check('the arrows step to the next face and back again', async () => {
-  await typeWord('HI', 'block');
+  await typeWord('HI', 'oblique');
   const list = usable();
-  const from = list.indexOf('block');
+  const from = list.indexOf('oblique');
 
   $('styleNext').click();
   await wait(300);
-  assert($('letterStyle').value === list[from + 1],
-    `forward landed on ${$('letterStyle').value}, not ${list[from + 1]}`);
+  assert($('letterStyle').value === list[(from + 1) % list.length],
+    `forward landed on ${$('letterStyle').value}, not ` +
+    `${list[(from + 1) % list.length]}`);
 
   $('stylePrev').click();
   await wait(300);
-  assert($('letterStyle').value === 'block',
+  assert($('letterStyle').value === 'oblique',
     `back landed on ${$('letterStyle').value}, not where it started`);
 });
 
@@ -1705,7 +1696,7 @@ await check('stepping redraws the sheet, it does not only move the list', async 
   // The whole point is watching the paper while you walk the list. A picker
   // that changed its own value and left the preview alone would be worse
   // than no button at all.
-  await typeWord('HI', 'block');
+  await typeWord('HI', 'oblique');
   const before = $('mini').textContent;
   $('styleNext').click();
   await wait(300);
@@ -1727,7 +1718,7 @@ await check('the ends wrap round, so neither arrow is ever dead', async () => {
     `forward from the last face landed on ${$('letterStyle').value}`);
 });
 
-await check('faces the machine cannot strike are stepped over', async () => {
+await check('a face the machine cannot strike is never landed on', async () => {
   /*
    * The list greys out any face whose marks the keys cannot make, and
    * landing on one would select an option the picker itself refuses.
@@ -1735,33 +1726,30 @@ await check('faces the machine cannot strike are stepped over', async () => {
    * Marked here by hand rather than by narrowing the character set, because
    * the character set cannot reach this state: standIns() reports a mark as
    * missing only when it can find no stand-in at all, and nearestChar()
-   * always finds one while the machine has any keys left. So a disabled face
-   * is a contract the stepper has to honour rather than a state a person can
-   * arrive at today — which is exactly the kind worth pinning down, since
-   * nothing else would notice if it broke.
+   * always finds one while the machine has any keys left. With the drawn
+   * list down to two faces, disabling one leaves nowhere to step — so the
+   * stepper must stand still rather than land on the option the list
+   * itself refuses.
    */
-  await typeWord('HI', 'block');
-  const opts = [...$('letterStyle').options];
-  const from = opts.findIndex((o) => o.value === 'block');
-  const skipped = opts[from + 1];
-  const landing = opts[from + 2];
-  skipped.disabled = true;
+  await typeWord('HI', 'oblique');
+  const other = [...$('letterStyle').options]
+    .find((o) => o.value === 'obliqueBig');
+  other.disabled = true;
 
   $('styleNext').click();
   await wait(300);
-  assert($('letterStyle').value === landing.value,
-    `landed on ${$('letterStyle').value}, expected to skip ` +
-    `${skipped.value} and reach ${landing.value}`);
+  assert($('letterStyle').value === 'oblique',
+    `landed on ${$('letterStyle').value}, which the list refuses`);
 
   // The next redraw has already put the list back the way the machine says
   // it should be; this only makes that explicit for whatever runs after.
-  skipped.disabled = false;
+  other.disabled = false;
 });
 
 await check('the die never lands on the face already showing', async () => {
   // A die that can roll the number it is already on is a button that
   // sometimes does nothing, and that is indistinguishable from broken.
-  await typeWord('HI', 'block');
+  await typeWord('HI', 'oblique');
   for (let i = 0; i < 12; i++) {
     const before = $('letterStyle').value;
     $('styleAny').click();
@@ -1771,11 +1759,13 @@ await check('the die never lands on the face already showing', async () => {
   }
 });
 
-await check('a raised word really uses three different characters', async () => {
-  await typeWord('OO', 'relief');
+await check('a three-dimensional word carries its projection marks', async () => {
+  await typeWord('OO', 'oblique');
   const art = [...window.document.querySelectorAll('.sheet .ln')]
     .map((e) => e.textContent).join('');
   const used = new Set(art.replace(/\s/g, ''));
+  assert(used.has('/') && used.has('_'),
+    `missing the depth marks: ${[...used].join('')}`);
   assert(used.size >= 3,
     `only ${used.size} character(s): ${[...used].join('')}`);
 });
@@ -2042,7 +2032,7 @@ await check('the line you are on is not re-read from storage on every redraw',
     // draw() ended by reloading `at` from localStorage, which made a stored
     // number outrank the running one on any path that had not written to
     // storage yet. A resize is the plain case.
-    await typeWord('HELLO', 'block');
+    await typeWord('HELLO', 'oblique');
     $('restart').click();
     await wait(60);
     $('next').click();
@@ -2062,7 +2052,7 @@ await check('minus one moves the readout, not just the highlight', async () => {
   // The readout is the only thing that says where the count is. It was left
   // showing the number from before the correction, so the button looked
   // like it did nothing.
-  await typeWord('HELLO', 'block');
+  await typeWord('HELLO', 'oblique');
   $('restart').click();
   await wait(60);
   const open = window.document.querySelector('.sheet .ln.now');
