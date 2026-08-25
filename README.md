@@ -218,9 +218,9 @@ at all to stand in for it is left blank, by name.
 
 Keystrokes vary a lot between fonts, which matters when you are the
 printer: `TYPE` costs 327 keystrokes in the three-dimensional face, and
-`Type` in Caligraphy2 costs 264. How the stand-in engine works, what
-planning a word sideways does, and what happened to the thirty-nine drawn
-faces that used to live here: **[docs/lettering.md](docs/lettering.md)**.
+`Type` in Caligraphy2 costs 264. How the stand-in engine works, how a word
+is fitted to the paper, and what planning one sideways does:
+**[docs/lettering.md](docs/lettering.md)**.
 
 ## Compose
 
