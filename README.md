@@ -333,7 +333,14 @@ The whole point is that you never reach for the screen. The line you are on
 opens up and shows what to strike — spaces counted and grouped, runs as a
 count — and the rest stays as motif, so you always see where you are:
 
-![The typing view: setup summary, the motif above, and the current line opened up into counted runs and grouped spaces — what to strike, nothing more](docs/img/ui-typing.png)
+![The typing view: a carriage scale along the top with both margin stops marked, the paper feed down the side, and the current line opened up into counted runs and countable spaces](docs/img/ui-typing.png)
+
+**The machine's settings are drawn, not listed.** Where to set the margin
+stop, how far to wind the paper on and where the lines will end are all
+*places*, so they are places: a carriage scale along the top of the sheet,
+numbered the way your machine is numbered and marked at both stops, and the
+feed down the side with the wound-past part shaded. Nothing has to be read
+off a list and found on the machine by hand.
 
 **Space, Enter or ↓** move to the next line, **↑** goes back. And the
 microphone can count the strikes *within* the line: **listening** is onset

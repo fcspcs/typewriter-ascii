@@ -707,11 +707,26 @@ ol.setup span { display: block; color: var(--faint); font-size: 12px; }
   background: var(--space);
   box-shadow: inset -1px 0 0 var(--raised);
 }
-.run .c.five { box-shadow: inset 1px 0 0 var(--ink); }
-/* Both, where a five-mark lands inside a run of spaces: the divider is the
-   grid, the five-mark is the count, and neither replaces the other. */
-.run.gap .c.five {
-  box-shadow: inset 1px 0 0 var(--ink), inset -1px 0 0 var(--raised);
+/*
+ * The five-mark: a tick on the rule, not a stroke through the letter.
+ *
+ * It was a full-height hairline in ink down the left edge of every fifth
+ * cell, and at this size that is not a separator, it is a stem: `8|8` reads
+ * as one glyph with a bar through it, and the run you were trying to count
+ * became the run you had to decipher.
+ *
+ * What the mark is for is counting in fives at a glance, and a tick rising
+ * out of the run's own underline does that without standing in the way of
+ * anything — the same way the scale above the sheet marks its tens. Faint
+ * rather than ink, because it is a grid and not a character.
+ */
+.run .c.five { position: relative; }
+.run .c.five::before {
+  content: '';
+  position: absolute;
+  left: 0; bottom: -2px;
+  width: 1px; height: 0.5em;
+  background: var(--faint);
 }
 .run .c.past { opacity: 0.3; }
 
