@@ -604,11 +604,17 @@ function drawMini() {
 /**
  * The box the sheet is drawn in, at whichever of the two sizes is on.
  *
- * At `fit` nothing is fixed: the width comes from the column and the height
- * from the paper's proportions, so the box tracks the window. At `original`
- * the paper's own millimetres decide both, and the wrapper is told to scroll
- * because 210 mm of A4 does not fit in a column beside the settings and must
- * not be allowed to stretch the page trying.
+ * `fit` means the whole sheet on the screen, and that is two limits and not
+ * one. Across is the column it sits in. Down is the window: a sheet sized
+ * only to the column is portrait and half as tall again, so on a wide screen
+ * the foot of the paper lands below the fold — and a preview you have to
+ * scroll to see the end of is not a preview of a whole sheet. Whichever of
+ * the two bites first sets the width, and the height follows from the
+ * paper's own proportions.
+ *
+ * `original` answers to neither: the paper's millimetres set both, and the
+ * wrapper is told to scroll, because 210 mm of A4 does not fit beside the
+ * settings and must not be allowed to stretch the page trying.
  *
  * The shape is declared either way. It is what the sheet is when the size is
  * not pinned, and when it is pinned the two lengths simply outrank it.
@@ -619,8 +625,24 @@ function sizeSheet(el, real) {
 
   const shown = app.lines.length > 0;
   el.style.aspectRatio = shown ? `${app.sheet.w} / ${app.sheet.h}` : '';
-  el.style.width = real && shown ? `${app.sheet.w * PX_PER_MM}px` : '';
-  el.style.height = real && shown ? `${app.sheet.h * PX_PER_MM}px` : '';
+  if (!shown) { el.style.width = ''; el.style.height = ''; return; }
+
+  if (real) {
+    el.style.width = `${app.sheet.w * PX_PER_MM}px`;
+    el.style.height = `${app.sheet.h * PX_PER_MM}px`;
+    return;
+  }
+
+  // Measured with nothing pinned, so the column is asked what it has rather
+  // than told what it gave last time.
+  el.style.width = '';
+  el.style.height = '';
+  const across = el.clientWidth;
+  // A share of the window, and not the room left below the heading: the
+  // sticky column moves as the page scrolls, and a sheet that changed size
+  // on the way down would be worse than one that is a little small.
+  const down = window.innerHeight * 0.78 * (app.sheet.w / app.sheet.h);
+  if (down < across) el.style.width = `${Math.floor(down)}px`;
 }
 
 /**

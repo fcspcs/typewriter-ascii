@@ -536,18 +536,37 @@ await check('a sheet bigger than the column can be moved around', () => {
     'an A4 at actual size would push the settings off the bottom of the page');
 });
 
-await check('fit lets the sheet go back to the size of the column', async () => {
+await check('fit puts the whole sheet back on the screen', async () => {
   const view = window.document.querySelector('.paper-view');
   $('zoomFit').click();
   await wait(50);
 
   assert(!view.classList.contains('real'), 'still pinned to actual size');
-  assert(view.style.width === '', `width still pinned: "${view.style.width}"`);
+  assert(!view.parentElement.classList.contains('real'),
+    'the scroll box is still braced for an oversized sheet');
   assert(view.style.height === '', `height still pinned: "${view.style.height}"`);
-  // The shape of the paper is not a property of the zoom: it is what the
-  // preview says a sheet is, and it has to survive the trip back.
+  // Either nothing at all, when the column is the tighter of the two limits,
+  // or a width the window height allows — but never the paper's own 210 mm.
+  const w = parseFloat(view.style.width);
+  assert(!(w > 0) || Math.abs(w - 210 * (96 / 25.4)) > 1,
+    `still the whole 210 mm across: "${view.style.width}"`);
+  // The shape of the paper is not a property of the size it is drawn at: it
+  // is what the preview says a sheet is, and it has to survive the trip back.
   assert(Math.abs(paperRatio(view) - 210 / 297) < 0.01,
     `the sheet lost its shape: "${view.style.aspectRatio}"`);
+});
+
+await check('fit stops at the height of the window, not just the column', () => {
+  // A portrait sheet fitted to the column alone is half as tall again as it
+  // is wide, so on a wide screen the foot of the paper sits below the fold —
+  // and a whole-sheet preview you have to scroll to see the end of is not
+  // one. jsdom does no layout, so the rule is read where it is written: the
+  // width is capped by the window height as well as by the column.
+  const js = fs.readFileSync(path.join(ROOT, 'src/ui/app.js'), 'utf8');
+  const fn = js.match(/function sizeSheet\([^)]*\)\s*\{[\s\S]*?\n\}/)?.[0] ?? '';
+  assert(/window\.innerHeight/.test(fn),
+    'the fitted sheet never looks at how tall the window is');
+  assert(/clientWidth/.test(fn), 'the fitted sheet ignores the column it is in');
 });
 
 await check('the size you chose is still there next time', () => {
