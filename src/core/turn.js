@@ -199,6 +199,67 @@ export function turnRows(rows, turn, have = null) {
 }
 
 /**
+ * Repeat lines until a block is `want` deep, keeping every mark.
+ *
+ * Nearest neighbour, and it has to be: a cell holds a character or it does
+ * not, and there is no such thing as half a `+`. Blending is what a picture
+ * does, and this exists precisely so that set type does not have to become
+ * a picture to be turned.
+ */
+export function stretchRows(rows, want) {
+  const h = rows.length;
+  if (!(want > 0) || !h || want === h) return rows.slice();
+  return Array.from({ length: want },
+    (_, y) => rows[Math.min(h - 1, Math.floor((y * h) / want))]);
+}
+
+/**
+ * Lay set type on its side so that it reads in proportion, marks intact.
+ *
+ * The reason a turn distorts type at all is that a cell is not square: 2.54
+ * mm across and 4.23 mm down at pica. Turn the sheet and those swap, so a
+ * block laid down cell for cell comes out stretched by the ratio twice over
+ * — (4.23/2.54)², 2.77 times — which is what made a word planned sideways
+ * read as a smear.
+ *
+ * The fix is to give the block back the lines the turn is about to take
+ * from it: repeat each line 2.77 times and the cells come out the shape
+ * they started. Nothing is resampled sideways, so the marks in a row stay
+ * exactly as the font set them — which matters, because a mark cannot be
+ * scaled the way ink can. Caligraphy2 draws its body in `+`, and a `+` is
+ * the same mark whichever way the paper is held; matching it against a
+ * grid of ink would have thrown it away and picked something else.
+ *
+ * Null when it cannot be done. Filling more lines than the paper has is not
+ * a turn any more, and squeezing back down would drop whole strokes — a
+ * hairline is one cell wide and nearest neighbour cannot halve it. The
+ * caller then has an honest choice to make, and app.js makes it: set the
+ * word as a picture and say the marks are the matcher's.
+ *
+ * @param {string[]} rows the block as it is read, upright
+ * @param {'none'|'left'|'right'} turn
+ * @param {Object} [opt]
+ * @param {number} [opt.aspect] cell width ÷ height — see cellAspect()
+ * @param {number} [opt.readCols] the turned sheet, as the eye meets it
+ * @param {number} [opt.readRows]
+ * @param {Set<string>|null} [opt.have] the machine's characters
+ * @returns {string[]|null} lines to type, or null if it will not go
+ */
+export function turnType(rows, turn, opt = {}) {
+  const { aspect = 0.6, readCols = 0, readRows = 0, have = null } = opt;
+  if (!isTurned(turn) || !rows.length) return rows;
+
+  const wide = Math.max(0, ...rows.map((r) => r.length));
+  if (!wide || !(aspect > 0)) return rows;
+
+  const want = Math.round(rows.length / (aspect * aspect));
+  if (readCols && wide > readCols) return null;
+  if (readRows && want > readRows) return null;
+
+  return turnRows(stretchRows(rows, want), turn, have);
+}
+
+/**
  * Which way the paper has to be turned, in words you can act on.
  *
  * One sentence, one place, so the setup instructions, the PDF and the

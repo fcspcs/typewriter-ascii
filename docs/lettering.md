@@ -100,40 +100,56 @@ Pasted art is the one thing with no width to set. Its spacing is what makes
 it the picture it is, so that tab states the numbers instead of offering a
 control that would have to resample the art to mean anything.
 
-## Sideways: the word becomes a picture
+## Sideways: give the block back the lines the turn takes
 
 A typewriter cell is 2.54 mm wide and 4.23 mm tall. A quarter turn swaps
-the two, so laying a finished block of letters down cell by cell stretches
-it 2.77 times over — a word planned sideways used to come out as a long
-smear of letterforms, which defeated the point of turning: the turned sheet
-reads half again as wide (254 mm inside the margins against 168), and the
-stretch ate all of it.
+the two, so a block laid down cell for cell comes out stretched by the
+ratio **twice over** — once for each axis, 2.77 times — and a word planned
+sideways used to read as a long smear. That defeated the point of turning:
+the turned sheet reads half again as wide, and the stretch ate all of it.
 
-Fixed letterforms cannot be resampled the way a photograph can. So a word
-planned sideways is *turned into a photograph of itself*: the finished
-block becomes ink — in the browser each mark is drawn as the glyph it is,
-so a hairline stays a hairline; on the command line and in the tests each
-cell becomes a 3 × 5 patch of pixels, the cell's own shape — and the
-ordinary picture pipeline takes it from there. Laid on its side, scaled
-into the turned sheet, matched cell by cell against the machine's keys.
+The fix is not to resample the letters. It is to give the block back the
+lines the turn is about to take from it: **repeat each line 2.77 times**,
+and the cells come out the shape they started in. Nothing is resampled
+across, so the marks in a row stay exactly as the font set them.
 
-What that buys and what it costs, measured — `Type` in Caligraphy2 on an
-SM7:
+That last part is the whole point, and it is what a first attempt got
+wrong. Caligraphy2 draws its body out of one mark, and **a `+` is the same
+mark whichever way the paper is held** — a quarter turn is no reason at all
+to go looking for a different character. Matching the block against a grid
+of ink, which is what a picture pipeline does, threw every one of them away
+and set the word in whatever the shape matcher preferred; the result was
+the right ink in the wrong alphabet, and it did not look like the font any
+more. A mark cannot be scaled the way ink can, so it should not be asked
+to.
+
+Where a mark genuinely does have a turned twin, `turnRows()` strikes it:
+an underscore lying on its side is a bar up the edge of the cell, so it is
+typed as `!`. Where none exists — Caligraphy2's `/` would want a backslash
+the SM7 has not got — the original stands.
+
+What it buys, measured — `Type` in Caligraphy2 on an SM7:
 
 |  | typed | as read | keystrokes |
 | --- | --- | --- | --- |
-| upright | 49 × 19 | 125 × 80 mm | 264 |
-| planned sideways | 65 × 60 | 254 × 165 mm | 1,118 |
+| upright | 49 × 19 | 124 × 80 mm | 264 |
+| planned sideways | 53 × 49 | 207 × 135 mm | 739 |
 
-Twice the size as read, in proportion, for four times the typing. The marks
-on the sideways sheet are chosen by the shape matcher rather than by the
-font — that is the price of the resample, and the hint says so where the
-face is picked. There are no stand-ins on this path: every mark was picked
-from the machine's keys to begin with.
+Two thirds again as big in each direction, in proportion, in the font's own
+marks, for two and four fifths the typing.
 
-On the command line the same rule as for pictures applies: shape matching
-needs rendered glyphs, so without `--atlas` the marks are matched by tone,
-and it is said.
+**One case still becomes a picture.** A block 2.77 times its own depth can
+outgrow the paper, and squeezing it back down would drop whole strokes —
+a hairline is one cell wide and nearest neighbour cannot halve it. So a
+word too big to lay down goes through the picture pipeline instead: the
+block is drawn as ink (in the browser each mark as the glyph it is, so a
+hairline survives; on the command line a 3 × 5 patch per cell, the cell's
+own shape), laid on its side, and matched cell by cell against the
+machine's keys. It fits anything, and the hint says plainly that the marks
+are the matcher's rather than the font's — somebody who chose Caligraphy2
+is owed that news. On the command line the same rule as for pictures
+applies there: shape matching needs rendered glyphs, so without `--atlas`
+the marks are matched by tone, and it is said.
 
 ## What it costs
 

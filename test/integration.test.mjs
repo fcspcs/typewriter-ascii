@@ -1449,29 +1449,76 @@ await check('wrapping to the margins leaves nothing to complain about',
       `a warning survived wrapping: ${$('warnings').textContent}`);
   });
 
-await check('planning sideways sets the word as a picture', async () => {
+await check('planning sideways keeps the marks and gains the lines', async () => {
   /*
-   * A turned cell is 4.23 mm wide against 2.54 upright, so the same sheet
-   * reads half again as wide. Laying fixed letterforms down cell by cell
-   * stretched them 2.77 times over; planned sideways the word is set as a
-   * picture instead — scaled into the turned sheet, proportions kept.
+   * A turned cell is 4.23 mm wide against 2.54 upright, so laying fixed
+   * letterforms down cell by cell stretched them 2.77 times over. The block
+   * is given those lines back instead — repeated, never resampled — so the
+   * proportions come right and every mark is still the one that was set.
    */
   await setOrientation('upright');
-  await typeWord('HALLO WELT WIE GEHT ES DIR', 'oblique');
+  // Short enough to be laid down whole. A block deep enough that 2.77 times
+  // its lines would not fit the paper takes the other path, which is a
+  // different promise and has its own check below.
+  await typeWord('TYPE', 'oblique');
   const upright = motifCols();
   assert(upright > 0 && upright <= 66,
     `${upright} columns against upright margins of 66`);
+
+  const marks = new Set($('mini').textContent.replace(/\s/g, ''));
 
   await setOrientation('left');
   const lines = window.document.querySelectorAll('.sheet .ln').length;
   assert(lines <= 70,
     `${lines} lines on an A4 that holds 70`);
-  assert(motifCols() <= 66,
-    `${motifCols()} columns typed, more than the margins hold`);
+  assert(motifCols() <= 82,
+    `${motifCols()} columns typed, more than the sheet holds`);
   assert(!/warn stop/.test($('warnings').innerHTML),
-    `refused although the picture path always fits: ${$('warnings').textContent}`);
+    `refused although it was laid down to fit: ${$('warnings').textContent}`);
+
+  /*
+   * And the marks are the ones that were set, or the mark table's own answer
+   * for them: an underscore turned is a bar up the edge of the cell, so it
+   * is struck as `!`, which is turnRows() doing its documented job. Anything
+   * *else* would mean the block had been matched against a grid of ink
+   * rather than laid down — which is the fault this whole path exists to
+   * undo, and nothing else on the page would have noticed it.
+   */
+  const { turnedMarks } = await import(
+    pathToFileURL(path.join(ROOT, 'src/core/turn.js')).href);
+  const twins = new Set(Object.entries(turnedMarks('left'))
+    .filter(([from]) => marks.has(from)).map(([, to]) => to));
+  const laid = new Set($('mini').textContent.replace(/\s/g, ''));
+  const strangers = [...laid].filter((c) => !marks.has(c) && !twins.has(c));
+  assert(strangers.length === 0,
+    `characters the word was never set in: ${strangers.join('')}`);
+  assert(laid.has([...marks].find((c) => /[A-Za-z0-9]/.test(c))),
+    'the character the letters are filled with did not survive the turn');
+  assert(/laid down|lines repeated/i.test($('letterStyleHint').textContent),
+    `the hint does not say what was done: "${$('letterStyleHint').textContent}"`);
   await setOrientation('upright');
 });
+
+await check('a word too big to lay down is set as a picture, and says so',
+  async () => {
+    /*
+     * The other promise. A block 2.77 times its own depth can outgrow the
+     * paper, and squeezing it back would drop whole strokes — a hairline is
+     * one cell wide and nearest neighbour cannot halve it. So it goes
+     * through the picture path instead, which fits anything, and the hint
+     * says the marks are the matcher's rather than the font's.
+     */
+    await setOrientation('upright');
+    await typeWord('HALLO WELT WIE GEHT ES DIR', 'oblique');
+    await setOrientation('left');
+
+    assert(/as a picture/i.test($('letterStyleHint').textContent),
+      `the swap was not admitted: "${$('letterStyleHint').textContent}"`);
+    assert(motifCols() > 0, 'nothing was drawn');
+    assert(window.document.querySelectorAll('.sheet .ln').length <= 70,
+      'the picture path let it run off the bottom of the paper');
+    await setOrientation('upright');
+  });
 
 await check('a word too wide to break is still refused, not mangled',
   async () => {

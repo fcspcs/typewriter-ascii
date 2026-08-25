@@ -12,7 +12,7 @@ import {
   pitchFrom, expectedMm, PITCHES, LINE_PITCHES, cellWidthMm, cellHeightMm,
 } from '../core/machine.js';
 import {
-  isTurned, planningGrid, turnedGrid, turnRows, turnAdvice,
+  isTurned, planningGrid, turnedGrid, turnRows, turnType, turnAdvice,
 } from '../core/turn.js';
 import {
   tiled, tilesOf, isComposite, unitOf, sheetCount, unitGrid, splitMotif,
@@ -740,6 +740,8 @@ function convert() {
 
   let lines = [];
   let ghost = false;
+  // Set again below when a turned word has to go through the picture path.
+  app.turnedAsPicture = false;
 
   if (tab === 'text') {
     // Only the ends are trimmed. A blank line in the middle is a gap the
@@ -769,41 +771,74 @@ function convert() {
       ? flfFont($('letterStyle').value.slice(FLF.length)) : null;
     if (word.trim() && isTurned(turn) && (!flf || font)) {
       /*
-       * Planned sideways, the word is set as a picture.
+       * Planned sideways, and the marks are kept if they possibly can be.
        *
-       * Letterforms cannot be resampled the way a photograph can, and
-       * laying the finished block down cell by cell stretched it 2.77
-       * times over — a quarter turn swaps the cell's 2.54 mm width and
-       * 4.23 mm height, and fixed glyphs have no way to follow. So the
-       * block is drawn as ink and handed to the pipeline a picture goes
-       * through, which keeps the proportions and spends the turned sheet's
-       * millimetres: a word really does come out bigger. The marks are
-       * chosen by the matcher rather than by the face — that is the price,
-       * and the hint says so where the face is picked. No stand-ins here:
-       * nothing is typed that the matcher did not pick from your keys.
+       * A cell is 2.54 mm across and 4.23 mm down, so a turn swaps the two
+       * and a block laid down cell for cell comes out stretched by the
+       * ratio twice over — 2.77 times, which read as a smear. The block is
+       * given those lines back instead: repeat each one 2.77 times and the
+       * cells come out the shape they started, with every mark exactly as
+       * the font set it. See turnType() in turn.js.
+       *
+       * Only when that will not go on the paper does the word become a
+       * picture — laid on its side and matched cell by cell against the
+       * machine's keys, which fits anything but sets the type in the
+       * matcher's marks rather than the font's. The hint says which of the
+       * two happened, because they are different promises.
        */
       let block;
       if (flf) {
-        const fset = flfLetter(font, word, { maxCols: 0 });
+        const fset = flfLetter(font, word, { maxCols });
         if (fset.unknown.size && !ghost) {
           note(`${font.name} has no ${[...fset.unknown].join(' ')} — left blank.`);
         }
         block = fset.lines;
       } else {
+        const { swaps } = letterStandIns($('letterStyle').value);
         block = letter(word, {
-          style: $('letterStyle').value, maxCols: 0,
+          style: $('letterStyle').value, maxCols,
+          tones: letterTones($('letterStyle').value), substitutes: swaps,
           align: $('align').value === 'topleft' ? 'left' : 'centre',
         });
       }
       if (block.some((l) => l.trim())) {
-        const { field } = prepare(letterImage(block), {
-          invert: false, contrast: 1, mode: 'shape', maxCols, turn,
+        // Swapped to the machine's keys before the turn, so what is stretched
+        // and laid down is what will actually be struck.
+        if (flf) {
+          const { swaps, missing } = standIns(
+            new Set(block.join('').replace(/ /g, '')),
+            { have, nearest: (ch, pool) => nearestChar(ch, app.atlas, pool) });
+          const gone = new Set(missing);
+          if (!ghost && (swaps.size || missing.length)) {
+            note([
+              swaps.size ? `Typing ${[...swaps].map(([a, b]) => `${a} as ${b}`)
+                .join(', ')}.` : '',
+              missing.length ? `No stand-in for ${missing.join(' ')} — left ` +
+                `blank.` : '',
+            ].filter(Boolean).join(' '));
+          }
+          block = block.map((row) => [...row]
+            .map((c) => swaps.get(c) ?? (gone.has(c) ? ' ' : c)).join(''));
+        }
+        const kept = turnType(block, turn, {
+          aspect: cellAspect(app.machine),
+          readCols: plan.cols,
+          readRows: plan.rows,
+          have,
         });
-        const grid = fitGrid(room.cols, Math.min(maxCols, sheet.rows),
-                             field.w, field.h, cellAspect(app.machine));
-        lines = toCharacters(field, grid.cols, grid.rows, app.atlas, {
-          mode: 'shape', allowed: app.chosen, toneWeight: 0.35,
-        });
+        app.turnedAsPicture = !kept;
+        if (kept) {
+          lines = kept;
+        } else {
+          const { field } = prepare(letterImage(block), {
+            invert: false, contrast: 1, mode: 'shape', maxCols, turn,
+          });
+          const grid = fitGrid(room.cols, Math.min(maxCols, sheet.rows),
+                               field.w, field.h, cellAspect(app.machine));
+          lines = toCharacters(field, grid.cols, grid.rows, app.atlas, {
+            mode: 'shape', allowed: app.chosen, toneWeight: 0.35,
+          });
+        }
       }
     } else if (word.trim() && flf) {
       if (font) {
@@ -1456,8 +1491,7 @@ function syncLetterHint() {
       // Sideways there are no stand-ins and no refusals to report: the word
       // is set as a picture, scaled to the sheet, and every mark on it was
       // picked from this machine's keys by the matcher.
-      parts.push('Planned sideways, the word is set as a picture — the ' +
-        'letterforms keep their shape, struck in marks matched from your keys.');
+      parts.push(turnedSideways());
     } else {
       const have = new Set(charset(app.machine).filter((c) => app.chosen.has(c)));
       const r = flfLines(font, word, { have, maxCols: room });
@@ -1484,8 +1518,7 @@ function syncLetterHint() {
   }
 
   if (isTurned(app.turn)) {
-    const parts = ['Planned sideways, the word is set as a picture — the ' +
-      'letterforms keep their shape, struck in marks matched from your keys.'];
+    const parts = [turnedSideways()];
     if (app.ghost) {
       parts.push(`Showing ${$('letterText').placeholder} until you type something.`);
     }
@@ -1543,6 +1576,23 @@ function syncLetterHint() {
   }
   el.textContent = parts.join(' ');
 }
+
+/**
+ * What planning a word sideways did to it — and the two are not the same
+ * promise, so they do not get the same sentence.
+ *
+ * Keeping the marks is the good case and the usual one: the word is set
+ * exactly as the font says and the lines are repeated to give back what the
+ * turn takes, so what goes on the paper is the font's own marks. Only a
+ * block too big for the sheet that way becomes a picture, and then the
+ * marks are the matcher's — worth saying plainly, because somebody who
+ * chose Caligraphy2 is owed the news that they are no longer getting it.
+ */
+const turnedSideways = () => (app.turnedAsPicture
+  ? 'Planned sideways and too big to keep the marks, so the word is set as ' +
+    'a picture — the shapes survive, struck in marks matched from your keys.'
+  : 'Planned sideways: set as the font says, then laid down with its lines ' +
+    'repeated so the letters keep their proportions.');
 
 /**
  * Whether what is in the words box will go on the paper — said at the box.

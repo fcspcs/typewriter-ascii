@@ -309,16 +309,23 @@ afterwards — an underscore has to be struck as something that *looks* like
 an underscore once the sheet has moved under it; where no honest swap
 exists, the original stands.
 
-**A word planned sideways is set as a picture.** A quarter turn swaps the
-cell's 2.54 mm width and its 4.23 mm height, and letterforms cannot be
-resampled the way a photograph can — laid down cell by cell they came out
-stretched 2.77 times over, which ate the whole gain. So the finished block
-of letters is turned into ink and run through the picture pipeline: laid on
-its side, scaled into the turned sheet, matched against your machine's keys.
+**A word planned sideways keeps its own marks.** A quarter turn swaps the
+cell's 2.54 mm width and its 4.23 mm height, so a block laid down cell for
+cell comes out stretched by the ratio twice over — 2.77 times, which reads
+as a smear. It is given those lines back instead: each line repeated 2.77
+times, so the cells come out the shape they started in and every mark is
+still the one the font set. A `+` is the same mark whichever way the paper
+is held, and nothing about a turn is a reason to go looking for another one.
 
-![The same word planned sideways: the preview held the way the finished sheet will be, with Type filling the width of a landscape A4](docs/img/ui-sideways.png)
+![The same word planned sideways: the preview held the way the finished sheet will be, with Type in the same calligraphic hand across a landscape A4](docs/img/ui-sideways.png)
 
-<div align="center"><sub><code>Type</code> in Caligraphy2 again — 125 × 80 mm upright, 254 × 165 mm read sideways. Twice the size, in proportion, for four times the typing.</sub></div>
+<div align="center"><sub><code>Type</code> in Caligraphy2 again — 124 × 80 mm upright, 207 × 135 mm read sideways. Two thirds again as big, in proportion, in the same marks.</sub></div>
+
+A block too deep to be laid down that way would run off the paper, and
+squeezing it back would drop whole strokes — a hairline is one cell wide.
+That one case goes through the picture pipeline instead, matched cell by
+cell against your keys, and the app says so rather than quietly changing
+the alphabet.
 
 ## Typing it
 

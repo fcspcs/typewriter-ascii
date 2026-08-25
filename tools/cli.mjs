@@ -30,7 +30,9 @@ import { colourMap, inkTally, parseRows, runsOf, runsToText } from '../src/core/
 import { letter, tonesOf, marksOf, STYLES } from '../src/core/lettering.js';
 import { parseFlf, flfLetter } from '../src/core/figlet.js';
 import { toneRamp } from '../src/core/ink.js';
-import { isTurned, planningGrid, turnRows, turnAdvice } from '../src/core/turn.js';
+import {
+  isTurned, planningGrid, turnRows, turnType, turnAdvice,
+} from '../src/core/turn.js';
 import {
   tiled, isComposite, unitOf, sheetCount, splitMotif, layoutAdvice,
 } from '../src/core/compose.js';
@@ -620,39 +622,75 @@ if (cmd === 'image') {
   const flfPath = opt('flf', '');
   if (isTurned(turn)) {
     /*
-     * Planned sideways, the word is set as a picture.
+     * Planned sideways, and the marks are kept if they possibly can be.
      *
-     * Letterforms cannot be resampled the way a photograph can, and laying
-     * the finished block down cell by cell stretched it 2.77 times over: a
-     * quarter turn swaps the cell's 2.54 mm width and 4.23 mm height, and
-     * fixed glyphs have no way to follow. So the block becomes ink — see
-     * blockImage() in convert.js — and the picture pipeline takes it from
-     * there, which keeps the proportions and spends the turned sheet's
-     * millimetres. No stand-ins on this path: every mark is picked from the
-     * machine's keys by the matcher.
+     * A cell is 2.54 mm across and 4.23 mm down, so a turn swaps the two and
+     * a block laid down cell for cell comes out stretched by the ratio twice
+     * over - 2.77 times, which reads as a smear. turnType() gives the block
+     * those lines back instead, so the cells come out the shape they started
+     * and every mark is the one the font set. Only when that will not go on
+     * the paper does the word become a picture, matched cell by cell against
+     * the machine's keys.
      */
     let block;
     if (flfPath) {
       const font = parseFlf(fs.readFileSync(flfPath, 'utf8'),
         flfPath.replace(/^.*[\\\/]/, '').replace(/\.flf$/i, ''));
-      const fset = flfLetter(font, word.replace(/\\n/g, '\n'), { maxCols: 0 });
+      const fset = flfLetter(font, word.replace(/\\n/g, '\n'),
+        { maxCols: textWidth() });
       if (fset.unknown.size) {
         console.error(`note: ${font.name} has no ` +
           `${[...fset.unknown].join(' ')} - left blank`);
       }
-      block = fset.lines;
+      const { swaps, missing } = standIns(
+        new Set(fset.lines.join('').replace(/ /g, '')),
+        { have: charset(machine) });
+      if (swaps.size) {
+        console.error(`note: typing ` +
+          `${[...swaps].map(([a, b]) => `${a} as ${b}`).join(', ')} - the ` +
+          `${machine.name} has no ${[...swaps.keys()].join(' ')}`);
+      }
+      if (missing.length) {
+        console.error(`note: no stand-in for ${missing.join(' ')} on the ` +
+          `${machine.name} - left blank`);
+      }
+      const gone = new Set(missing);
+      block = fset.lines.map((row) => [...row]
+        .map((c) => swaps.get(c) ?? (gone.has(c) ? ' ' : c)).join(''));
     } else {
       const style = opt('style', 'oblique');
       if (!STYLES[style]) {
         die(`Unknown style: ${style}. One of: ${Object.keys(STYLES).join(' ')}`);
       }
-      block = letter(word.replace(/\\n/g, '\n'),
-        { style, align: align === 'topleft' ? 'left' : 'centre' });
+      const { swaps, missing } = standIns(marksOf(style), {
+        have: charset(machine),
+      });
+      if (missing.length) {
+        die(`--style ${style} is drawn with ${missing.join(' ')}, and the ` +
+          `${machine.name} has nothing that will stand in.`);
+      }
+      block = letter(word.replace(/\\n/g, '\n'), {
+        style, maxCols: textWidth(), substitutes: swaps,
+        tones: toneRamp(Math.max(1, tonesOf(style)), { allowed: charset(machine) }),
+        align: align === 'topleft' ? 'left' : 'centre',
+      });
     }
     if (!block.some((l) => l.trim())) die('Nothing to type.');
 
+    const kept = turnType(block, turn, {
+      aspect: cellAspect(machine),
+      readCols: planEdge.cols,
+      readRows: planEdge.rows,
+      have: new Set(charset(machine)),
+    });
+    if (kept) {
+      lines = kept;
+    } else {
+
     const atlas = pictureAtlas();
     const maxCols = Math.min(num('width', planEdge.cols), planEdge.cols);
+    console.error('note: too big to keep the marks laid down, so the word ' +
+      'was set as a picture and matched to the keys instead');
     const { field } = prepare(blockImage(block), {
       invert: false, contrast: 1, mode: 'shape', maxCols, turn,
     });
@@ -670,6 +708,7 @@ if (cmd === 'image') {
       allowed: new Set(charset(machine)),
       toneWeight: 0.35,
     });
+    }
   } else if (flfPath) {
     /*
      * An imported font is the paste path with a typesetter in front: the

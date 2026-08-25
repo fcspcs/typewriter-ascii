@@ -13,6 +13,7 @@ import {
 import * as machine from '../src/core/machine.js';
 import {
   turnedGrid, planningGrid, turnRows, turnField, isTurned, TURNS, turnAdvice,
+  turnType, stretchRows,
 } from '../src/core/turn.js';
 import {
   tiled, tilesOf, isComposite, unitOf, unitGrid, sheetCount, seams,
@@ -1225,7 +1226,63 @@ check('it fits, unless a single word cannot be broken', () => {
   }
 });
 
-check('a word planned sideways becomes a picture, not a stretched block', () => {
+check('a word laid down keeps the marks the font set', () => {
+  /*
+   * The whole point of turnType(). A `+` is the same mark whichever way the
+   * paper is held — Caligraphy2 draws its entire body out of them — so
+   * nothing about a quarter turn is a reason to go looking for a different
+   * character. Handing the block to the shape matcher, which is what the
+   * first version of this did, threw every one of them away.
+   */
+  const block = ['++++', '+..+', '++++'].map((r) => r.replace(/\./g, ' '));
+  const laid = turnType(block, 'left', {
+    aspect: cellWidthMm(sm7) / cellHeightMm(sm7), readCols: 80, readRows: 80,
+  });
+  assert.ok(laid, 'a block with room to spare was refused');
+  assert.deepStrictEqual(
+    [...new Set(laid.join('').replace(/ /g, ''))], ['+'],
+    'the marks were exchanged for something else');
+});
+
+check('and it gains the lines the turn is about to take from it', () => {
+  // A cell is 2.54 across and 4.23 down, so a turn stretches a block by the
+  // ratio twice over - 2.77 times. Giving it 2.77 times the lines first is
+  // what makes the cells come out the shape they started.
+  const aspect = cellWidthMm(sm7) / cellHeightMm(sm7);
+  const block = ['####', '####', '####'];
+  const laid = turnType(block, 'left', { aspect, readCols: 80, readRows: 80 });
+
+  // Read frame: what was 4 wide by 3 deep is now 4 wide by ~8 deep.
+  const readWide = laid.length;                 // typed lines, read across
+  const readDeep = Math.max(...laid.map((l) => l.length));
+  const drawn = (4 * cellWidthMm(sm7)) / (3 * cellHeightMm(sm7));
+  const read = (readWide * cellHeightMm(sm7)) / (readDeep * cellWidthMm(sm7));
+  assert.ok(Math.abs(read - drawn) < drawn * 0.1,
+    `read ${read.toFixed(2)}:1 against drawn ${drawn.toFixed(2)}:1`);
+});
+
+check('a block with no room to be laid down says so, rather than shrinking', () => {
+  // Squeezing it back down would drop whole strokes: a hairline is one cell
+  // wide and nearest neighbour cannot halve it. Null is the caller's cue to
+  // take the other path, which is a different promise about the marks.
+  const aspect = cellWidthMm(sm7) / cellHeightMm(sm7);
+  const tall = Array.from({ length: 40 }, () => '####');
+  assert.strictEqual(
+    turnType(tall, 'left', { aspect, readCols: 80, readRows: 80 }), null);
+  const wide = ['#'.repeat(90)];
+  assert.strictEqual(
+    turnType(wide, 'left', { aspect, readCols: 80, readRows: 80 }), null);
+});
+
+check('stretching repeats lines, and never invents one', () => {
+  const rows = ['a', 'b', 'c'];
+  assert.deepStrictEqual(stretchRows(rows, 6), ['a', 'a', 'b', 'b', 'c', 'c']);
+  assert.deepStrictEqual(stretchRows(rows, 3), rows);
+  assert.ok(stretchRows(rows, 7).every((r) => rows.includes(r)),
+    'a line appeared that was never in the block');
+});
+
+check('a word too big to lay down becomes a picture, not a stretched block', () => {
   /*
    * It used to be laid down cell by cell, which stretched it 2.77 times
    * over: a quarter turn swaps the cell's 2.54 mm width and its 4.23 mm
