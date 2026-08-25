@@ -126,7 +126,32 @@
         </div>
         <div class="field">
           <label for="letterStyle">Letters</label>
-          <select id="letterStyle"></select>
+          <!--
+            The list, and three ways to walk it.
+
+            Forty-one faces is more than anybody picks by reading names, and
+            since the preview draws a word before one is typed, the fastest
+            way to find the right face is to step through them and watch the
+            sheet. The list stays: it is how you go somewhere directly, and
+            it is where a face says it is too wide or that the machine has
+            no key for it.
+
+            The two arrows wrap round, so neither is ever a dead button, and
+            both skip the faces this machine cannot strike — stepping onto
+            one would select something the list itself has greyed out.
+          -->
+          <div class="picker">
+            <select id="letterStyle"></select>
+            <button type="button" id="stylePrev" class="step"
+                    title="The face before this one in the list"
+                    aria-label="Previous face">&larr;</button>
+            <button type="button" id="styleNext" class="step"
+                    title="The face after this one in the list"
+                    aria-label="Next face">&rarr;</button>
+            <button type="button" id="styleAny" class="step"
+                    title="A face at random — never the one already chosen"
+                    aria-label="A face at random">&#9860;</button>
+          </div>
           <p class="hint" id="letterStyleHint"></p>
         </div>
       </div>
@@ -265,7 +290,14 @@
       -->
       <div class="field" id="composeRow" hidden>
         <label id="composeLabel">How many sheets</label>
-        <div class="compose">
+        <!--
+          `compose-pick`, and not `compose`: that name already belongs to the
+          page itself — the section holding the settings beside the paper —
+          and a second claim on it further down the stylesheet redeclared the
+          whole layout as a flex row. The settings grew to the width of their
+          own prose and the paper shrank into what was left over.
+        -->
+        <div class="compose-pick">
           <div class="matrix" id="matrix" role="group"
                aria-labelledby="composeLabel"></div>
           <div class="compose-of">

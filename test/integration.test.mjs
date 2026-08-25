@@ -476,6 +476,31 @@ await check('the live preview sits with the settings, not below the fold', () =>
   assert(compose.querySelector('#mini'), 'preview is not beside the controls');
 });
 
+await check('nothing else on the page answers to the layout\'s name', () => {
+  /*
+   * `.compose` is the page: a fixed 20rem column of settings beside a column
+   * of paper. A widget elsewhere took the same class for a row of two
+   * buttons and redeclared it `display: flex` further down the stylesheet —
+   * later, and no less specific, so it won. The whole page became a flex
+   * row: the settings column grew to the width of its own hint text and the
+   * paper shrank into what was left, which is the layout inside out.
+   *
+   * Both halves are checked, because either one alone would let it back in:
+   * a second element with the name, or a second rule declaring it.
+   */
+  const claims = [...window.document.querySelectorAll('.compose')];
+  assert(claims.length === 1,
+    `${claims.length} elements claim to be the page layout`);
+  assert(claims[0].tagName === 'SECTION',
+    `the page layout is a <${claims[0].tagName.toLowerCase()}>, not the section`);
+
+  const css = fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8');
+  const blocks = [...css.matchAll(/\.compose\s*\{([^}]*)\}/g)].map((m) => m[1]);
+  assert(blocks.length > 0, 'the page layout is not declared at all');
+  const stray = blocks.find((b) => /display:\s*(?!grid)\S/.test(b));
+  assert(!stray, `something else redeclares the page layout: "${stray?.trim()}"`);
+});
+
 await check('the preview fills in as soon as there is something to type', () => {
   assert($('mini').innerHTML.trim().length > 0, 'preview is empty');
 });
@@ -652,17 +677,57 @@ await check('the paper says how much fits', () => {
 
 console.log('nothing to type yet');
 
-await check('no setup numbers are shown before there is a motif', async () => {
-  // setUp() happily centres an empty motif and returns a margin stop of 41.
-  // Printing that as "set your margin stop to 41" is advice about nothing.
+await check('an empty lettering box previews its placeholder', async () => {
+  // The box already shows its placeholder in grey; the sheet now shows the
+  // same word, so the faces can be flicked through before anything is
+  // typed. A ghost, not a job: preview and facts, but no setup numbers and
+  // no sheet to work down.
   const tabs = [...window.document.querySelectorAll('.tab')];
   tabs.find((t) => t.dataset.tab === 'text').click();
   $('letterText').value = '';
   $('letterText').dispatchEvent(new window.Event('input'));
   await new Promise((r) => setTimeout(r, 350));
 
+  assert(window.document.body.classList.contains('ghost'),
+    'ghost state not set');
+  assert(!window.document.body.classList.contains('empty'),
+    'marked empty although the placeholder is on show');
+  assert($('mini').textContent.trim().length > 0,
+    'no preview of the placeholder');
+  assert(/keystrokes/.test($('facts').textContent), 'no facts for the ghost');
+  assert($('instructions').children.length === 0,
+    'setup instructions for a word nobody typed: ' +
+    $('instructions').textContent);
+  assert($('sheet').innerHTML.trim() === '', 'a typing sheet for a ghost');
+  assert($('table').innerHTML.trim() === '', 'a reference table for a ghost');
+});
+
+await check('the faces can be compared on the ghost', async () => {
+  const before = $('mini').textContent;
+  const other = [...$('letterStyle').options]
+    .find((o) => o.value !== $('letterStyle').value && !o.disabled);
+  assert(other, 'no second face to switch to');
+  $('letterStyle').value = other.value;
+  $('letterStyle').dispatchEvent(new window.Event('change'));
+  await wait(100);
+  assert($('mini').textContent.trim().length > 0, 'the preview went blank');
+  assert($('mini').textContent !== before,
+    'the preview did not follow the face');
+});
+
+await check('no setup numbers are shown before there is a motif', async () => {
+  // setUp() happily centres an empty motif and returns a margin stop of 41.
+  // Printing that as "set your margin stop to 41" is advice about nothing.
+  // The picture tab has no placeholder to preview, so with no picture it is
+  // genuinely empty — and leaving the lettering tab takes the ghost away.
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'image').click();
+  await wait(350);
+
   assert(window.document.body.classList.contains('empty'),
     'empty state not set');
+  assert(!window.document.body.classList.contains('ghost'),
+    'the ghost survived leaving the lettering tab');
   assert($('instructions').children.length === 0,
     'still showing setup instructions: ' + $('instructions').textContent);
   assert($('facts').textContent.trim() === '', 'still showing facts');
@@ -671,11 +736,15 @@ await check('no setup numbers are shown before there is a motif', async () => {
 });
 
 await check('the instructions come back once there is something to type', async () => {
+  [...window.document.querySelectorAll('.tab')]
+    .find((t) => t.dataset.tab === 'text').click();
   $('letterText').value = 'HI';
   $('letterText').dispatchEvent(new window.Event('input'));
   await new Promise((r) => setTimeout(r, 350));
 
   assert(!window.document.body.classList.contains('empty'), 'still empty');
+  assert(!window.document.body.classList.contains('ghost'),
+    'a typed word is still marked as a ghost');
   assert($('instructions').children.length > 0, 'no instructions');
   assert(/keystrokes/.test($('facts').textContent), 'no facts');
 });
@@ -761,6 +830,31 @@ const typeWord = async (text, style = 'block') => {
   $('letterText').value = text;
   $('letterText').dispatchEvent(new window.Event('input'));
   await wait(420);
+};
+
+/**
+ * How far the last inked line of the preview sits inside the motif, left and
+ * right.
+ *
+ * Read off the preview and not off the typing sheet, because the sheet
+ * expands the line you are on into runs — `3 x space` rather than three
+ * spaces — so its text is a description of the line rather than the line.
+ *
+ * Measured against the motif's own ink rather than against column zero: the
+ * preview draws the whole sheet, so every row carries the margin the paper
+ * feed puts there, and that offset is the same on every row and none of its
+ * business here.
+ */
+const shortLineOffsets = () => {
+  const rows = $('mini').textContent.split('\n').filter((r) => r.trim());
+  const edges = rows.map((r) => ({
+    left: r.length - r.trimStart().length,
+    right: r.replace(/\s+$/, '').length,
+  }));
+  const from = Math.min(...edges.map((e) => e.left));
+  const to = Math.max(...edges.map((e) => e.right));
+  const last = edges[edges.length - 1];
+  return { left: last.left - from, right: to - last.right };
 };
 
 const setOrientation = async (which) => {
@@ -854,6 +948,117 @@ await check('the preview can be held either way', async () => {
   $('zoomTurn').click();
   await wait(200);
 });
+
+/*
+ * A turned sheet measuring itself.
+ *
+ * jsdom does no layout, so both elements are given what a browser would
+ * report: the wrapper is an ordinary block and is as wide as the column, and
+ * the turned sheet is out of the flow with `width: auto`, so it reports
+ * shrink-to-fit — very nearly the width it was last given. That last part is
+ * the whole trap, and without it standing in for a real browser none of this
+ * can be caught here at all.
+ */
+const COLUMN = 420;
+const fakeWidths = () => {
+  const view = window.document.querySelector('.paper-view');
+  const box = view.parentElement;
+  Object.defineProperty(box, 'clientWidth',
+    { get: () => COLUMN, configurable: true });
+  Object.defineProperty(view, 'clientWidth',
+    { get: () => parseFloat(view.style.width) || COLUMN, configurable: true });
+  return () => { delete box.clientWidth; delete view.clientWidth; };
+};
+
+await check('a turned sheet keeps its size when the page is redrawn', async () => {
+  // The fault this is here about: `fit` measured the room it had on the
+  // sheet itself. Turned, the sheet is out of the flow, so what came back
+  // was its own short side rather than the column — and every redraw stood
+  // the sheet down by its aspect ratio again. Pressing fit a few times over
+  // a sideways motif shrank it to nothing.
+  const view = window.document.querySelector('.paper-view');
+  const undo = fakeWidths();
+  try {
+    $('zoomReal').click();
+    await wait(150);
+    $('zoomFit').click();
+    await wait(150);
+
+    const first = parseFloat(view.style.height);
+    assert(first > 1, `nothing was fitted: "${view.style.height}"`);
+
+    for (let i = 0; i < 4; i++) {
+      window.dispatchEvent(new window.Event('resize'));
+      await wait(60);
+    }
+    const after = parseFloat(view.style.height);
+    assert(Math.abs(after - first) < 1,
+      `the sheet shrank from ${first} to ${after} px across four redraws`);
+    assert(Math.abs(first - COLUMN) < 2,
+      `a turned sheet should lie right across the column: ${first} of ${COLUMN}`);
+  } finally { undo(); }
+});
+
+await check('pressing the size you are already on does nothing', async () => {
+  // Not merely harmless — nothing at all. The sizing is idempotent now, so a
+  // second press would land on the same number anyway, but a button that is
+  // already the answer should not act, and there is then no second
+  // measurement left to go wrong.
+  const undo = fakeWidths();
+  try {
+    const before = $('mini').innerHTML;
+    $('mini').innerHTML = 'scribble';
+    $('zoomFit').click();
+    $('zoomFit').click();
+    await wait(120);
+    assert($('mini').innerHTML === 'scribble',
+      'pressing fit while already fitted redrew the sheet');
+    $('mini').innerHTML = before;
+  } finally { undo(); }
+});
+
+await check('a turned sheet at actual size can be reached at the foot',
+  async () => {
+    /*
+     * Turned and at actual size the sheet is deliberately bigger than the
+     * box: 297 mm across and 210 mm down. The box was being pinned to that
+     * whole footprint and then clipped by the height ceiling with the
+     * overflow hidden, so the bottom of the paper was cut off with no way to
+     * scroll to it.
+     */
+    const view = window.document.querySelector('.paper-view');
+    const box = view.parentElement;
+    const mm = 96 / 25.4;
+    const undo = fakeWidths();
+    try {
+      $('zoomReal').click();
+      await wait(200);
+
+      // Still an upright sheet underneath, in real millimetres. The rotation
+      // is what makes it lie across.
+      assert(Math.abs(parseFloat(view.style.width) - 210 * mm) < 1,
+        `the sheet is ${view.style.width}, not 210 mm`);
+      assert(Math.abs(parseFloat(view.style.height) - 297 * mm) < 1,
+        `the sheet is ${view.style.height} long, not 297 mm`);
+
+      // The box keeps the column's width and becomes the window you look
+      // through. Pinned to the sheet's 297 mm it would drag the whole page
+      // sideways to hold a preview.
+      assert(box.style.width === '',
+        `the box was pinned to ${box.style.width}, wider than the column`);
+      assert(Math.abs(parseFloat(box.style.height) - 210 * mm) < 1,
+        `the box is ${box.style.height} tall, not the 210 mm of a sheet on its side`);
+
+      const css = fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8');
+      const block = css.match(/\.paper-scroll\.real\.turned\s*\{[^}]*\}/)?.[0] ?? '';
+      assert(/overflow:\s*auto/.test(block),
+        `the foot of a turned sheet stays hidden: "${block}"`);
+    } finally {
+      $('zoomFit').click();
+      await wait(150);
+      undo();
+    }
+  });
 
 await check('the instructions feed it in upright and turn it at the end',
   () => {
@@ -1410,6 +1615,160 @@ await check('the style hint names the keys it will strike', async () => {
   const plain = $('letterStyleHint').textContent;
   assert(/one character/i.test(plain), `block is not described: "${plain}"`);
   assert(plain !== t, 'the hint did not follow the style');
+});
+
+await check('two lines of a word are centred against each other', async () => {
+  /*
+   * The `Position` control said `Centred` and only the box was: every block
+   * was laid flush left inside it, so a short second line hung left of
+   * centre. Measured through the app rather than through letter(), because
+   * the bug was that the two halves of "centred" disagreed and only the
+   * whole path shows them agreeing.
+   */
+  $('align').value = 'centre';
+  $('align').dispatchEvent(new window.Event('change'));
+  await typeWord('MORGEN\nHI', 'block');
+
+  const { left, right } = shortLineOffsets();
+  assert(Math.abs(left - right) <= 1,
+    `the short line sits ${left} from the left and ${right} from the right`);
+  assert(left > 1, 'the short line was not moved at all');
+});
+
+await check('top left leaves them flush left', async () => {
+  $('align').value = 'topleft';
+  $('align').dispatchEvent(new window.Event('change'));
+  await typeWord('MORGEN\nHI', 'block');
+
+  assert(shortLineOffsets().left === 0,
+    'the lines were centred although the word is set top left');
+
+  $('align').value = 'centre';
+  $('align').dispatchEvent(new window.Event('change'));
+  await wait(300);
+});
+
+await check('the picker says which faces are too wide for the paper', async () => {
+  /*
+   * A word too wide cannot be wrapped — a break only ever happens at a space
+   * — so it runs off the sheet and the preview clips it there. Four of the
+   * faces on offer do that to `HELLO` on an upright A4, and the only way to
+   * find out used to be to pick one and watch it get cut in half.
+   */
+  await typeWord('HELLO', 'block');
+  const labels = [...$('letterStyle').options].map((o) => o.textContent);
+  const wide = labels.filter((t) => /too wide/.test(t));
+  assert(wide.length > 0, 'no face is called out as too wide for A4');
+  assert(/\d+ of \d+ columns/.test(wide[0]),
+    `the label does not give both numbers: "${wide[0]}"`);
+  // And a face that does fit is named plainly, with no warning attached.
+  const block = labels.find((t) => /^Block/.test(t));
+  assert(!/too wide/.test(block), `Block is called too wide: "${block}"`);
+});
+
+await check('and the hint says what to do about it', async () => {
+  await typeWord('HELLO', 'slantHollow');
+  const t = $('letterStyleHint').textContent;
+  assert(/cut off at the edge/.test(t), `no warning in the hint: "${t}"`);
+  assert(/turn the sheet|more paper|narrower face/.test(t),
+    `no way out is offered: "${t}"`);
+
+  // It goes away again when the face fits, rather than staying on screen
+  // complaining about a choice that has been changed.
+  await typeWord('HELLO', 'tiny');
+  assert(!/cut off at the edge/.test($('letterStyleHint').textContent),
+    'the width warning outlived the face that caused it');
+});
+
+console.log('walking the list of faces');
+
+const usable = () =>
+  [...$('letterStyle').options].filter((o) => !o.disabled).map((o) => o.value);
+
+await check('the arrows step to the next face and back again', async () => {
+  await typeWord('HI', 'block');
+  const list = usable();
+  const from = list.indexOf('block');
+
+  $('styleNext').click();
+  await wait(300);
+  assert($('letterStyle').value === list[from + 1],
+    `forward landed on ${$('letterStyle').value}, not ${list[from + 1]}`);
+
+  $('stylePrev').click();
+  await wait(300);
+  assert($('letterStyle').value === 'block',
+    `back landed on ${$('letterStyle').value}, not where it started`);
+});
+
+await check('stepping redraws the sheet, it does not only move the list', async () => {
+  // The whole point is watching the paper while you walk the list. A picker
+  // that changed its own value and left the preview alone would be worse
+  // than no button at all.
+  await typeWord('HI', 'block');
+  const before = $('mini').textContent;
+  $('styleNext').click();
+  await wait(300);
+  assert($('mini').textContent !== before, 'the preview did not follow');
+  assert($('mini').textContent.trim().length > 0, 'the preview went blank');
+});
+
+await check('the ends wrap round, so neither arrow is ever dead', async () => {
+  const list = usable();
+  await typeWord('HI', list[0]);
+  $('stylePrev').click();
+  await wait(300);
+  assert($('letterStyle').value === list[list.length - 1],
+    `back from the first face landed on ${$('letterStyle').value}`);
+
+  $('styleNext').click();
+  await wait(300);
+  assert($('letterStyle').value === list[0],
+    `forward from the last face landed on ${$('letterStyle').value}`);
+});
+
+await check('faces the machine cannot strike are stepped over', async () => {
+  /*
+   * The list greys out any face whose marks the keys cannot make, and
+   * landing on one would select an option the picker itself refuses.
+   *
+   * Marked here by hand rather than by narrowing the character set, because
+   * the character set cannot reach this state: standIns() reports a mark as
+   * missing only when it can find no stand-in at all, and nearestChar()
+   * always finds one while the machine has any keys left. So a disabled face
+   * is a contract the stepper has to honour rather than a state a person can
+   * arrive at today — which is exactly the kind worth pinning down, since
+   * nothing else would notice if it broke.
+   */
+  await typeWord('HI', 'block');
+  const opts = [...$('letterStyle').options];
+  const from = opts.findIndex((o) => o.value === 'block');
+  const skipped = opts[from + 1];
+  const landing = opts[from + 2];
+  skipped.disabled = true;
+
+  $('styleNext').click();
+  await wait(300);
+  assert($('letterStyle').value === landing.value,
+    `landed on ${$('letterStyle').value}, expected to skip ` +
+    `${skipped.value} and reach ${landing.value}`);
+
+  // The next redraw has already put the list back the way the machine says
+  // it should be; this only makes that explicit for whatever runs after.
+  skipped.disabled = false;
+});
+
+await check('the die never lands on the face already showing', async () => {
+  // A die that can roll the number it is already on is a button that
+  // sometimes does nothing, and that is indistinguishable from broken.
+  await typeWord('HI', 'block');
+  for (let i = 0; i < 12; i++) {
+    const before = $('letterStyle').value;
+    $('styleAny').click();
+    await wait(60);
+    assert($('letterStyle').value !== before,
+      `the die stayed on ${before}`);
+  }
 });
 
 await check('a raised word really uses three different characters', async () => {

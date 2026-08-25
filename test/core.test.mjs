@@ -1319,12 +1319,72 @@ check('a long word does not drag the next one onto its line', () => {
   const art = letter('ABCDEFGHIJKLMNOPQRSTUVWXYZ HI',
     { style: 'block', tones: ['B'], maxCols: cap });
   const alone = letter('HI', { style: 'block', tones: ['B'] });
-  // The short word ends up on a line of its own, so the last block is
-  // exactly as wide as 'HI' rendered by itself.
+  /*
+   * The short word ends up on a line of its own, so the last block carries
+   * exactly as much ink as 'HI' rendered by itself.
+   *
+   * Measured as ink and not as row length, because the row is now padded on
+   * the left to centre the short line under the long one. Comparing the
+   * padded length tested the alignment rather than the wrapping, and broke
+   * the moment the alignment was fixed.
+   */
+  const ink = (row) => row.trim().length;
   const lastRow = art[art.length - 1];
-  assert.strictEqual(lastRow.length, alone[alone.length - 1].length,
-    `the tail row is ${lastRow.length} wide, 'HI' alone is ` +
-    `${alone[alone.length - 1].length}`);
+  assert.strictEqual(ink(lastRow), ink(alone[alone.length - 1]),
+    `the tail row carries ${ink(lastRow)} of ink, 'HI' alone is ` +
+    `${ink(alone[alone.length - 1])}`);
+});
+
+check('the lines of one word are centred against each other', () => {
+  /*
+   * Centring the rectangle is not centring the words, and for a long time
+   * this was the difference between what the app said and what it did: every
+   * block was laid flush left and only the box around them was centred, so a
+   * short last line hung left of centre under a `Centred` heading.
+   */
+  const art = letter('MORGEN\nHI', { style: 'block', tones: ['B'] });
+  const w = Math.max(...art.map((l) => l.length));
+  const short = art[art.length - 1];
+  const left = short.length - short.trimStart().length;
+  const right = w - short.replace(/\s+$/, '').length;
+  assert.ok(Math.abs(left - right) <= 1,
+    `the short line sits ${left} from the left and ${right} from the right`);
+  assert.ok(left > 1, 'the short line was not moved at all');
+});
+
+check('top left leaves the lines flush left', () => {
+  // Both are true and the Position control is what chooses between them.
+  // A word set top left that quietly centred its own lines would be
+  // answering a question with the other question's answer.
+  const art = letter('MORGEN\nHI',
+    { style: 'block', tones: ['B'], align: 'left' });
+  const short = art[art.length - 1];
+  assert.strictEqual(short.length - short.trimStart().length, 0,
+    'the short line was indented although the word is set left');
+});
+
+check('no motif carries a blank column down its whole left edge', () => {
+  /*
+   * A column of blanks every line shares is not part of the word. It was
+   * reported as motif, so setUp() centred a box wider than the ink and
+   * pushed the word right by half the difference — and, because the margin
+   * stop is set to the motif's left edge, it was a spacebar press on every
+   * single line to reach a place the stop could have been set to.
+   *
+   * Every style, because the faces that did it were the sheared ones and
+   * naming them here would only date the test.
+   */
+  for (const style of Object.keys(STYLES)) {
+    for (const word of ['TYPE', 'HELLO', 'A']) {
+      const art = letter(word, { style, tones: ['B', '2', '-', 'x', 'o'] });
+      const inked = art.filter((l) => l.trim());
+      if (!inked.length) continue;
+      const indent = Math.min(
+        ...inked.map((l) => l.length - l.trimStart().length));
+      assert.strictEqual(indent, 0,
+        `${style} '${word}' opens every line with ${indent} blank columns`);
+    }
+  }
 });
 
 check('wrapping respects the line breaks already there', () => {

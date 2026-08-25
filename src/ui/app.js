@@ -26,9 +26,10 @@ import {
   inkPlan, INK_SCHEMES, inkTally, inkLevels, parseRows, strikesInLine, runsOf,
 } from '../core/runs.js';
 import {
-  letter, STYLES, usesTwo, tonesOf, charsUsed, marksOf,
+  letter, STYLES, usesTwo, tonesOf, charsUsed, marksOf, widestWord,
 } from '../core/lettering.js';
 import { toneRamp } from '../core/ink.js';
+import { parseFlf, flfLetter } from '../core/figlet.js';
 import { StrikeListener, LineTracker, METER_FULL_SCALE } from '../core/listen.js';
 import { buildSheetPdf, downloadPdf } from '../core/pdf.js';
 import {
@@ -53,6 +54,10 @@ const app = {
   tile: 0,            // which physical sheet the typing panel is showing
   motif: [],          // the whole picture, across every sheet
   motifColours: [],
+  ghost: false,       // the motif is the lettering box's placeholder, shown
+                      // so the faces can be compared before anything is
+                      // typed. Preview only: no instructions, no typing
+                      // panel, no PDF.
   turn: 'none',       // 'none' | 'left' | 'right' — which way you turn the
                       // finished sheet to look at it. Never how it goes in.
   showTurned: true,   // preview the finished sheet turned, rather than as it
@@ -549,13 +554,31 @@ function convert() {
   const have = new Set(charset(app.machine).filter((c) => app.chosen.has(c)));
 
   let lines = [];
+  let ghost = false;
 
   if (tab === 'text') {
     // Only the ends are trimmed. A blank line in the middle is a gap the
     // user asked for, and trailing spaces on a line are not keystrokes.
-    const word = $('letterText').value
+    let word = $('letterText').value
       .split('\n').map((l) => l.replace(/\s+$/, ''))
       .join('\n').replace(/^\n+|\n+$/g, '');
+    /*
+     * An empty box previews its own placeholder.
+     *
+     * The faces are the choice this tab exists for, and until now the only
+     * way to compare them was to type something first — the picker sat next
+     * to an empty preview and clicking through it did nothing at all. So
+     * while there is nothing typed, the word the box is already showing in
+     * grey is the word the sheet shows too, and the styles can be flicked
+     * through on it. It is a ghost: something to look at, never a job to
+     * do — draw() keeps the setup and typing sections away, because margin
+     * stops for a word nobody asked to type are the same fault as setup
+     * numbers for an empty sheet.
+     */
+    if (!word.trim()) {
+      word = $('letterText').placeholder;
+      ghost = true;
+    }
     if (word.trim()) {
       const style = $('letterStyle').value;
       /*
@@ -575,6 +598,13 @@ function convert() {
       lines = turnRows(letter(word, {
         style, tones: letterTones(style), maxCols: planRoom.cols,
         substitutes: swaps,
+        /*
+         * The same control decides both halves of "centred", because there
+         * is only one question being asked. `Position` puts the block on the
+         * paper; it now also sets the lines of the block against each other,
+         * which is the half that used to be flush left whatever you chose.
+         */
+        align: $('align').value === 'topleft' ? 'left' : 'centre',
       }), turn, have);
     }
   } else if (tab === 'paste') {
@@ -643,6 +673,7 @@ function convert() {
    * decide that separately for each.
    */
   app.motif = lines.length ? lines : [];
+  app.ghost = ghost && app.motif.length > 0;
   app.motifColours = inkPlan(app.motif, {
     scheme: $('useRed').checked && app.machine.twoColour !== false
       ? $('ink').value : 'none',
@@ -952,7 +983,19 @@ function sizeSheet(el, real) {
   } else {
     el.style.width = '';
     el.style.height = '';
-    const across = el.clientWidth;
+    /*
+     * The column, measured on the wrapper and never on the sheet itself.
+     *
+     * A turned sheet is out of the flow, so with its width cleared it does
+     * not fill the column — it reports shrink-to-fit, which is very nearly
+     * the width it was given last time. Reading that back made every press
+     * of `fit` a fresh measurement of the previous answer: each press took
+     * the short side of the sheet for the room available, so the sheet stood
+     * down by its own aspect ratio again and again and walked itself out of
+     * existence. The wrapper is an ordinary block and is the column whatever
+     * the sheet inside it is doing.
+     */
+    const across = box?.clientWidth || el.clientWidth;
     if (turned) {
       // Turned, the sheet's *height* is what has to fit the column and its
       // width is what has to fit the window. Sizing it upright first and
@@ -975,7 +1018,7 @@ function sizeSheet(el, real) {
     }
   }
 
-  if (turned) layTurned(el, box);
+  if (turned) layTurned(el, box, real);
 }
 
 /** The px number out of a style we set ourselves, or 0. */
@@ -992,7 +1035,7 @@ const px = (v) => (/^([\d.]+)px$/.exec(v ?? '') ? +RegExp.$1 : 0);
  * `turn` is what your hands do to the paper, so the preview does the same
  * thing: a left turn is a quarter turn anticlockwise on screen.
  */
-function layTurned(el, box) {
+function layTurned(el, box, real) {
   // Taken from the two lengths sizeSheet() has just pinned rather than from
   // the layout. Everything here is border-box, so they are the same number —
   // and asking the layout would force a reflow to read back a value we
@@ -1003,10 +1046,26 @@ function layTurned(el, box) {
   el.style.transform = app.turn === 'left'
     ? `translateY(${w}px) rotate(-90deg)`
     : `translateX(${h}px) rotate(90deg)`;
-  if (box) {
-    box.style.width = `${h}px`;
-    box.style.height = `${w}px`;
-  }
+  if (!box) return;
+
+  /*
+   * The width the box takes is the one thing the two sizes disagree about.
+   *
+   * At `fit` the sheet was measured to fit the column lying down, so the box
+   * is pinned to its new footprint and the column gives back exactly the
+   * room a sheet on its side takes up.
+   *
+   * At `original` it must not be pinned. A turned A4 is 297 mm across, half
+   * again as wide as the column, and a box that wide would drag the whole
+   * page sideways to hold a preview. So the box stays the width of the
+   * column and becomes the window you look through: the sheet overflows it,
+   * and the scrollbars are how you move around the paper. The height is
+   * still stated, because a rotated sheet is out of the flow and a box with
+   * nothing in the flow has no height of its own to cap — the CSS ceiling
+   * then takes it from there.
+   */
+  box.style.width = real ? '' : `${h}px`;
+  box.style.height = `${w}px`;
 }
 
 /**
@@ -1077,12 +1136,48 @@ function syncLetterHint() {
    * Disabled rather than hidden. A face that vanished would look like a bug;
    * one that is there and says which key it wants tells you what to change.
    */
+  /*
+   * And how wide each face makes the word, against the paper it has to go on.
+   *
+   * Wrapping breaks lines at spaces and nowhere else, so a single word wider
+   * than the sheet cannot be rescued by anything except a different face or
+   * a different piece of paper — it simply runs off the edge, and the
+   * preview clips it there because paper does. Measured on an SM7 at pica,
+   * `HELLO` is 94 columns in Raised, big and 114 in Slanted hollow against
+   * the 82 an upright A4 holds: the word in the box on arrival does not fit
+   * four of the faces on offer, and until now the only way to discover that
+   * was to pick one and watch it get cut in half.
+   *
+   * So the picker says so, in the same breath as it says which faces the
+   * machine has no keys for. Named rather than disabled: a face that is too
+   * wide for A4 fits a turned sheet, or two sheets, or a shorter word, and
+   * all three are things you might be about to do. A missing key is a fact
+   * about the machine in the room; this is a fact about a choice.
+   */
+  const word = $('letterText').value.trim() || $('letterText').placeholder;
+  const room = planningGrid(sheetGrid(app.paper, app.machine), app.turn).cols;
+
   for (const opt of sel.options) {
     const { missing } = letterStandIns(opt.value);
     const name = STYLES[opt.value]?.name ?? opt.value;
     opt.disabled = missing.length > 0;
-    opt.textContent = missing.length
-      ? `${name} — no stand-in for ${missing.join(' ')}` : name;
+    if (missing.length) {
+      opt.textContent = `${name} — no stand-in for ${missing.join(' ')}`;
+      continue;
+    }
+    const w = widestWord(word, opt.value);
+    opt.textContent = w > room
+      ? `${name} — too wide, ${w} of ${room} columns` : name;
+  }
+
+  /*
+   * With one face left there is nowhere to step and nothing to draw, which
+   * happens on a machine narrowed until only one face can be struck. Said
+   * plainly rather than left as three buttons that quietly do nothing.
+   */
+  const canStep = usableStyles().length > 1;
+  for (const id of ['stylePrev', 'styleNext', 'styleAny']) {
+    if ($(id)) $(id).disabled = !canStep;
   }
 
   const style = sel.value;
@@ -1104,11 +1199,108 @@ function syncLetterHint() {
   // Named as what you will actually strike, not as what the face asked for.
   // A hint that says `^` on a machine with no caret is worse than no hint.
   const stood = [...swaps].map(([want, got]) => `${want} as ${got}`);
-  el.textContent = used.length
-    ? `${weight} — ${used.join(' ')}.` +
+
+  const parts = [];
+  /*
+   * The width first, when it is a problem, because it outranks everything
+   * else here: which keys the face strikes does not matter if the word runs
+   * off the paper. Three ways out, in the order they cost — the turn is
+   * free, the paper is a drawer away, and changing the face is the one that
+   * changes what you are making.
+   */
+  const tooWide = widestWord(word, style);
+  if (tooWide > room) {
+    parts.push(`${STYLES[style]?.name ?? style} sets ${word.split(/\s+/)
+      .reduce((a, b) => (b.length > a.length ? b : a))} ${tooWide} columns ` +
+      `wide and ${app.paper.name}${isTurned(app.turn) ? ' turned' : ''} holds ` +
+      `${room}, so it will be cut off at the edge. A word is only ever broken ` +
+      `at a space, so this one cannot wrap: turn the sheet, use more paper, ` +
+      `or pick a narrower face.`);
+  }
+  if (used.length) {
+    parts.push(`${weight} — ${used.join(' ')}.` +
       (stood.length ? ` Typed ${stood.join(', ')}.` : '') +
-      ` Hollow and stencil faces cost far fewer keystrokes than solid ones.`
-    : '';
+      ` Hollow and stencil faces cost far fewer keystrokes than solid ones.`);
+  }
+  // Said where the faces are chosen, because that is where somebody
+  // clicking through them is looking — and because the preview is
+  // otherwise a word they never typed.
+  if (app.ghost) {
+    parts.push(`Showing ${$('letterText').placeholder} until you type something.`);
+  }
+  el.textContent = parts.join(' ');
+}
+
+/**
+ * The faces this machine can actually strike, in the order they are listed.
+ *
+ * Everything the stepper does is a walk along this array, and it is taken
+ * from the picker rather than from STYLES because the picker is where the
+ * machine has already had its say: syncLetterHint() greys out every face
+ * whose marks the keys cannot make. Stepping onto one of those would select
+ * an option the list itself refuses, which is the kind of disagreement this
+ * app exists to prevent.
+ */
+const usableStyles = () =>
+  [...$('letterStyle').options].filter((o) => !o.disabled);
+
+/**
+ * Take a face, by the same path a person clicking the list takes.
+ *
+ * Dispatching the event rather than calling convert() directly is what keeps
+ * there being one path: the handler already knows to redraw and to save, and
+ * a second copy of that here is a second thing to keep in step.
+ */
+function useStyle(value) {
+  const sel = $('letterStyle');
+  if (!value || value === sel.value) return;
+  sel.value = value;
+  /*
+   * The event is built in the document's own realm, not from whatever
+   * `Event` happens to be in scope here.
+   *
+   * A bare `new Event(...)` is the same class as the page's in a browser and
+   * a different one everywhere else — under Node the global `Event` is
+   * Node's, and dispatching one of those at a jsdom element is rejected
+   * outright: "parameter 1 is not of type 'Event'". The select knows which
+   * document it belongs to, so ask it.
+   */
+  const view = sel.ownerDocument?.defaultView ?? window;
+  sel.dispatchEvent(new view.Event('change'));
+}
+
+/**
+ * Step to the next face, or the one before.
+ *
+ * Wraps round, so neither arrow is ever a button that does nothing at one
+ * end of the list. A face the machine cannot strike is stepped over rather
+ * than landed on — see usableStyles() — and if the current face is itself
+ * one of those, which happens when the character set is narrowed while a
+ * face is chosen, forward starts at the top of the list and back at the
+ * bottom rather than counting from a place that is not in it.
+ */
+function stepStyle(by) {
+  const usable = usableStyles();
+  if (usable.length < 2) return;
+  const here = usable.findIndex((o) => o.value === $('letterStyle').value);
+  const at = here < 0
+    ? (by > 0 ? 0 : usable.length - 1)
+    : (here + by + usable.length) % usable.length;
+  useStyle(usable[at].value);
+}
+
+/**
+ * Any face but this one.
+ *
+ * The one already showing is left out of the draw on purpose. A die that can
+ * roll the number it is already on is a button that sometimes does nothing,
+ * and there is no way to tell that from a button that is broken — the same
+ * reason the two preview sizes do not act when pressed a second time.
+ */
+function anyStyle() {
+  const pool = usableStyles().filter((o) => o.value !== $('letterStyle').value);
+  if (!pool.length) return;
+  useStyle(pool[Math.floor(Math.random() * pool.length)].value);
 }
 
 /**
@@ -1180,6 +1372,10 @@ function draw() {
   // instructions, the sheet and the table stay out of the way until there
   // is something real to type.
   document.body.classList.toggle('empty', lines.length === 0);
+  // A ghost is drawn but not typed: the CSS fades the preview the way the
+  // placeholder is faded in the box it came from, and keeps the setup and
+  // typing sections away.
+  document.body.classList.toggle('ghost', app.ghost);
   if (!lines.length) {
     $('seams').hidden = true;
     $('sheetPickRow').hidden = true;
@@ -1298,6 +1494,25 @@ function draw() {
   setTurnedView(app.showTurned);
   syncComposeHint();
   drawSheetPick();
+
+  /*
+   * A ghost stops here, with the preview drawn and the typing half empty.
+   *
+   * The half above answers "what would this face look like", which is the
+   * whole reason the placeholder is rendered at all. The half below is a
+   * work plan — margin stops, line counts, a sheet to work down — and a
+   * work plan for a word nobody has asked to type is advice about nothing.
+   */
+  if (app.ghost) {
+    $('instructions').innerHTML = '';
+    $('sheet').innerHTML = '';
+    $('table').innerHTML = '';
+    app.els = [];
+    app.rows = [];
+    $('count').textContent = '';
+    $('bar').style.width = '0%';
+    return;
+  }
 
   const steps = instructions();
   $('instructions').innerHTML = steps.map(
@@ -1525,6 +1740,10 @@ function paint(previous = -1) {
  *   it also clears a lost count; a carriage return only ends the line.
  */
 function go(i, scroll = true, byHand = true) {
+  // A ghost has no typing to navigate. A space pressed while flicking
+  // through the faces must not move a line counter nobody can see — and
+  // must not carry a moved counter into the real motif typed next.
+  if (app.ghost) return;
   const prev = app.at;
   if (byHand && app.tracker) {
     app.tracker.resolve(0);
@@ -1707,14 +1926,33 @@ function wire() {
     }
   });
 
+  // Walking the list of faces. The list itself stays the way to go straight
+  // to one; these are for looking through them with the sheet in view.
+  $('stylePrev').onclick = () => stepStyle(-1);
+  $('styleNext').onclick = () => stepStyle(1);
+  $('styleAny').onclick = anyStyle;
+
   $('full').onclick = toggleFull;
   $('pdf').onclick = savePdf;
   $('listen').onclick = toggleListen;
 
-  // Redrawing is enough: nothing about the motif changes, only the size the
-  // same sheet is drawn at, so there is no need to convert the picture again.
-  $('zoomFit').onclick = () => { setZoom('fit'); save(); };
-  $('zoomReal').onclick = () => { setZoom('original'); save(); };
+  /*
+   * Redrawing is enough: nothing about the motif changes, only the size the
+   * same sheet is drawn at, so there is no need to convert the picture again.
+   *
+   * Pressing the size you are already looking at does nothing at all. Sizing
+   * is now idempotent, so a second press would land on the same number — but
+   * a button that is already the answer should not be a button that acts,
+   * and this way there is no second measurement to be wrong twice.
+   */
+  $('zoomFit').onclick = () => {
+    if (app.zoom === 'fit') return;
+    setZoom('fit'); save();
+  };
+  $('zoomReal').onclick = () => {
+    if (app.zoom === 'original') return;
+    setZoom('original'); save();
+  };
   if ($('zoomTurn')) {
     $('zoomTurn').onclick = () => { setTurnedView(!app.showTurned); save(); };
   }
@@ -1930,7 +2168,9 @@ function toggleFull() {
 
 /** A printable version: the sheet at true size, then what to type. */
 function savePdf() {
-  if (!app.motif.length) return;
+  // Never a ghost: a PDF of the placeholder would be a work plan for a
+  // word nobody asked for.
+  if (app.ghost || !app.motif.length) return;
   /*
    * The whole job, not the sheet on screen.
    *

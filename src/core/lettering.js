@@ -1842,21 +1842,75 @@ const leadingFor = (h) => Math.max(1, Math.round(h / 4));
  * How wide each letter comes out, after the style's transforms.
  *
  * Measuring the *input* string is useless here: one `M` is 5 columns in
- * Block and 24 in Raised, big. Cached per call, because a transform chain
- * that scales by three and floods a background is not something to run once
- * per letter per candidate line.
+ * Block and 24 in Raised, big.
+ *
+ * The cache outlives the call, and it is safe for it to: the faces are
+ * constant data at the top of this file and every transform is a pure
+ * function of its rows, so the width of `M` in Raised, big is a fact about
+ * the program rather than about this render. Per call it was already worth
+ * having — a chain that scales by three and floods a background is not
+ * something to run once per letter per candidate line — but the picker asks
+ * all forty-one styles how wide a word comes out on every redraw, and paying
+ * that again each time is 13 to 57 milliseconds of stutter on the keystroke
+ * that asked. Measured once, it is free from the second redraw on.
  */
-function glyphWidthsOf(spec, face) {
-  const seen = new Map();
+const GLYPH_W = new Map();
+
+function glyphWidthsOf(style, spec, face) {
   return (ch) => {
-    const key = ch.toUpperCase();
-    if (!seen.has(key)) {
-      let rows = face[key] ?? face[' '];
+    const up = ch.toUpperCase();
+    const key = `${style} ${up}`;
+    let w = GLYPH_W.get(key);
+    if (w === undefined) {
+      let rows = face[up] ?? face[' '];
       for (const fn of spec.fns) rows = fn(rows);
-      seen.set(key, width(pad(rows)));
+      w = width(pad(rows));
+      GLYPH_W.set(key, w);
     }
-    return seen.get(key);
+    return w;
   };
+}
+
+/**
+ * How wide the widest unbreakable word comes out, without rendering it.
+ *
+ * The one number that decides whether a face can be made to fit. Wrapping
+ * breaks lines at spaces and nowhere else — a word split mid-letter is
+ * unreadable, so letter() refuses to do it — which means a single word wider
+ * than the paper cannot be rescued by a narrower column, a bigger margin or
+ * a longer sentence. It is the face that has to change, or the paper.
+ *
+ * Measured from the glyph widths rather than from a render, and that is the
+ * whole point of it: rendering forty-one styles to find out which ones fit
+ * costs tens of milliseconds, and this costs nothing once the widths are
+ * known.
+ *
+ * An upper bound, never an under-estimate, and it can sit one column high.
+ * letter() trims the blank columns every line shares, which is a property of
+ * the finished block rather than of any one glyph, so the only way to know
+ * it exactly is to render — which is the cost this function exists to avoid.
+ * Erring high is the right way round for the one thing it is used for:
+ * warning that a face will not fit.
+ *
+ * @param {string} text
+ * @param {keyof STYLES} style
+ * @param {number} [spacing=1]
+ * @returns {number} columns, an upper bound
+ */
+export function widestWord(text, style, spacing = 1) {
+  const spec = STYLES[style] ?? STYLES.big;
+  const face = FACES[spec.face];
+  const widthOf = glyphWidthsOf(style, spec, face);
+  const gap = spacing * (spec.fns.includes(widen) ? 2 : 1);
+
+  let most = 0;
+  for (const word of String(text).toUpperCase().split(/[\s\n]+/)) {
+    const chars = [...word];
+    if (!chars.length) continue;
+    most = Math.max(most,
+      chars.reduce((n, ch) => n + widthOf(ch), 0) + gap * (chars.length - 1));
+  }
+  return most;
 }
 
 /**
@@ -1953,6 +2007,8 @@ function renderRow(word, spec, face, spacing) {
  * @param {string} [opt.light='+']   second character, for shadow and relief
  * @param {number} [opt.spacing=1]   blank columns between letters
  * @param {number} [opt.maxCols]     wrap to this many columns
+ * @param {'centre'|'left'} [opt.align='centre'] how lines of one word line
+ *   up against each other — not where the word goes on the paper
  * @param {Map<string,string>} [opt.substitutes] stand-ins for marks the
  *   machine has not got, from standIns() in machine.js
  * @returns {string[]} lines
@@ -1964,6 +2020,7 @@ export function letter(word, opt = {}) {
     light = '+',
     spacing = 1,
     maxCols = 0,
+    align = 'centre',
   } = opt;
 
   const spec = STYLES[style] ?? STYLES.big;
@@ -1991,7 +2048,7 @@ export function letter(word, opt = {}) {
    * flattened into rows of characters with no word boundaries left.
    */
   const gap = spacing * (spec.fns.includes(widen) ? 2 : 1);
-  const widthOf = glyphWidthsOf(spec, face);
+  const widthOf = glyphWidthsOf(style, spec, face);
   const rowsIn = String(word).split('\n');
   const wrapped = maxCols > 0
     ? rowsIn.flatMap((row) =>
@@ -1999,6 +2056,30 @@ export function letter(word, opt = {}) {
     : rowsIn;
 
   const blocks = wrapped.map((row) => renderRow(row, spec, face, spacing));
+
+  /*
+   * The lines of one word are set against each other, not only against the
+   * paper.
+   *
+   * Every block was laid flush left and the *rectangle* around them was then
+   * centred on the sheet, which is not the same thing and looks nothing like
+   * it. Measured in Block: `GUTEN MORGEN LYON` wraps to three lines of 29,
+   * 35 and 23 columns, so LYON sat six columns left of where it belonged
+   * while the app said `Centred` — and the shorter the last line, the more
+   * obviously wrong it looked.
+   *
+   * Which way they line up follows the caller's alignment, because that is
+   * the setting which says what centring is supposed to mean here. Nothing
+   * grows: the widest block keeps its place and only the narrower ones move,
+   * so a word wrapped exactly to `maxCols` still ends exactly at `maxCols`.
+   */
+  if (align !== 'left') {
+    const wide = Math.max(0, ...blocks.map((b) => b[0]?.length ?? 0));
+    blocks.forEach((b, i) => {
+      const lead = Math.floor((wide - (b[0]?.length ?? 0)) / 2);
+      if (lead > 0) blocks[i] = b.map((r) => '.'.repeat(lead) + r);
+    });
+  }
 
   // Height of a rendered block, for the leading and for blank lines. Taken
   // from a block that has one rather than from the face itself, because the
@@ -2037,7 +2118,31 @@ export function letter(word, opt = {}) {
   // blank line the user asked for, and both are meant to be there.
   while (lines.length && !lines[0].trim()) lines.shift();
   while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
-  return lines;
+
+  /*
+   * And the blank columns down the left, which are not part of the word
+   * either.
+   *
+   * The two trims above have always been here; this is the same trim a
+   * quarter turn round, and leaving it out is what made a centred word land
+   * off centre. Any face that opens with empty cells reported them as motif
+   * — `TYPE` slanted is 39 columns of which the first two are blank, the
+   * calligraphic hand the same, `slantHollow` six — so setUp() centred a box
+   * wider than the ink and pushed the word right by half the difference.
+   *
+   * They cost keystrokes as well as accuracy. The margin stop is set to the
+   * left edge of the motif, so a blank column at the front of every line is
+   * a spacebar press on every line, typed to reach a place the stop could
+   * simply have been set to.
+   *
+   * Only what every line shares. A blank column at the front of *one* line
+   * is that line's own indent — the centring above puts it there on purpose
+   * — and moving it would undo the alignment this function just made.
+   */
+  const inked = lines.filter((l) => l.trim());
+  if (!inked.length) return lines;
+  const indent = Math.min(...inked.map((l) => l.length - l.trimStart().length));
+  return indent > 0 ? lines.map((l) => l.slice(indent)) : lines;
 }
 
 /**

@@ -191,6 +191,29 @@ select { padding-right: 1.8rem; }
 @media (max-width: 30em) { .measure-row { display: block; } }
 textarea { resize: vertical; line-height: 1.4; }
 
+/*
+ * The face picker: the list, and three ways to walk it.
+ *
+ * One control, so it is one row — the buttons take the height of the select
+ * rather than sitting under it, and only the list stretches. They are square
+ * because they are a place to put your finger and not a sentence: the arrows
+ * step, the die takes any face but the one already showing.
+ *
+ * Greyed rather than hidden when there is nowhere to step, which happens on
+ * a machine stripped down far enough that only one face is left. A button
+ * that vanished would look like a bug; one that is plainly out of action
+ * says there is nothing to go to.
+ */
+.picker { display: flex; gap: 0.4rem; align-items: stretch; }
+.picker select { flex: 1; min-width: 0; }
+.picker .step { flex: none; padding: 0.45rem 0.6rem; line-height: 1.2; }
+.picker .step:disabled {
+  color: var(--faint);
+  border-color: var(--hair);
+  cursor: default;
+}
+.picker .step:disabled:active { transform: none; }
+
 /* The lettering box holds the words that get drawn, so it wraps rather than
    scrolling sideways: a long word running off the right of a box you cannot
    see the end of is how you type something you did not mean to. */
@@ -356,7 +379,15 @@ input[type=range]::-moz-range-thumb {
  * cell that was actually taken, so the choice stays readable while hovering
  * over something else.
  */
-.compose { display: flex; align-items: flex-start; gap: 0.9rem; }
+/*
+ * `compose-pick`, not `compose`. The page's own two columns answer to that
+ * name — see the top of this file — and this rule, being later in the
+ * stylesheet and no less specific, was quietly redeclaring the whole layout
+ * as a flex row: the settings column grew to the width of its own hint text
+ * and the paper took whatever was left. A widget does not get to rename the
+ * page it is standing in.
+ */
+.compose-pick { display: flex; align-items: flex-start; gap: 0.9rem; }
 .matrix {
   display: grid;
   grid-template-columns: repeat(var(--across, 4), 1fr);
@@ -423,6 +454,17 @@ input[type=range]::-moz-range-thumb {
 .sheet-pick .pick.blank.on { color: var(--paper); }
 
 .paper-scroll.turned { position: relative; overflow: hidden; }
+/*
+ * Turned and at actual size, the box is a window and not a frame.
+ *
+ * `overflow: hidden` is right for a fitted sheet: it is measured to sit in
+ * the column, and hiding a stray pixel of a rotated edge is all it does. At
+ * actual size the sheet is deliberately bigger than the box — a turned A4 is
+ * 297 mm across and 210 mm down — so hiding the overflow cut the foot of the
+ * paper off with no way to reach it. The rotated sheet is positioned against
+ * this box, so its turned footprint is what there is to scroll to.
+ */
+.paper-scroll.real.turned { overflow: auto; }
 .paper-view.turned {
   position: absolute;
   top: 0;
@@ -604,6 +646,18 @@ body.empty .blank { display: block; }
 body.empty #stepSetup,
 body.empty #stepSheet,
 body.empty #stepTable { display: none; }
+
+/*
+ * The lettering tab previews its own placeholder while the box is empty,
+ * so the faces can be flicked through before anything is typed. The ghost
+ * is drawn the way the placeholder is drawn in the box it came from —
+ * faded — and the typing sections stay away: it is something to look at,
+ * not a job to do.
+ */
+body.ghost #mini { opacity: .55; }
+body.ghost #stepSetup,
+body.ghost #stepSheet,
+body.ghost #stepTable { display: none; }
 
 /* ── full screen ─────────────────────────────────────────────── */
 
