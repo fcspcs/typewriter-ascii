@@ -662,17 +662,26 @@ function convert() {
       const font = flfFont($('letterStyle').value.slice(FLF.length));
       if (font) {
         const r = flfLines(font, word, { have, maxCols: planRoom.cols });
+        /*
+         * One note, not three: note() holds a single line, so a word with
+         * unknowns *and* swaps would show only whichever was said last. And
+         * none at all for a ghost — the placeholder is something to look
+         * at, never a job to do, and the picker's hint already says all of
+         * this where the face is being chosen.
+         */
+        const said = [];
         if (r.unknown.size) {
-          note(`${font.name} has no ${[...r.unknown].join(' ')} — left blank.`);
+          said.push(`${font.name} has no ${[...r.unknown].join(' ')} — left blank.`);
         }
         if (r.swaps.size) {
-          note(`Typing ${[...r.swaps].map(([a, b]) => `${a} as ${b}`)
+          said.push(`Typing ${[...r.swaps].map(([a, b]) => `${a} as ${b}`)
             .join(', ')} — this machine has no ${[...r.swaps.keys()].join(' ')}.`);
         }
         if (r.missing.length) {
-          note(`No stand-in for ${r.missing.join(' ')} on this machine — ` +
+          said.push(`No stand-in for ${r.missing.join(' ')} on this machine — ` +
                `left blank.`);
         }
+        if (said.length && !ghost) note(said.join(' '));
         lines = turnRows(r.lines, turn, have);
       }
     } else if (word.trim()) {
