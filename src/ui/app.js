@@ -2448,6 +2448,11 @@ function draw() {
    * shrinking sooner and lets the sheet run off the side instead, which now
    * costs nothing — the scale travels with it, and scrolling sideways
    * through a wide motif is the ordinary way to read one on a phone.
+   *
+   * Full screen answers a different question. Nothing else is left on
+   * screen to protect and no reason is offered for opening it except to see
+   * the whole sheet at once, so its floor stays low on every pointer — a
+   * wide motif shrinks to fit the width instead of running off it.
    */
   const ch = Math.max(20, Math.max(0, ...typing.map((l) => l.length)));
   const floor = coarsePointer() ? 11 : 8;
@@ -2456,7 +2461,7 @@ function draw() {
     `${clamp(Math.floor((window.innerWidth - 80) / ch * 1.7), floor, 15)}px`);
   document.documentElement.style.setProperty(
     '--sheet-full',
-    `${clamp(Math.floor((window.innerWidth - 40) / ch * 1.7), floor + 1, 22)}px`);
+    `${clamp(Math.floor((window.innerWidth - 40) / ch * 1.7), 6, 22)}px`);
 
   app.els = renderSheet($('sheet'), typing, typingInk);
   app.els.forEach((el, i) => {

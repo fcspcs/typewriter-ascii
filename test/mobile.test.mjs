@@ -448,6 +448,19 @@ await check('the scale travels with the sheet it names', () => {
     'the open line’s ground stops at the fold instead of running the width');
 });
 
+await check('the scale still agrees with the sheet in full screen', () => {
+  /*
+   * `.sheet` switches to --sheet-full in full screen; `.scale` did not, so a
+   * tick sat at the column width --sheet-size names while the characters
+   * beneath it sat at the column width --sheet-full names — two different
+   * widths for the same grid the moment the two stopped matching, which is
+   * exactly what happens once --sheet-full is free to shrink past the
+   * fitted floor.
+   */
+  assert(declared(CSS, 'body.full .scale', 'font-size') === 'var(--sheet-full, 15px)',
+    'the scale keeps --sheet-size in full screen and drifts off the columns it names');
+});
+
 console.log('the app, told it is being touched');
 
 await check('the sheet stops shrinking while it is still legible', async () => {
@@ -468,6 +481,26 @@ await check('the sheet stops shrinking while it is still legible', async () => {
     .getPropertyValue('--sheet-size'));
   assert(size >= 11,
     `the sheet is set at ${size}px on a phone, which is not a readable cell`);
+});
+
+await check('full screen shrinks past that floor instead of scrolling', () => {
+  /*
+   * Full screen has nothing left on the page to protect and no reason to be
+   * open except to see the whole sheet at once, so it gives up the floor
+   * that keeps the fitted view's cells tappable and shrinks to the width
+   * instead — the same wide motif that stops at 11px in the fitted view
+   * (previous check) has to go smaller here rather than run off the screen.
+   */
+  const ch = Math.max(...[...window.document.querySelectorAll('.ln')]
+    .map((ln) => ln.querySelectorAll('.c').length));
+  assert(ch > 45, `test motif is only ${ch} cells wide, too narrow to prove ` +
+    'the fitted floor would have forced a scrollbar');
+
+  const full = parseFloat(window.document.documentElement.style
+    .getPropertyValue('--sheet-full'));
+  assert(full * ch / 1.7 <= window.innerWidth - 40 + 1,
+    `--sheet-full is ${full}px for a ${ch}-cell line, which still runs off ` +
+    'a 360px screen');
 });
 
 await check('actual size is not offered on a screen too small to hold one',

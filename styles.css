@@ -986,6 +986,9 @@ body.full #stepSheet {
 }
 body.full h2 { margin-bottom: 0.9rem; }
 body.full .sheet { border: 0; font-size: var(--sheet-full, 15px); }
+/* The scale is the sheet's own grid — see the comment in index.html — which
+   only stays true if it is set at the same size as the sheet it sits over. */
+body.full .scale { font-size: var(--sheet-full, 15px); }
 
 /* ── characters dialog ───────────────────────────────────────── */
 
