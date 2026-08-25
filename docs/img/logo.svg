@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="480" viewBox="0 0 240 240">
+  <!--
+    The margin release key of an Olympia SM7 — the square key marked with
+    four dots. Press it at the end of a line and the machine lets you type
+    past the margin stop: a key that exists so you can keep writing where
+    the rules say stop, which is more or less what this project is.
+
+    Colours are the site's own: dark paper, cream ink.
+  -->
+  <rect width="240" height="240" fill="#15140f"/>
+  <!-- the key body -->
+  <rect x="46" y="52" width="148" height="148" rx="22" fill="none" stroke="#eae7dd" stroke-width="6"/>
+  <!-- the top face, sitting high on the skirt -->
+  <rect x="66" y="66" width="108" height="104" rx="16" fill="none" stroke="#eae7dd" stroke-width="2"/>
+  <!-- the legend: four dots -->
+  <circle cx="106" cy="104" r="6.5" fill="#eae7dd"/>
+  <circle cx="134" cy="104" r="6.5" fill="#eae7dd"/>
+  <circle cx="106" cy="132" r="6.5" fill="#eae7dd"/>
+  <circle cx="134" cy="132" r="6.5" fill="#eae7dd"/>
+</svg>

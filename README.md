@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/img/logo.png" width="150" alt="Two flourished letters drawn with a broad nib, white on warm grey">
+<img src="docs/img/logo.svg" width="140" alt="The margin release key: a square typewriter key marked with four dots — press it and the machine lets you type past the margin stop">
 
 <h1>Typewriter ASCII</h1>
 
