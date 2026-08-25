@@ -332,6 +332,40 @@ function glyphWidthsOf(style, spec, face) {
 }
 
 /**
+ * Which characters a drawn face has no letterform for.
+ *
+ * renderRow() falls back to `face[' ']` for anything the face does not
+ * draw. That is the right thing to *render* — a gap where the letter would
+ * have been beats a hole punched through the block — and the wrong thing to
+ * do without saying so: `}}}` on a face with no brace came out as three
+ * blank glyphs, which letter() then trimmed away to nothing, and the page
+ * reported "Nothing to type yet" as though the box had been left empty.
+ *
+ * The imported FIGlet fonts have answered this all along — flfLetter()
+ * returns an `unknown` set and the page names what was in it. This asks the
+ * same question of the faces drawn in code, so both kinds can be answered
+ * in the same words at the same place.
+ *
+ * Uppercased first, because that is what renderRow() looks up: a face holds
+ * one set of letterforms and `a` is drawn with `A`.
+ *
+ * @param {string} text
+ * @param {keyof STYLES} style
+ * @returns {Set<string>} the distinct characters that cannot be drawn
+ */
+export function undrawable(text, style) {
+  const face = FACES[STYLES[style]?.face];
+  const out = new Set();
+  if (!face) return out;
+  for (const ch of String(text).toUpperCase()) {
+    // Whitespace is a gap that was asked for, not a letter that went astray.
+    if (/\s/.test(ch)) continue;
+    if (!face[ch]) out.add(ch);
+  }
+  return out;
+}
+
+/**
  * How wide the widest unbreakable word comes out, without rendering it.
  *
  * The one number that decides whether a face can be made to fit. Wrapping

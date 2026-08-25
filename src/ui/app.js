@@ -27,7 +27,7 @@ import {
   inkPlan, INK_SCHEMES, inkTally, inkLevels, parseRows, strikesInLine, runsOf,
 } from '../core/runs.js';
 import {
-  letter, STYLES, usesTwo, tonesOf, charsUsed, marksOf, widestWord,
+  letter, STYLES, usesTwo, tonesOf, charsUsed, marksOf, widestWord, undrawable,
 } from '../core/lettering.js';
 import { toneRamp, inkWeights } from '../core/ink.js';
 import { parseFlf, flfLetter } from '../core/figlet.js';
@@ -716,6 +716,28 @@ function widestFor(word, style) {
   if (!font || font === 'loading') return null;
   const r = flfLetter(font, String(word), { maxCols: 0 });
   return Math.max(0, ...r.lines.map((l) => l.length));
+}
+
+/**
+ * The face's name, and the characters it has no letterform for.
+ *
+ * One question asked of both kinds of face. A drawn face answers from its
+ * own table; an imported font answers from the file, which may not have
+ * arrived yet — `null` for that, so a font in flight is never reported as a
+ * font missing every letter.
+ *
+ * @returns {{name: string, lost: Set<string>}|null}
+ */
+function faceGaps(word, style) {
+  if (!isFlf(style)) {
+    return { name: STYLES[style]?.name ?? style, lost: undrawable(word, style) };
+  }
+  const font = flfFonts.get(style.slice(FLF.length));
+  if (!font || font === 'loading') return null;
+  return {
+    name: font.name,
+    lost: flfLetter(font, String(word), { maxCols: 0 }).unknown,
+  };
 }
 
 /** A word set in an flf font, swapped to what this machine can strike. */
@@ -1818,35 +1840,89 @@ function syncFit() {
     box.classList.remove('over');
     el.hidden = true;
     el.textContent = '';
+    el.classList.remove('stop');
   };
 
-  /*
-   * Nothing to say in three cases. Another tab is not this box's business;
-   * a motif planned sideways is set as a picture and scaled into the sheet,
-   * so there is no width left to overrun; and a ghost is something to look
-   * at rather than a job to do.
-   */
-  if (currentTab() !== 'text' || isTurned(app.turn) || !box.value.trim()) {
-    return clear();
-  }
+  // Another tab is not this box's business, and an empty box has said
+  // nothing yet to have anything wrong with it.
+  if (currentTab() !== 'text' || !box.value.trim()) return clear();
 
-  const cap = layoutWidth();
   const style = $('letterStyle').value;
+
+  /*
+   * First: characters the face has no letterform for.
+   *
+   * Before the width, because it outranks it — how wide a word comes out
+   * hardly matters if half of it is not going to be drawn — and outside the
+   * turned check below, because this has nothing to do with how the sheet
+   * is held. A brace is missing from the face whichever way you turn it.
+   *
+   * The imported FIGlet fonts already said this, by way of `note()`, which
+   * is an eight-second message beside the paper. That is the wrong shape
+   * for it: the reason your preview is empty should stay on screen next to
+   * the box that caused it, which is what the sentence field does on the
+   * picture tab. So both kinds of face report here now, and the note is
+   * left to the things that really are passing remarks.
+   */
+  const gaps = faceGaps(box.value, style);
+  const lost = gaps?.lost ?? new Set();
+
+  // Nothing drawn, and characters the face has not got: those two together
+  // are the whole story, and there is no width left to have an opinion on.
+  const nothingLeft = lost.size > 0 && !app.motif.length && !app.ghost;
+
+  /*
+   * Then the width — the widest word that cannot be broken, since a line is
+   * only ever split at a space.
+   *
+   * Not asked at all when the motif is turned: it is set as a picture and
+   * scaled into the sheet, so there is nothing left to overrun.
+   */
   let worst = '';
   let wide = 0;
-  for (const piece of box.value.split(/\s+/)) {
-    if (!piece) continue;
-    const w = widestFor(piece, style);
-    if (w === null) return clear();      // the font is still on its way
-    if (w > wide) { wide = w; worst = piece; }
+  let cap = 0;
+  if (!nothingLeft && !isTurned(app.turn)) {
+    cap = layoutWidth();
+    for (const piece of box.value.split(/\s+/)) {
+      if (!piece) continue;
+      const w = widestFor(piece, style);
+      // The font is still on its way; it will redraw when it lands.
+      if (w === null) { wide = 0; break; }
+      if (w > wide) { wide = w; worst = piece; }
+    }
+    if (wide <= cap) wide = 0;
   }
-  if (!wide || wide <= cap) return clear();
 
-  box.classList.add('over');
+  if (!lost.size && !wide) return clear();
+
+  /*
+   * Both can be true at once — a face missing a brace *and* a word too wide
+   * for the paper — so they are written as one message rather than one of
+   * them silently winning. The missing letters come first: how wide a word
+   * comes out matters less than which parts of it are going to appear.
+   */
+  const say = [];
+  if (lost.size) {
+    const marks = [...lost].join(' ');
+    say.push(nothingLeft
+      ? `${gaps.name} has no ${marks}, and there is nothing else here to `
+        + `draw. Try another face, or a word this one can set.`
+      : `${gaps.name} has no ${marks} — `
+        + `${lost.size > 1 ? 'they are' : 'it is'} left blank.`);
+  }
+  if (wide) {
+    say.push(`${wide} of ${cap} columns — “${worst}” cannot wrap, `
+      + `because a line is only ever broken at a space.`);
+  }
+
+  box.classList.toggle('over', wide > 0);
   el.hidden = false;
-  el.textContent = `${wide} of ${cap} columns — “${worst}” cannot wrap, ` +
-    `because a line is only ever broken at a space.`;
+  el.textContent = say.join(' ');
+  // A refusal when nothing can be drawn or nothing will fit; a note when the
+  // word still reaches the paper with a letter or two missing from it.
+  el.classList.toggle('stop', nothingLeft || wide > 0);
 
+  if (!wide) return;
   const fixes = fitFixes(worst, wide, cap, style);
   if (!fixes.length) return;
   const row = document.createElement('span');
@@ -2150,13 +2226,21 @@ function draw() {
   if (app.listener && (!lines.length || app.ghost)) toggleListen();
 
   /*
-   * Before the early return, because this one describes the *input* rather
-   * than the motif — and because refusing a sentence is exactly what empties
-   * the motif. Left below with the other panels it would have gone quiet in
-   * the one case it exists for: nothing typeable in the box, no lines, and
-   * no explanation of why the sheet went blank.
+   * Before the early return, because these two describe the *input* rather
+   * than the motif — and because refusing the input is exactly what empties
+   * the motif. Left below with the other panels they go quiet in the one
+   * case they exist for: nothing usable in the box, no lines, and no
+   * explanation of why the sheet went blank.
+   *
+   * syncFit() was below it, and that is what made a word of characters the
+   * face cannot draw the quietest failure on the page. `}}}` on a face with
+   * no brace draws three blank glyphs, which letter() trims to nothing, so
+   * the motif came out empty, draw() turned round here, and the preview
+   * said "Nothing to type yet. Choose a picture, or type a word" — to
+   * somebody who had just typed a word.
    */
   syncSentenceFit();
+  syncFit();
 
   if (!lines.length) {
     $('seams').hidden = true;
@@ -2216,7 +2300,6 @@ function draw() {
     }).join('');
 
   syncLetterHint();
-  syncFit();
   syncPasteFit();
   /*
    * These two are stale after a tab switch but not visible: both sit inside

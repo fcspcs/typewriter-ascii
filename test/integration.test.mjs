@@ -1024,6 +1024,55 @@ await check('a word too wide to break is caught at the box it was typed in',
       'the box stayed marked after the word was shortened');
   });
 
+await check('a word the face cannot draw says so, instead of going quiet',
+  async () => {
+    /*
+     * The quietest failure on the page, and the one that looked most like
+     * the app being broken.
+     *
+     * renderRow() falls back to the space glyph for anything the face has
+     * not got, which is the right thing to draw. `}}}` on a face with no
+     * brace is therefore three blank glyphs, which letter() trims away to
+     * nothing — so the motif came out empty, draw() turned round at its
+     * early return, and the preview said "Nothing to type yet. Choose a
+     * picture, or type a word" to somebody who had just typed a word.
+     *
+     * The sentence field on the picture tab has always answered this for
+     * the sentence. This is the same answer for the words box.
+     */
+    [...window.document.querySelectorAll('.tab')]
+      .find((t) => t.dataset.tab === 'text').click();
+    $('letterText').value = '}}}';
+    $('letterText').dispatchEvent(new window.Event('input'));
+    await wait(500);
+
+    const el = $('letterFit');
+    assert(!el.hidden, 'a word that drew nothing at all was not explained');
+    assert(/\}/.test(el.textContent),
+      `the character that cannot be drawn is not named: "${el.textContent}"`);
+    assert(el.classList.contains('stop'),
+      'nothing drawn at all is a refusal, not a note');
+
+    // Some of it drawable is a different matter: the word still reaches the
+    // paper, so it is a note about what went missing rather than a refusal.
+    $('letterText').value = 'H}I';
+    $('letterText').dispatchEvent(new window.Event('input'));
+    await wait(500);
+    assert(!el.hidden, 'a character silently dropped from a word was not named');
+    assert(/\}/.test(el.textContent), `got "${el.textContent}"`);
+    assert(!el.classList.contains('stop'),
+      'a word that still draws is not a refusal');
+    assert($('letterText').value === 'H}I',
+      'the box was rewritten rather than reported on');
+
+    // And a word the face can set says nothing at all.
+    $('letterText').value = 'HI';
+    $('letterText').dispatchEvent(new window.Event('input'));
+    await wait(500);
+    assert(el.hidden, `still complaining about a word it can draw: ` +
+      `"${el.textContent}"`);
+  });
+
 console.log('planning a motif to be read sideways');
 
 // The motif width, measured from the lines that are NOT open. The open line
