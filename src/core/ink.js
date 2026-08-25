@@ -137,6 +137,11 @@ function inkCentres(atlas) {
 export function inkLadder({ atlas = null, allowed = null } = {}) {
   const weight = inkWeights(atlas);
   const centre = inkCentres(atlas);
+  // Edge evenness travels with the ladder where the atlas measured it; a
+  // table atlas has none, and zero means "no reason to distrust the edges".
+  const raggedBy = new Map((atlas?.glyphs ?? [])
+    .filter((g) => typeof g.ragged === 'number')
+    .map((g) => [g.ch, g.ragged]));
   const pool = allowed
     ? [...allowed]
     : (atlas?.glyphs ?? []).map((g) => g.ch).filter((c) => c !== ' ');
@@ -146,7 +151,10 @@ export function inkLadder({ atlas = null, allowed = null } = {}) {
   for (const ch of pool) {
     if (ch === ' ' || ch === '\n' || seen.has(ch)) continue;
     seen.add(ch);
-    out.push({ ch, weight: weight(ch), centre: centre(ch) });
+    out.push({
+      ch, weight: weight(ch), centre: centre(ch),
+      ragged: raggedBy.get(ch) ?? 0,
+    });
   }
   // Ties broken by character so the same machine always yields the same
   // ladder — a picker that reshuffles between redraws is unusable.
@@ -181,6 +189,43 @@ const TIE = 3;
 const RANK_COST = 0.02;
 
 /**
+ * Weights this close under the heaviest are the same ink to the eye, and
+ * the flattest edge among them should win the surface. The gap that *is*
+ * visible is known: `H` at 0.171 standing in for `B` at 0.204 — 16% down —
+ * was the flat-grey-wall fault this file exists to fix. 8% keeps the true
+ * dark cluster together and that fault out.
+ */
+const SURFACE_TIE = 0.08;
+
+/**
+ * The heaviest tone is not just the most ink — it is used as a *surface*,
+ * stacked against itself, row upon row, in every solid stroke of the
+ * lettering. Coverage cannot see the one thing that decides whether such a
+ * stack reads as a stroke: the evenness of the edges where cell meets cell.
+ * A browser's monospace can measure `W` a shade heavier than `B`, and then
+ * every calligraphic stem comes out as rows of sawteeth — peaks and valleys
+ * at both edges, white gaps between the lines — where `B`, within a couple
+ * of percent of the same ink, stacks into a bar.
+ *
+ * So the surface is picked among the characters whose weight the eye could
+ * not tell apart on paper (SURFACE_TIE), by the measured evenness of their
+ * edges; among equally flat edges the heavier keeps the job. A table atlas
+ * measures no edges, every `ragged` is zero, and this reduces to rank order
+ * — the same answer as before, stated the long way round.
+ */
+function surfacePick(ladder) {
+  const top = ladder[0].weight;
+  let best = ladder[0];
+  let bestCost = Infinity;
+  for (const g of ladder) {
+    if (g.weight < top - SURFACE_TIE) break;
+    const cost = g.ragged + (top - g.weight) * 0.5;
+    if (cost < bestCost) { bestCost = cost; best = g; }
+  }
+  return best.ch;
+}
+
+/**
  * `n` characters spread from heavy to faint.
  *
  * Picked by **rank**, not by weight. That distinction is the whole point and
@@ -208,23 +253,32 @@ const RANK_COST = 0.02;
 export function toneRamp(n, o = {}) {
   const ladder = inkLadder(o);
   if (!ladder.length) return [];
-  if (n <= 1) return [ladder[0].ch];
+  if (n <= 1) return [surfacePick(ladder)];
 
   const out = [];
+  let surface = null;
   for (let i = 0; i < n; i++) {
+    if (i === 0) {
+      const ch = surfacePick(ladder);
+      surface = ladder.find((g) => g.ch === ch);
+      out.push(ch);
+      continue;
+    }
     // Rank quantile: 0 is the heaviest character the machine has, 1 the
     // faintest.
     const at = Math.round((i / (n - 1)) * (ladder.length - 1));
 
     // Among characters of indistinguishable weight, prefer the one whose ink
     // sits nearest the middle of the cell — but only by enough to beat the
-    // exact rank. Never one already spent.
+    // exact rank. Never one already spent, and never one heavier than the
+    // surface: a shadow that outweighs its face is upside down.
     let best = null;
     let bestCost = Infinity;
     for (let k = Math.max(0, at - TIE);
          k <= Math.min(ladder.length - 1, at + TIE); k++) {
       const g = ladder[k];
       if (out.includes(g.ch)) continue;
+      if (g.weight > surface.weight) continue;
       const cost = Math.abs(g.centre - 0.5) + Math.abs(k - at) * RANK_COST;
       if (cost < bestCost) { bestCost = cost; best = g.ch; }
     }

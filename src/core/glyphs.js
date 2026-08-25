@@ -116,11 +116,39 @@ export function describeGlyph(ch, font = 'monospace') {
     sum += mask[i];
     moment += Math.floor(i / CELL_W) * mask[i];
   }
+
+  /*
+   * How uneven the ink's top and bottom edges are, as a fraction of the
+   * cell height. Per column that carries ink, note where the ink begins
+   * and ends; the mean deviation of those two outlines from their medians
+   * is the raggedness. A `B` draws one straight line across the top and
+   * another across the bottom and measures near zero; a `W` is peaks and
+   * valleys at both edges. See toneRamp() for why a surface cares.
+   */
+  const tops = [];
+  const bots = [];
+  for (let x = 0; x < CELL_W; x++) {
+    let t = -1;
+    let b = -1;
+    for (let y = 0; y < CELL_H; y++) {
+      if (mask[y * CELL_W + x] > 0.02) { if (t < 0) t = y; b = y; }
+    }
+    if (t >= 0) { tops.push(t); bots.push(b); }
+  }
+  const dev = (a) => {
+    const s = [...a].sort((p, q) => p - q);
+    const m = s[s.length >> 1];
+    return a.reduce((acc, v) => acc + Math.abs(v - m), 0) / a.length;
+  };
+  const ragged = tops.length < 2 ? 0
+    : (dev(tops) + dev(bots)) / (2 * CELL_H);
+
   return {
     ch,
     coverage: sum / mask.length,   // 0…1, for tone
     shape: hist,
     ink: total,
+    ragged,
     /*
      * Where the ink sits vertically, 0 (top) … 1 (bottom).
      *
@@ -150,6 +178,7 @@ export function buildAtlas(chars, font = 'monospace') {
     shape: new Float32Array(RADIAL * ANGULAR),
     ink: 0,
     centre: 0.5,
+    ragged: 0,
   });
 
   for (const ch of chars) glyphs.push(describeGlyph(ch, font));
@@ -179,6 +208,9 @@ export function buildAtlas(chars, font = 'monospace') {
  *             ranking; it needs the rendered glyph. `hasShapes` says so, and
  *             callers are expected to check rather than to quietly get a
  *             shape match that is really a tone match.
+ *   ragged    absent, for the same reason: an edge cannot be recovered from
+ *             a ranking. Without it the surface pick in toneRamp() falls
+ *             back to rank order, which the table does know.
  *
  * @param {Iterable<string>} chars the machine's character set
  * @returns {Object} the same shape as buildAtlas, plus hasShapes: false

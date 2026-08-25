@@ -1101,6 +1101,41 @@ check('the heaviest tone is the heaviest character available', () => {
   assert.notStrictEqual(ladder[0].ch, 'H', 'H is not the heaviest SM7 key');
 });
 
+check('the surface tone has straight edges, not just the most ink', () => {
+  // A browser's monospace can measure W a shade heavier than B, and then
+  // every solid stem comes out as rows of sawteeth - peaks and valleys at
+  // both edges, white gaps between the lines - where B, within a couple of
+  // percent of the same ink, stacks into a bar. Among weights the eye could
+  // not tell apart on paper, the measured edge decides.
+  const atlas = {
+    glyphs: [
+      { ch: ' ', coverage: 0, centre: 0.5, ragged: 0 },
+      { ch: 'W', coverage: 0.210, centre: 0.5, ragged: 0.16 },
+      { ch: 'B', coverage: 0.204, centre: 0.5, ragged: 0.01 },
+      { ch: '.', coverage: 0.018, centre: 0.73, ragged: 0 },
+    ],
+    maxCoverage: 0.210,
+  };
+  assert.strictEqual(
+    toneRamp(1, { atlas, allowed: new Set(['W', 'B', '.']) })[0], 'B');
+
+  // A genuinely lighter flat character does not steal the surface. H sits
+  // 16% under W - that gap is visible on paper; it was the flat-grey-wall
+  // fault - so H stays out of the window and W keeps the job, sawteeth and
+  // all: the flattest of what is actually dark, not the flattest of all.
+  const far = {
+    glyphs: [
+      { ch: ' ', coverage: 0, centre: 0.5, ragged: 0 },
+      { ch: 'W', coverage: 0.210, centre: 0.5, ragged: 0.16 },
+      { ch: 'H', coverage: 0.171, centre: 0.5, ragged: 0.01 },
+      { ch: '.', coverage: 0.018, centre: 0.73, ragged: 0 },
+    ],
+    maxCoverage: 0.210,
+  };
+  assert.strictEqual(
+    toneRamp(1, { atlas: far, allowed: new Set(['W', 'H', '.']) })[0], 'W');
+});
+
 check('the tones of a ramp are ordered and distinct', () => {
   const have = new Set(charset(sm7));
   const w = inkWeights(null);
