@@ -184,15 +184,39 @@ word shades together instead of putting the dark end of an `O` beside the
 light end of a `T`. On a machine stripped to two keys it comes out in two
 bands rather than failing.
 
-**A face is only offered where the machine can strike it.** Tones never need
-checking — they are chosen from what the machine has. Fixed marks do: a
-bracketed face without brackets is not a paler bracketed face, it is a hole.
-So each style declares every mark it insists on, the picker greys out the
-ones this machine cannot type and says which key is missing, and the command
-line refuses outright. Switching a key off under Characters counts as the
-machine not having it. Two tests hold the declarations honest in both
-directions — every mark declared is struck, and every mark struck is
-declared.
+**Faces are written in their own marks; the machine is met at the end.** The
+peaks face really does say `^`, the ruled face `|`, the bracketed face `[`
+and `]` — none of which an Olympia SM7 has. Baking the SM7's answers into the
+glyph data was the first attempt and it was the wrong one: it put one
+machine's keyboard inside every letterform, and a machine that *does* have a
+pipe would still have got an exclamation mark.
+
+So there is a stand-in engine instead, in two stages. The substitution table
+first, because it carries judgements a measurement cannot make: `^` and `´`
+do not look alike at all — one is a tent, the other a single stroke — and a
+shape match would sooner offer `A`. But `´` is right, because what matters is
+what the mark is *for*. Then, where the table is silent, a measured match of
+the log-polar shape descriptors the atlas already keeps for tone work, which
+means a mark nobody has ever written a table entry for still finds the
+nearest thing this machine can strike. The table stops being a list that has
+to be maintained and becomes a list of exceptions.
+
+Measuring needs a rendered glyph, so on the command line there is no second
+stage — and that is reported rather than worked around. A mark with no table
+entry and no canvas gets a refusal, not a silent tone match, which is the
+same bargain `tableAtlas()` makes about shapes.
+
+What comes out is a face that adapts instead of disappearing. Bracketed on a
+generic pica QWERTY types `_` as `-`, `|` as `!` and `]` as `)` and says so;
+before the engine it was simply unavailable there, because that machine has
+no underscore and eight of these faces are drawn with one. Only a mark with
+nothing at all to stand in for it greys a face out. Switching a key off under
+Characters counts as the machine not having it, and the hint names what you
+will actually strike rather than what the face asked for.
+
+Three tests hold it together: every mark a style strikes is declared, every
+declared mark has a stand-in on both stock machines, and — the one that
+matters — nothing reaches the sheet that the machine cannot type.
 
 **Raised uses three weights, not two.** An outline drawn in one character
 with the interior in another is a hollow letter with a fill — an edge lit
@@ -245,24 +269,24 @@ Credit where due: the FIGlet format and its font collection come from the
 FIGlet project (figlet.org) and decades of contributors.
 
 Several faces here answer a particular FIGlet one. They are redrawn, not
-converted, and where the original needs a key a typewriter has not got, the
-shape changed rather than the letter being dropped:
+converted, and they keep the marks the originals were built from — where your
+machine has not got one, the stand-in engine answers for it:
 
 | FIGlet          | Here                    | What changed |
 | --------------- | ----------------------- | ------------ |
 | Caligraphy2     | Calligraphic            | 20 rows down to 16, so a word fits a sheet |
 | NV Script       | Calligraphic, inked     | the same hand, painted in `8` `d` `b` `P` `Y` |
-| Fraktur         | Gothic                  | redrawn without `^ ~ * < >` |
+| Fraktur         | Gothic                  | redrawn: a broken hand, not a bold roman |
 | Konto           | Miniature               | three rows rather than two, to stay legible |
 | O8              | Rings                   | — |
 | OS2             | Rings on a rule         | — |
 | Roman           | Roman                   | — |
 | Georgia11       | Roman, heavy            | — |
 | Rowan Cap       | Rounded caps            | — |
-| Kban            | Ruled                   | `\|` is `!`, the feet are `,` — no pipe, and `.` means paper |
-| Henry 3D        | Bracketed               | `[` `]` `\|` become `)` `(` `!` |
+| Kban            | Ruled                   | the feet are `,`: `.` means paper in glyph data |
+| Henry 3D        | Bracketed               | — |
 | Catwalk         | Catwalk                 | — |
-| Peaks           | Peaks                   | `^` is `´`, which the SM7 does have |
+| Peaks           | Peaks                   | — |
 | Lean            | Leaning strokes         | — |
 | Italic          | Italic outline          | — |
 | Gradient        | Graded                  | the ramp comes from your machine, not from `@ # % &` |

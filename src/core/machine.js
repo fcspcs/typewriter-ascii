@@ -169,8 +169,17 @@ const SUBSTITUTES = {
   '#': ['+', 'H', '='],
   '$': ['§', 'S', 's'],
   '*': ['x', 'X', '+'],
-  '^': ['´', '`', 'A'],
+  // `"` and `'` sit ahead of `A` because a caret is a small raised mark and
+  // so are they. `A` was harmless while this table only patched the odd
+  // character in pasted art; it decides whole faces now — the peaks face is
+  // built out of carets — and a line of `A` reads as a word, not a texture.
+  '^': ['´', '`', '"', "'", 'A'],
   '~': ['-', '_', '='],
+  // Not every machine has one. A generic pica QWERTY does not, and eight of
+  // the faces here are drawn with underscores, so without this line they are
+  // all simply unavailable on it. `-` is the same stroke carried higher up
+  // the cell, which is as close as a typewriter gets.
+  '_': ['-', '=', '.'],
   '<': ['(', '/', 'c'],
   '>': [')', '/', 'j'],
   '[': ['(', '/', 'l'],
@@ -184,6 +193,50 @@ const SUBSTITUTES = {
   '×': ['x'], '÷': [':'], '°': ['o'],
   '\u00a0': [' '],
 };
+
+/**
+ * Stand-ins for the marks a machine has not got.
+ *
+ * Two stages, in this order, and the order is the whole design.
+ *
+ * The table first, because it carries judgements a measurement cannot make.
+ * `^` and `´` do not look alike — one is a tent, the other a single stroke —
+ * and a shape match would rather have `A` or a quotation mark. But `´` is
+ * the right answer, because what matters is what the mark is *for*: it is
+ * the thing you put above a letter. That knowledge is typographic, not
+ * geometric, and the table is where it lives.
+ *
+ * Then `nearest`, if the caller has one: a measured match against the keys
+ * this machine actually has. It catches every mark the table has never heard
+ * of, which is every mark somebody adds a face for later — the table stops
+ * being a list that has to be maintained and becomes a list of exceptions.
+ *
+ * Measuring needs a rendered glyph, so where there is no canvas there is no
+ * second stage and the mark simply has no stand-in. That is reported in
+ * `missing` rather than quietly filled with something wrong, which is the
+ * same bargain tableAtlas() makes about shapes.
+ *
+ * @param {Iterable<string>} marks the marks a face insists on
+ * @param {Object} o
+ * @param {Iterable<string>} o.have what this machine can strike, already
+ *   narrowed to whatever is switched on
+ * @param {(ch: string, have: Set<string>) => (string|null)} [o.nearest]
+ * @returns {{swaps: Map<string,string>, missing: string[]}}
+ */
+export function standIns(marks, { have, nearest = null }) {
+  const set = have instanceof Set ? have : new Set(have);
+  const swaps = new Map();
+  const missing = [];
+
+  for (const ch of new Set(marks)) {
+    if (set.has(ch)) continue;
+    const swap = (SUBSTITUTES[ch] ?? []).find((c) => set.has(c))
+      ?? (nearest ? nearest(ch, set) : null);
+    if (swap) swaps.set(ch, swap);
+    else missing.push(ch);
+  }
+  return { swaps, missing };
+}
 
 /**
  * Map text onto what the machine can type.

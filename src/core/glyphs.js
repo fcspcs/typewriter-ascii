@@ -96,6 +96,46 @@ function shapeOf(mask, w = CELL_W, h = CELL_H) {
 }
 
 /**
+ * Measure one character.
+ *
+ * Split out of buildAtlas() because the interesting case is the character a
+ * machine has *not* got: an atlas is built from a machine's own keys, so the
+ * mark you are looking for a stand-in for is by definition not in it. This
+ * describes it anyway, against the same cell and the same font, so the two
+ * descriptions are comparable. See nearestChar().
+ *
+ * @param {string} ch
+ * @param {string} font  a monospace CSS font family
+ */
+export function describeGlyph(ch, font = 'monospace') {
+  const mask = renderGlyph(ch, font);
+  const { hist, total } = shapeOf(mask);
+  let sum = 0;
+  let moment = 0;
+  for (let i = 0; i < mask.length; i++) {
+    sum += mask[i];
+    moment += Math.floor(i / CELL_W) * mask[i];
+  }
+  return {
+    ch,
+    coverage: sum / mask.length,   // 0…1, for tone
+    shape: hist,
+    ink: total,
+    /*
+     * Where the ink sits vertically, 0 (top) … 1 (bottom).
+     *
+     * Coverage alone picks the wrong character at the faint end. The two
+     * faintest marks on an SM7 are ` and ´ at 0.0167 coverage, but their
+     * ink sits at 0.21 of the cell, tucked under the line above: a block
+     * of them reads as a row of ticks floating over the letter, not as a
+     * pale surface. `.` is 0.0179 — the same weight to any eye — and sits
+     * at 0.73. So this breaks ties between characters of equal weight.
+     */
+    centre: sum > 0 ? moment / sum / (CELL_H - 1) : 0.5,
+  };
+}
+
+/**
  * Measure a whole character set.
  * @param {string[]} chars
  * @param {string} font  a monospace CSS font family
@@ -112,33 +152,7 @@ export function buildAtlas(chars, font = 'monospace') {
     centre: 0.5,
   });
 
-  for (const ch of chars) {
-    const mask = renderGlyph(ch, font);
-    const { hist, total } = shapeOf(mask);
-    let sum = 0;
-    let moment = 0;
-    for (let i = 0; i < mask.length; i++) {
-      sum += mask[i];
-      moment += Math.floor(i / CELL_W) * mask[i];
-    }
-    glyphs.push({
-      ch,
-      coverage: sum / mask.length,   // 0…1, for tone
-      shape: hist,
-      ink: total,
-      /*
-       * Where the ink sits vertically, 0 (top) … 1 (bottom).
-       *
-       * Coverage alone picks the wrong character at the faint end. The two
-       * faintest marks on an SM7 are ` and ´ at 0.0167 coverage, but their
-       * ink sits at 0.21 of the cell, tucked under the line above: a block
-       * of them reads as a row of ticks floating over the letter, not as a
-       * pale surface. `.` is 0.0179 — the same weight to any eye — and sits
-       * at 0.73. So this breaks ties between characters of equal weight.
-       */
-      centre: sum > 0 ? moment / sum / (CELL_H - 1) : 0.5,
-    });
-  }
+  for (const ch of chars) glyphs.push(describeGlyph(ch, font));
 
   // Darkest character is worth knowing — it sets the top of the tone range.
   const maxCoverage = Math.max(...glyphs.map((g) => g.coverage));
@@ -261,6 +275,35 @@ export function bestChar(cell, atlas, opt = {}) {
     }
   }
   return best;
+}
+
+/**
+ * The character this machine has that most looks like one it has not.
+ *
+ * The measured half of the stand-in engine — see standIns() in machine.js,
+ * which calls this after its table has had first refusal. Shape carries the
+ * decision here rather than tone, which is the right way round: a stand-in
+ * for `[` should be bracket-shaped, not merely as dark as a bracket.
+ *
+ * Returns null rather than a guess in the two cases where a guess would be
+ * worthless. Without a canvas there are no shape descriptors at all and the
+ * match would silently degrade into a tone match — the caveat tableAtlas()
+ * already states. And a mark the font draws as nothing has nothing to match.
+ *
+ * `emptyBelow` is overridden to zero on purpose. bestChar() is normally
+ * reading a picture, where a nearly empty cell should come out blank; here
+ * the caller has asked about a specific mark, and a caret really is that
+ * faint. Left at the default, every light mark would answer "a space".
+ */
+export function nearestChar(ch, atlas, allowed, font = 'monospace') {
+  if (!atlas?.hasShapes) return null;
+  const want = describeGlyph(ch, font);
+  if (!(want.ink > 0)) return null;
+  const best = bestChar(want, atlas, {
+    allowed: allowed instanceof Set ? allowed : new Set(allowed),
+    emptyBelow: 0,
+  });
+  return best === ' ' ? null : best;
 }
 
 /** Character whose coverage is closest to a target tone. */

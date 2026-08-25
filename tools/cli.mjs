@@ -23,11 +23,11 @@
 import fs from 'node:fs';
 import { PROFILES, profileById } from '../src/profiles/index.js';
 import {
-  makeTypeable, PAPERS, paperById, setUp, charset, textArea, landscape,
+  makeTypeable, standIns, PAPERS, paperById, setUp, charset, textArea, landscape,
   sheetGrid,
 } from '../src/core/machine.js';
 import { colourMap, inkTally, parseRows, runsOf, runsToText } from '../src/core/runs.js';
-import { letter, tonesOf, marksMissing, STYLES } from '../src/core/lettering.js';
+import { letter, tonesOf, marksOf, STYLES } from '../src/core/lettering.js';
 import { toneRamp } from '../src/core/ink.js';
 import { buildSheetPdf } from '../src/core/pdf.js';
 import { tableAtlas } from '../src/core/glyphs.js';
@@ -555,12 +555,23 @@ if (cmd === 'image') {
   if (!STYLES[style]) {
     die(`Unknown style: ${style}. One of: ${Object.keys(STYLES).join(' ')}`);
   }
-  // Refused rather than typed and swapped: a face is drawn out of specific
-  // marks, and the nearest available shape is a different face.
-  const lacking = marksMissing(style, charset(machine));
-  if (lacking.length) {
-    die(`--style ${style} strikes ${lacking.join(' ')}, which the ` +
-      `${machine.name} does not have. Try --style block.`);
+  /*
+   * The faces are written in the marks they were designed in, so this is
+   * where they meet the machine. Table only — the measured half of the
+   * stand-in engine needs a rendered glyph and there is no canvas out here,
+   * which is stated rather than worked around: a mark with no table entry
+   * gets a refusal, not a silent tone match.
+   */
+  const { swaps, missing } = standIns(marksOf(style), {
+    have: charset(machine),
+  });
+  if (missing.length) {
+    die(`--style ${style} is drawn with ${missing.join(' ')}, and the ` +
+      `${machine.name} has nothing that will stand in. Try --style block.`);
+  }
+  if (swaps.size) {
+    console.error(`note: typing ${[...swaps].map(([a, b]) => `${a} as ${b}`)
+      .join(', ')} — the ${machine.name} has no ${[...swaps.keys()].join(' ')}`);
   }
   // Same ramp the page uses, taken from the machine rather than wished for.
   // A literal \n in the argument starts a second line of lettering, because
@@ -571,7 +582,8 @@ if (cmd === 'image') {
   // it "GUTEN MORGEN LYON" in Block is 101 columns on an A4 that holds 82,
   // and the only output is a refusal.
   lines = letter(word.replace(/\\n/g, '\n'),
-    { style, tones, maxCols: textArea(sheet, machine).cols });
+    { style, tones, maxCols: textArea(sheet, machine).cols,
+      substitutes: swaps });
 } else {
   die(`Unknown command: ${cmd}`);
 }

@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert';
 import {
-  charset, makeTypeable, untypeable, PAPERS, paperById,
+  charset, makeTypeable, untypeable, standIns, PAPERS, paperById,
   textArea, sheetGrid, setUp, cellWidthMm, cellHeightMm,
   pitchFrom, expectedMm, PITCHES, LINE_PITCHES,
   landscape, wantsLandscape, orient,
@@ -17,7 +17,7 @@ import {
   columnOfStrike, inkPlan, INK_SCHEMES,
 } from '../src/core/runs.js';
 import {
-  letter, STYLES, charsUsed, tonesOf, usesTwo, marksMissing,
+  letter, STYLES, charsUsed, tonesOf, usesTwo, marksOf,
 } from '../src/core/lettering.js';
 import { toneRamp, inkLadder, inkWeights } from '../src/core/ink.js';
 import { fitGrid, sentenceReads, keystrokes } from '../src/core/convert.js';
@@ -29,6 +29,9 @@ const check = (name, fn) => {
 };
 
 const sm7 = profileById('olympia-sm7');
+// The second stock machine, and a genuinely different one for this purpose:
+// it has no underscore, no acute and no section mark.
+const pica = profileById('generic-pica-qwerty');
 
 console.log('machine');
 
@@ -531,19 +534,23 @@ check('the calligraphic hand leans without falling over', () => {
     `${cols(leaning)} columns will not fit an upright A4 line`);
 });
 
-check('every lettering style is typeable on the SM7', () => {
-  // The whole point. The classic isometric and relief FIGlet faces all
-  // need a backslash, and the Olympia SM7 has no backslash key - nor a
-  // pipe, nor a tilde. A style that cannot be typed is not a style.
-  const have = new Set(charset(sm7));
-  for (const key of Object.keys(STYLES)) {
-    const art = letter('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
-      { style: key, fill: '#', light: '+' });
-    const used = new Set(art.join('').replace(/ /g, ''));
-    for (const ch of used) {
-      if (ch === '#' || ch === '+') continue;      // the two ink slots
-      assert.ok(have.has(ch),
-        `${key} needs ${JSON.stringify(ch)}, which the SM7 lacks`);
+check('every lettering style comes out typeable, on both machines', () => {
+  // The whole point, and now the end of the chain rather than a property of
+  // the glyph data: the face asks for `^`, the engine answers `´`, and what
+  // this reads is what would go on the paper. Nothing may reach the sheet
+  // that the machine cannot strike.
+  for (const m of [sm7, pica]) {
+    const have = new Set(charset(m));
+    for (const key of Object.keys(STYLES)) {
+      const { swaps } = standIns(marksOf(key), { have });
+      const art = letter('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+        { style: key, fill: '#', light: '+', substitutes: swaps });
+      for (const ch of new Set(art.join('').replace(/ /g, ''))) {
+        if (ch === '#' || ch === '+') continue;    // the two ink slots
+        assert.ok(have.has(ch),
+          `${key} put ${JSON.stringify(ch)} on the sheet, and ${m.name} ` +
+          `has no such key`);
+      }
     }
   }
 });
@@ -566,16 +573,32 @@ check('a style declares every mark it strikes', () => {
   }
 });
 
-check('no style is offered that the SM7 cannot strike', () => {
-  const have = new Set(charset(sm7));
-  for (const key of Object.keys(STYLES)) {
-    assert.deepStrictEqual(marksMissing(key, have), [],
-      `${key} wants ${marksMissing(key, have).join(' ')}`);
+check('every style has a stand-in for every mark, on both machines', () => {
+  // The faces are written in the marks they were designed in, so `missing`
+  // being empty is not a property of the faces - it is the engine doing its
+  // job. Both stock profiles, because they differ: a generic pica QWERTY has
+  // no underscore, and eight faces here are drawn with one.
+  for (const m of [sm7, pica]) {
+    const have = new Set(charset(m));
+    for (const key of Object.keys(STYLES)) {
+      const { missing } = standIns(marksOf(key), { have });
+      assert.deepStrictEqual(missing, [],
+        `${key} has nothing to stand in for ${missing.join(' ')} on ${m.name}`);
+    }
   }
-  // And the check has to be capable of finding something, or it is a test
-  // that passes because it looks nowhere.
-  assert.ok(marksMissing('script', new Set('AB')).includes('/'),
-    'marksMissing found nothing on a machine with two keys');
+});
+
+check('the stand-in engine is actually doing something', () => {
+  // A test that only checks `missing` is empty would also pass if every face
+  // happened to use nothing but letters. These two are the reason the engine
+  // exists: the peaks face is built out of carets and the SM7 has none.
+  const have = new Set(charset(sm7));
+  const { swaps } = standIns(marksOf('peaks'), { have });
+  assert.strictEqual(swaps.get('^'), '´', 'the caret was not stood in for');
+
+  const { missing } = standIns(['☃'], { have });
+  assert.deepStrictEqual(missing, ['☃'],
+    'a mark with no table entry and no canvas should be reported, not guessed');
 });
 
 check('no face draws with a character reserved for a tone', () => {

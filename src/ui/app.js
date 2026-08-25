@@ -8,10 +8,10 @@
 
 import { PROFILES, profileById } from '../profiles/index.js';
 import {
-  charset, makeTypeable, PAPERS, paperById, textArea, setUp, sheetGrid,
+  charset, makeTypeable, standIns, PAPERS, paperById, textArea, setUp, sheetGrid,
   pitchFrom, expectedMm, PITCHES, LINE_PITCHES, landscape,
 } from '../core/machine.js';
-import { buildAtlas } from '../core/glyphs.js';
+import { buildAtlas, nearestChar } from '../core/glyphs.js';
 import {
   prepare, fitGrid, toCharacters, toSentence, cellAspect,
 } from '../core/convert.js';
@@ -19,7 +19,7 @@ import {
   inkPlan, INK_SCHEMES, inkTally, inkLevels, parseRows, strikesInLine, runsOf,
 } from '../core/runs.js';
 import {
-  letter, STYLES, usesTwo, tonesOf, charsUsed, marksMissing,
+  letter, STYLES, usesTwo, tonesOf, charsUsed, marksOf,
 } from '../core/lettering.js';
 import { toneRamp } from '../core/ink.js';
 import { StrikeListener, LineTracker, METER_FULL_SCALE } from '../core/listen.js';
@@ -332,6 +332,26 @@ function letterTones(style) {
     { atlas: app.atlas, allowed: app.chosen });
 }
 
+/**
+ * What this machine will type where a face asks for a mark it has not got.
+ *
+ * The faces are written in the marks they were designed in — the peaks face
+ * really does say `^` — and this is where that meets the machine in the
+ * room. Table first, then a measured match against the atlas, which is why
+ * `nearest` is handed in from here: machine.js has no business knowing about
+ * a canvas, and glyphs.js has no business knowing about typewriters.
+ *
+ * Narrowed to `app.chosen`, not just the machine: a key switched off under
+ * Characters is a key this machine does not have, for this purpose.
+ */
+function letterStandIns(style) {
+  const have = new Set(charset(app.machine).filter((c) => app.chosen.has(c)));
+  return standIns(marksOf(style), {
+    have,
+    nearest: (ch, pool) => nearestChar(ch, app.atlas, pool),
+  });
+}
+
 function convert() {
   const tab = currentTab();
   syncWidthControl();
@@ -372,8 +392,10 @@ function convert() {
        * on essentially every sentence, which trains people to ignore the one
        * place the app warns them.
        */
+      const { swaps } = letterStandIns(style);
       lines = letter(word, {
         style, tones: letterTones(style), maxCols: room.cols,
+        substitutes: swaps,
       });
     }
   } else if (tab === 'paste') {
@@ -582,30 +604,36 @@ function syncLetterHint() {
    * one that is there and says which key it wants tells you what to change.
    */
   for (const opt of sel.options) {
-    const short = marksMissing(opt.value, app.chosen);
+    const { missing } = letterStandIns(opt.value);
     const name = STYLES[opt.value]?.name ?? opt.value;
-    opt.disabled = short.length > 0;
-    opt.textContent = short.length ? `${name} — needs ${short.join(' ')}` : name;
+    opt.disabled = missing.length > 0;
+    opt.textContent = missing.length
+      ? `${name} — no stand-in for ${missing.join(' ')}` : name;
   }
 
   const style = sel.value;
-  const short = marksMissing(style, app.chosen);
-  if (short.length) {
-    el.textContent = `${STYLES[style]?.name ?? style} strikes ` +
-      `${short.join(' ')}, which this machine does not have. Choose another ` +
-      `face, or switch those keys back on under Characters.`;
+  const { swaps, missing } = letterStandIns(style);
+  if (missing.length) {
+    el.textContent = `${STYLES[style]?.name ?? style} is drawn with ` +
+      `${missing.join(' ')}, and this machine has nothing that will stand in. ` +
+      `Choose another face, or switch keys back on under Characters.`;
     return;
   }
 
-  const used = charsUsed(style, letterTones(style));
+  const used = charsUsed(style, letterTones(style))
+    .map((ch) => swaps.get(ch) ?? ch);
   const n = tonesOf(style);
   const weight = n === 0 ? 'Drawn with fixed marks, not tones'
     : n === 1 ? 'One character'
       : n === 2 ? 'Two weights, face and shadow'
         : 'Three weights: lit edge, body, shaded edge';
+  // Named as what you will actually strike, not as what the face asked for.
+  // A hint that says `^` on a machine with no caret is worse than no hint.
+  const stood = [...swaps].map(([want, got]) => `${want} as ${got}`);
   el.textContent = used.length
-    ? `${weight} — ${used.join(' ')}. Hollow and stencil faces cost far ` +
-      `fewer keystrokes than solid ones.`
+    ? `${weight} — ${used.join(' ')}.` +
+      (stood.length ? ` Typed ${stood.join(', ')}.` : '') +
+      ` Hollow and stencil faces cost far fewer keystrokes than solid ones.`
     : '';
 }
 

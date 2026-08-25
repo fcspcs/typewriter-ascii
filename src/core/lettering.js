@@ -1769,14 +1769,14 @@ export const STYLES = {
                 tl: 'a', tr: 'b', bl: 'V', br: 'P' })],
               uses: 'dMPabV', tones: 0 },
   kban:     { name: 'Ruled',          face: 'block',
-              fns: [inked({ inside: '!', flatH: "'", top: "'", bottom: ',',
+              fns: [inked({ inside: '|', flatH: "'", top: "'", bottom: ',',
                 tl: "'", tr: "'", bl: ',', br: ',' })],
-              uses: "!',", tones: 0 },
+              uses: "|',", tones: 0 },
   henry:    { name: 'Bracketed',      face: 'block',
               fns: [inked({ inside: '.', top: '_', bottom: '_',
-                left: '!', right: '!', tl: 'F', tr: ')', bl: 'L', br: 'J',
-                flatH: '_', flatV: '!' })],
-              uses: '_!FJL)', tones: 0 },
+                left: '|', right: '|', tl: 'F', tr: ']', bl: 'L', br: 'J',
+                flatH: '_', flatV: '|' })],
+              uses: '_|FJL]', tones: 0 },
   nvScript: { name: 'Calligraphic, inked', face: 'script',
               fns: [inked({ inside: '8', left: 'd', right: 'b',
                 top: 'P', bottom: 'Y', flatH: 'P', flatV: '8' }, 1)],
@@ -1789,8 +1789,8 @@ export const STYLES = {
   catwalk:  { name: 'Catwalk',        face: 'block',
               fns: [taller(2), struck('_//', '///')], uses: '_/', tones: 0 },
   peaks:    { name: 'Peaks',          face: 'block',
-              fns: [taller(2), struck('/´´', '´´´')],
-              uses: '/´', tones: 0 },
+              fns: [taller(2), struck('/^^', '^^^')],
+              uses: '/^', tones: 0 },
   lean:     { name: 'Leaning strokes', face: 'block',
               fns: [struck('_/', '_/'), slant], uses: '_/', tones: 0 },
   italic:   { name: 'Italic outline', face: 'block',
@@ -1953,6 +1953,8 @@ function renderRow(word, spec, face, spacing) {
  * @param {string} [opt.light='+']   second character, for shadow and relief
  * @param {number} [opt.spacing=1]   blank columns between letters
  * @param {number} [opt.maxCols]     wrap to this many columns
+ * @param {Map<string,string>} [opt.substitutes] stand-ins for marks the
+ *   machine has not got, from standIns() in machine.js
  * @returns {string[]} lines
  */
 export function letter(word, opt = {}) {
@@ -1979,6 +1981,7 @@ export function letter(word, opt = {}) {
   const ramp = Array.isArray(opt.tones) && opt.tones.length
     ? opt.tones : [fill, light];
   const inkAt = (i) => ramp[Math.min(i, ramp.length - 1)] ?? fill;
+  const swaps = opt.substitutes instanceof Map ? opt.substitutes : null;
 
   /*
    * Wrap first, then render. The break has to be decided on how wide the
@@ -2020,7 +2023,13 @@ export function letter(word, opt = {}) {
     // styles.
     [...row].map((c) => {
       const tone = INKS.indexOf(c);
-      return tone >= 0 ? inkAt(tone) : c === '.' ? ' ' : c;
+      if (tone >= 0) return inkAt(tone);
+      if (c === '.') return ' ';
+      // A mark the machine has not got, typed as whatever stands in for it.
+      // Applied here, at the very end, so the face never has to know which
+      // machine it is being typed on — and so what comes out of this
+      // function is what goes on the paper, marks included.
+      return swaps?.get(c) ?? c;
     }).join('').replace(/\s+$/, ''));
 
   // Drop rows that ended up empty — punctuation-only words leave a lot.
@@ -2046,25 +2055,25 @@ export function charsUsed(style, tones = ['#', '+', '~']) {
 }
 
 /**
- * The fixed marks this style needs that the machine cannot strike.
+ * The fixed marks this face insists on, whatever machine is in the room.
  *
- * Tones are not checked here and must not be: they are *chosen* from what
- * the machine has, so they are available by construction. `uses` is the
- * other half — the marks a drawn face insists on, which are a shape rather
- * than a weight and cannot be swapped for the nearest thing. A bracketed
- * face without brackets is not a paler bracketed face, it is a hole.
+ * Tones are not among them and must not be: those are *chosen* from what the
+ * machine has, so they are available by construction. These are the other
+ * half — the marks that carry the shape rather than the weight, and the ones
+ * a machine might not have. Peaks is built out of carets and the bracketed
+ * face out of brackets; whether this machine can strike them is not a
+ * question this file is in a position to answer.
  *
- * `have` is a Set or anything iterable, and is the machine's charset
- * narrowed to whatever is switched on in the characters dialog — a key the
- * user has turned off is a key the machine does not have, for this purpose.
+ * So it does not try. Hand the result to standIns() in machine.js with the
+ * machine's keys, get back what to type instead, and pass that to letter()
+ * as `substitutes`. Faces stay written in the marks they were designed in,
+ * and a machine that has a pipe gets a pipe.
  *
  * @param {keyof STYLES} style
- * @param {Iterable<string>} have
- * @returns {string[]} the missing marks, empty if the style can be typed
+ * @returns {string[]}
  */
-export function marksMissing(style, have) {
-  const set = have instanceof Set ? have : new Set(have);
-  return [...(STYLES[style]?.uses ?? '')].filter((ch) => !set.has(ch));
+export function marksOf(style) {
+  return [...(STYLES[style]?.uses ?? '')];
 }
 
 /** Does this style use a second, lighter character? */
